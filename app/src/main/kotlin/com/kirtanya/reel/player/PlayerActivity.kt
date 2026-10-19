@@ -654,13 +654,16 @@ class PlayerActivity : ComponentActivity() {
             visibility = View.GONE
         }
         // Top-left, so it never covers the seek bar or controls.
-        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { setMargins(dp(24), dp(84), dp(24), 0) })
+        // Below the title strip: status on the left, "Start over" on the right, never on top of each other.
+        status.maxWidth = (resources.displayMetrics.widthPixels * 0.48f).toInt()
+        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(24), dp(84), dp(24), 0) })
 
         resumeChip = button("") {
             player?.seekTo(0)
             hideResumeChip()
         }.apply { visibility = View.GONE }
-        root.addView(resumeChip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(32), dp(32), 0) })
+        resumeChip.maxWidth = (resources.displayMetrics.widthPixels * 0.48f).toInt()
+        root.addView(resumeChip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(84), dp(24), 0) })
 
         nextCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
