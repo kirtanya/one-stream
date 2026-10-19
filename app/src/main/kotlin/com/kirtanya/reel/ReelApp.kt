@@ -11,7 +11,9 @@ import com.kirtanya.reel.core.sources.OkHttpFetcher
 import com.kirtanya.reel.core.sources.PluginRuntime
 import com.kirtanya.reel.core.sources.SourceAggregator
 import com.kirtanya.reel.data.AppFetcher
+import com.kirtanya.reel.data.PlaybackSettings
 import com.kirtanya.reel.data.ProviderApps
+import com.kirtanya.reel.data.WatchHistoryStore
 import com.kirtanya.reel.data.SourcesStore
 import com.kirtanya.reel.data.TmdbRepository
 import com.kirtanya.reel.engine.TorrentEngine
@@ -33,6 +35,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val pluginRuntime by lazy { PluginRuntime(fetcher) }
     val sources by lazy { SourcesStore(this, fetcher, pluginRuntime) }
     val aggregator by lazy { SourceAggregator() }
+    val history by lazy { WatchHistoryStore(this) }
+    val playbackSettings by lazy { PlaybackSettings(this) }
 
     override fun onCreate() {
         super.onCreate()

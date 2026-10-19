@@ -28,8 +28,11 @@ import com.kirtanya.reel.ui.theme.Tokens
 
 /** Phone root: Home · Search · Downloads tabs, title pages stack on top. */
 @Composable
-fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit) {
+fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest? = null, onOpenHandled: () -> Unit = {}) {
     val nav = rememberNavigator()
+    androidx.compose.runtime.LaunchedEffect(openDest) {
+        openDest?.let { nav.open(it); onOpenHandled() }
+    }
     val saveable = rememberSaveableStateHolder()
     BackHandler(enabled = nav.stack.isNotEmpty() || nav.tab != Tab.Home) { nav.back() }
 
@@ -42,7 +45,7 @@ fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit) {
                 is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = false, onBack = { nav.back() })
                 null -> saveable.SaveableStateProvider(nav.tab.name) {
                     when (nav.tab) {
-                        Tab.Home -> PhoneHome(onOpen = { nav.open(Dest.Title(it.ref)) })
+                        Tab.Home -> PhoneHome(onOpen = { nav.open(Dest.Title(it.ref)) }, onOpenDest = { nav.open(it) })
                         Tab.Search -> PhoneSearch(onOpen = { nav.open(Dest.Title(it.ref)) })
                         Tab.Downloads -> EngineScreen(isTv = false, incomingMagnet = null, onIncomingHandled = {})
                         Tab.Settings -> SettingsScreen(isTv = false)

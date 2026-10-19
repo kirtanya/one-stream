@@ -16,6 +16,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.kirtanya.reel.ReelApp
+import com.kirtanya.reel.core.playback.EpisodeNumber
+import com.kirtanya.reel.core.playback.Playback
+import com.kirtanya.reel.core.playback.nextEpisode
 import com.kirtanya.reel.core.sources.RankPrefs
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceKind
@@ -70,13 +73,31 @@ fun rankPrefs(context: Context, isTv: Boolean): RankPrefs {
 /** Best source to start straight away: first non-external one. */
 fun bestOf(search: SourceSearch?): Source? = search?.sources?.firstOrNull { it.kind != SourceKind.EXTERNAL }
 
-fun play(context: Context, source: Source, title: String) {
-    when (source.kind) {
-        SourceKind.TORRENT -> source.magnetUri()?.let {
-            context.startActivity(PlayerActivity.forMagnet(context, it, title, source.fileIdx, source.filename))
-        }
-        SourceKind.DIRECT -> source.url?.let { context.startActivity(PlayerActivity.forUrl(context, it, title, source.headers)) }
-        SourceKind.EXTERNAL -> openExternal(context, source)
+/** What the player needs to play [source] for this film / episode and remember it. */
+fun playbackFor(d: TitleDetails, episode: EpisodeNumber?, episodeName: String?, stillPath: String?, source: Source): Playback {
+    val type = d.summary.ref.type.path
+    return Playback(
+        key = Playback.keyFor(type, d.summary.ref.id, episode),
+        titleKey = "$type:${d.summary.ref.id}",
+        title = d.summary.title,
+        subtitle = episode?.let { listOfNotNull(it.label, episodeName).joinToString(" · ") },
+        tmdbType = type,
+        tmdbId = d.summary.ref.id,
+        imdbId = d.imdbId,
+        year = d.summary.year,
+        episode = episode,
+        posterPath = d.summary.posterPath,
+        backdropPath = d.summary.backdropPath,
+        stillPath = stillPath,
+        next = episode?.let { nextEpisode(d.seasons, it) },
+        source = source,
+    )
+}
+
+fun play(context: Context, playback: Playback) {
+    when (playback.source.kind) {
+        SourceKind.EXTERNAL -> openExternal(context, playback.source)
+        else -> context.startActivity(PlayerActivity.forPlayback(context, playback))
     }
 }
 

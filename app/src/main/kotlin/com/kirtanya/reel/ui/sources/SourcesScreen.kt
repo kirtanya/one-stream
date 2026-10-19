@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.sources.SourceRanker
 import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.core.tmdb.TitleRef
@@ -58,6 +59,10 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
     val (search, rescan) = rememberSourceSearch(req, isTv)
+    val (episodes, _) = com.kirtanya.reel.ui.title.rememberSeason(d.summary.ref.id, season)
+    val ep = (episodes as? com.kirtanya.reel.ui.common.Load.Ready)?.value?.firstOrNull { it.number == episode }
+    val epNumber = if (season != null && episode != null) EpisodeNumber(season, episode) else null
+    fun playbackOf(s: com.kirtanya.reel.core.sources.Source) = playbackFor(d, epNumber, ep?.name, ep?.stillPath, s)
     val best = bestOf(search)
     val label = d.summary.title + if (season != null) " · S$season E$episode" else ""
     val playFocus = remember { FocusRequester() }
@@ -84,7 +89,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                     Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         ReelButton(
                             "Play best",
-                            { best?.let { play(context, it, label) } },
+                            { best?.let { play(context, playbackOf(it)) } },
                             kind = ButtonKind.Primary,
                             icon = Icons.Rounded.PlayArrow,
                             enabled = best != null,
@@ -98,7 +103,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                 SourceRow(
                     s,
                     fits = SourceRanker.fits(s, prefs),
-                    onPlay = { play(context, s, label) },
+                    onPlay = { play(context, playbackOf(s)) },
                     onDownload = { download(context, s, label) },
                     modifier = Modifier.widthIn(max = 1000.dp),
                 )

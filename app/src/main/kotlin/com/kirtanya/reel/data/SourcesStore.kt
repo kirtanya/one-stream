@@ -87,7 +87,7 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
     fun providers(log: (String, String) -> Unit = { name, line -> Log.d(TAG, "[$name] $line") }): List<SourceProvider> {
         val s = _state.value
         val addons = s.addons.filter { it.enabled }.mapNotNull { a ->
-            runCatching { AddonProvider(a.url, a.manifest, http) }.getOrNull()
+            runCatching { a.manifest }.getOrNull()?.takeIf { it.hasStreams }?.let { AddonProvider(a.url, it, http) }
         }
         val plugins = s.plugins.filter { it.enabled }.mapNotNull { p ->
             val code = codeFile(p.repoUrl, p.id).takeIf { it.isFile }?.readText() ?: return@mapNotNull null
@@ -96,6 +96,12 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
         }
         return addons + plugins
     }
+
+    /** Enabled addons that provide subtitles (e.g. OpenSubtitles v3). */
+    fun subtitleAddons(): List<Pair<String, com.kirtanya.reel.core.sources.StremioManifest>> =
+        _state.value.addons.filter { it.enabled }.mapNotNull { a ->
+            runCatching { a.manifest }.getOrNull()?.takeIf { it.hasSubtitles }?.let { a.url to it }
+        }
 
     // ---- addons
 
@@ -107,7 +113,7 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
         } catch (e: Exception) {
             throw SourceSetupException("That link isn't a Stremio addon")
         }
-        if (!manifest.hasStreams) throw SourceSetupException("${manifest.name} doesn't provide streams")
+        if (!manifest.hasStreams && !manifest.hasSubtitles) throw SourceSetupException("${manifest.name} doesn't provide streams or subtitles")
         val addon = InstalledAddon(url, body)
         update { s -> s.copy(addons = s.addons.filterNot { it.url == url } + addon) }
         addon

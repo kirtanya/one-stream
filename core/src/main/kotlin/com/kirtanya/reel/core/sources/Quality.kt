@@ -1,6 +1,9 @@
 package com.kirtanya.reel.core.sources
 
+import kotlinx.serialization.Serializable
+
 /** What a release name tells us about picture quality. */
+@Serializable
 data class Quality(
     /** Vertical resolution: 2160, 1440, 1080, 720, 576, 480 — or null if unknown. */
     val resolution: Int? = null,

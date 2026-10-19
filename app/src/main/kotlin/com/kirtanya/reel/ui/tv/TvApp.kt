@@ -33,8 +33,11 @@ val TvTopBarHeight = 80.dp
 
 /** TV root: remote-first. Tabs across the top, title pages full screen. */
 @Composable
-fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit) {
+fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest? = null, onOpenHandled: () -> Unit = {}) {
     val nav = rememberNavigator()
+    androidx.compose.runtime.LaunchedEffect(openDest) {
+        openDest?.let { nav.open(it); onOpenHandled() }
+    }
     val activity = LocalContext.current as? Activity
     BackHandler { if (!nav.back()) activity?.finish() }
 
@@ -44,7 +47,7 @@ fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit) {
             is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = true, onBack = { nav.back() })
             null -> {
                 when (nav.tab) {
-                    Tab.Home -> TvHome(onOpen = { nav.open(Dest.Title(it.ref)) })
+                    Tab.Home -> TvHome(onOpen = { nav.open(Dest.Title(it.ref)) }, onOpenDest = { nav.open(it) })
                     Tab.Search -> TvSearch(onOpen = { nav.open(Dest.Title(it.ref)) })
                     Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) {
                         EngineScreen(isTv = true, incomingMagnet = incomingMagnet, onIncomingHandled = onIncomingHandled)

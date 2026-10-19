@@ -3,7 +3,7 @@ package com.kirtanya.reel.ui.common
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +28,8 @@ fun Modifier.focusCard(
     shape: Shape = RoundedCornerShape(Tokens.Radius.m),
     scale: Float = Tokens.Motion.focusScale,
     onFocus: (() -> Unit)? = null,
+    /** Long-press (touch) or hold OK (remote). */
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier = composed {
     val interaction = remember { MutableInteractionSource() }
@@ -38,7 +40,7 @@ fun Modifier.focusCard(
         .graphicsLayer { scaleX = s; scaleY = s }
         .border(Tokens.Size.focusBorder, if (focused) Tokens.Colors.focus else Color.Transparent, shape)
         .clip(shape)
-        .clickable(interactionSource = interaction, indication = ripple(), onClick = onClick)
+        .combinedClickable(interactionSource = interaction, indication = ripple(), onLongClick = onLongClick, onClick = onClick)
 }
 
 fun Modifier.roundedClip(radius: Dp) = clip(RoundedCornerShape(radius))

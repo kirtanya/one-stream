@@ -31,7 +31,8 @@ import com.kirtanya.reel.ui.common.rememberLoad
 import com.kirtanya.reel.ui.theme.Tokens
 
 @Composable
-fun PhoneHome(onOpen: (TitleSummary) -> Unit) {
+fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (com.kirtanya.reel.ui.nav.Dest) -> Unit) {
+    val continueItems = com.kirtanya.reel.ui.common.rememberContinueWatching()
     val tmdb = ReelApp.get(LocalContext.current).tmdb
     val (load, retry) = rememberLoad(Unit) { tmdb.home() }
     LoadView(load, retry) { rows ->
@@ -42,6 +43,11 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit) {
         ) {
             item {
                 Text("Reel", style = Tokens.Type.display, color = Tokens.Colors.text, modifier = Modifier.padding(horizontal = Tokens.Space.phoneGutter))
+            }
+            if (continueItems.isNotEmpty()) {
+                item(key = "continue") {
+                    com.kirtanya.reel.ui.common.ContinueRow(continueItems, cardWidth = 220.dp, sidePadding = Tokens.Space.phoneGutter, onOpenDest = onOpenDest)
+                }
             }
             rows.firstOrNull()?.items?.firstOrNull()?.let { hero -> item { Hero(hero, onOpen) } }
             items(rows, key = { it.title }) { row ->

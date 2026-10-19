@@ -3,7 +3,9 @@ package com.kirtanya.reel.core.sources
 import com.kirtanya.reel.core.magnet.Magnet
 import com.kirtanya.reel.core.magnet.buildMagnet
 import com.kirtanya.reel.core.tmdb.MediaType
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class SourceKind { TORRENT, DIRECT, EXTERNAL }
 
 /** What we're looking for: one film, or one episode of a show. */
@@ -20,9 +22,17 @@ data class SourceRequest(
     val key: String get() = "${type.path}:$tmdbId" + if (season != null) ":s${season}e$episode" else ""
 }
 
-data class SubtitleTrack(val url: String, val language: String, val name: String? = null)
+@Serializable
+data class SubtitleTrack(
+    val url: String,
+    val language: String,
+    val name: String? = null,
+    /** "srt", "vtt", "ass"… when known (from the file name); players default to SRT. */
+    val format: String? = null,
+)
 
 /** One playable option from an addon or plugin, normalised. */
+@Serializable
 data class Source(
     val kind: SourceKind,
     /** Release name / description, as the provider wrote it. */

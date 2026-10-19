@@ -21,10 +21,11 @@ data class StremioManifest(
     val idPrefixes: List<String>?,
 ) {
     val hasStreams: Boolean get() = resources.containsKey("stream")
+    val hasSubtitles: Boolean get() = resources.containsKey("subtitles")
 
-    /** Can this addon answer streams for [type] with an id in one of our formats? */
-    fun streamIdFor(req: SourceRequest): String? {
-        val (resTypes, resPrefixes) = resources["stream"] ?: return null
+    /** Can this addon answer [resource] ("stream", "subtitles") for [req] with an id in one of our formats? */
+    fun streamIdFor(req: SourceRequest, resource: String = "stream"): String? {
+        val (resTypes, resPrefixes) = resources[resource] ?: return null
         val stremioType = StremioAddon.typeOf(req.type)
         if (!(resTypes ?: types).contains(stremioType)) return null
         val prefixes = resPrefixes ?: idPrefixes

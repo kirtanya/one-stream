@@ -3,6 +3,7 @@ package com.kirtanya.reel.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,7 +36,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.BuildConfig
 import com.kirtanya.reel.ReelApp
+import com.kirtanya.reel.data.PlaybackSettings
 import com.kirtanya.reel.data.SourceSetupException
+import com.kirtanya.reel.data.SubtitleSize
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.focusCard
@@ -50,6 +53,7 @@ import kotlinx.coroutines.withContext
 fun SettingsScreen(isTv: Boolean) {
     val app = ReelApp.get(LocalContext.current)
     val state by app.sources.state.collectAsState()
+    val playback by app.playbackSettings.state.collectAsState()
     val scope = rememberCoroutineScope()
     var addonUrl by remember { mutableStateOf("") }
     var repoUrl by remember { mutableStateOf("") }
@@ -86,6 +90,39 @@ fun SettingsScreen(isTv: Boolean) {
             )
         }
         message?.let { item { Text(it, style = Tokens.Type.body, color = Tokens.Colors.accent) } }
+
+        item { Section("Playback", "How the player behaves on this device.") }
+        item {
+            ToggleRow(
+                title = "Play the next episode automatically",
+                subtitle = "Finds a source near the end of an episode and starts it after a 10-second countdown.",
+                checked = playback.autoplayNext,
+                onToggle = { app.playbackSettings.update { it.copy(autoplayNext = !it.autoplayNext) } },
+            )
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                Text("Subtitles", style = Tokens.Type.label, color = Tokens.Colors.text)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    (listOf<Pair<String?, String>>(null to "Off") + PlaybackSettings.LANGUAGES).forEach { (code, name) ->
+                        ReelButton(name, { app.playbackSettings.update { it.copy(subtitleLanguage = code) } },
+                            kind = if (playback.subtitleLanguage == code) ButtonKind.Primary else ButtonKind.Ghost)
+                    }
+                }
+                Text("Size", style = Tokens.Type.label, color = Tokens.Colors.text)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    SubtitleSize.entries.forEach { size ->
+                        ReelButton(size.label, { app.playbackSettings.update { it.copy(subtitleSize = size) } },
+                            kind = if (playback.subtitleSize == size) ButtonKind.Primary else ButtonKind.Ghost)
+                    }
+                }
+                if (state.addons.none { it.enabled && runCatching { it.manifest.hasSubtitles }.getOrDefault(false) }) {
+                    Note("Subtitles come from sources and from subtitle addons. OpenSubtitles v3 is the official, free one.")
+                    ReelButton("Add OpenSubtitles v3", { run { app.sources.addAddon(OPENSUBTITLES).let { "Added ${it.manifest.name}" } } },
+                        icon = Icons.Rounded.Add, enabled = !busy)
+                }
+            }
+        }
 
         item { Section("Addons", "Stremio addons answer “where can I play this?” over the internet. Paste the link that ends in manifest.json.") }
         if (state.addons.isEmpty()) item { Text("No addons yet.", style = Tokens.Type.body, color = Tokens.Colors.textMuted) }
@@ -150,6 +187,8 @@ fun SettingsScreen(isTv: Boolean) {
         item { Text("Reel ${BuildConfig.VERSION_NAME}", style = Tokens.Type.caption, color = Tokens.Colors.textMuted, modifier = Modifier.padding(top = Tokens.Space.xl)) }
     }
 }
+
+private const val OPENSUBTITLES = "https://opensubtitles-v3.strem.io/manifest.json"
 
 @Composable
 private fun Section(title: String, subtitle: String) {
