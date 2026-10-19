@@ -91,6 +91,8 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
         Backdrop(TmdbImages.backdrop(d.summary.backdropPath), Modifier.fillMaxSize(), fromLeft = true)
         AmbientGlow(glow, height = 700.dp, strength = 0.4f)
 
+        @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides com.kirtanya.reel.ui.common.MinimalBringIntoView) {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = Tokens.Space.tvSafeV),
@@ -175,6 +177,7 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

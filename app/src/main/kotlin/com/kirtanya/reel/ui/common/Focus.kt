@@ -49,6 +49,23 @@ fun Modifier.focusCard(
 
 fun Modifier.roundedClip(radius: Dp) = clip(RoundedCornerShape(radius))
 
+/**
+ * Scroll only as far as needed to show the focused item. Compose's TV default "pivots" focused
+ * items to ~30 % from the top, which is right for rows but cuts off a page's hero (title page).
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+val MinimalBringIntoView = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val trailing = offset + size
+        return when {
+            offset >= 0 && trailing <= containerSize -> 0f
+            offset < 0 && trailing > containerSize -> 0f
+            kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
+            else -> trailing - containerSize
+        }
+    }
+}
+
 /** Puts the remote's focus on [requester] once it's laid out (retries a few frames). */
 @Composable
 fun RequestFocusOnce(requester: androidx.compose.ui.focus.FocusRequester, key: Any? = Unit) {
