@@ -83,6 +83,7 @@ fun SourcesScreen(ref: TitleRef, season: Int?, episode: Int?, isTv: Boolean, onB
     val (load, retry) = rememberTitle(ref)
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         LoadView(load, retry) { d -> SourcesBody(d, season, episode, isTv) }
+        if (!isTv) com.kirtanya.reel.ui.common.TopFade()
         if (!isTv) GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.l))
     }
 }

@@ -78,6 +78,7 @@ fun PhoneTitle(ref: TitleRef, onBack: () -> Unit, onPlay: (season: Int?, episode
     val (load, retry) = rememberTitle(ref)
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         LoadView(load, retry) { d -> TitleBody(d, onPlay) }
+        com.kirtanya.reel.ui.common.TopFade()
         GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.l))
     }
 }

@@ -176,16 +176,15 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
     val used = downloaded + cacheBytes
     val total = (used + freeBytes).coerceAtLeast(1)
     ReelCard {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) {
-                Text(formatBytes(freeBytes), style = Tokens.Type.title, color = Tokens.Colors.text)
-                Text("free on this device", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
-            }
-            Pill("${formatBytes(downloaded)} downloads")
-            Spacer(Modifier.size(Tokens.Space.s))
-            Pill("${formatBytes(cacheBytes)} cache")
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+            Text(formatBytes(freeBytes), style = Tokens.Type.title, color = Tokens.Colors.text)
+            Text("free on this device", style = Tokens.Type.label, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(bottom = 3.dp))
         }
         GradientProgress(used.toFloat() / total, height = 6.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+            Pill("${formatBytes(downloaded)} downloads")
+            Pill("${formatBytes(cacheBytes)} stream cache")
+        }
         if (cacheBytes > 0) ReelButton("Clear stream cache", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
     }
 }

@@ -147,20 +147,20 @@ private fun FloatingBar(selected: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Uni
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            BarItem(Tab.Home, Icons.Rounded.Home, Icons.Outlined.Home, selected, onSelect)
-            BarItem(Tab.Search, Icons.Rounded.Search, Icons.Outlined.Search, selected, onSelect)
+            BarItem(Tab.Home, Icons.Rounded.Home, Icons.Outlined.Home, selected, onSelect, Modifier.weight(1f))
+            BarItem(Tab.Search, Icons.Rounded.Search, Icons.Outlined.Search, selected, onSelect, Modifier.weight(1f))
             AddButton(onAdd)
-            BarItem(Tab.Downloads, Icons.Rounded.Download, Icons.Outlined.Download, selected, onSelect, badge = downloading)
-            BarItem(Tab.Settings, Icons.Rounded.Settings, Icons.Outlined.Settings, selected, onSelect)
+            BarItem(Tab.Downloads, Icons.Rounded.Download, Icons.Outlined.Download, selected, onSelect, Modifier.weight(1f), badge = downloading)
+            BarItem(Tab.Settings, Icons.Rounded.Settings, Icons.Outlined.Settings, selected, onSelect, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun BarItem(tab: Tab, filled: ImageVector, outlined: ImageVector, selected: Tab, onSelect: (Tab) -> Unit, badge: Boolean = false) {
+private fun BarItem(tab: Tab, filled: ImageVector, outlined: ImageVector, selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier, badge: Boolean = false) {
     val on = tab == selected
     Column(
-        Modifier.width(64.dp).focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1f, onClick = { onSelect(tab) }).padding(vertical = Tokens.Space.xs),
+        modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1f, onClick = { onSelect(tab) }).padding(vertical = Tokens.Space.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -168,7 +168,7 @@ private fun BarItem(tab: Tab, filled: ImageVector, outlined: ImageVector, select
             Icon(if (on) filled else outlined, contentDescription = tab.label, tint = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, modifier = Modifier.size(24.dp))
             if (badge) Box(Modifier.align(Alignment.TopEnd).size(8.dp).clip(CircleShape).background(Tokens.Colors.accentBright))
         }
-        Text(tab.label, style = Tokens.Type.caption, color = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, maxLines = 1)
+        Text(tab.label, style = Tokens.Type.caption, color = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, maxLines = 1, softWrap = false)
     }
 }
 
@@ -178,13 +178,13 @@ private fun AddButton(onAdd: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
     Box(contentAlignment = Alignment.Center) {
         Box(
-            Modifier.size(width = 96.dp, height = 64.dp).drawBehind {
+            Modifier.size(width = 76.dp, height = 64.dp).drawBehind {
                 drawCircle(Brush.radialGradient(listOf(Tokens.Colors.accent.copy(alpha = 0.45f), Color.Transparent), center = Offset(size.width / 2, size.height / 2), radius = size.width / 1.6f))
             },
         )
         Box(
             Modifier
-                .size(width = 64.dp, height = 44.dp)
+                .size(width = 60.dp, height = 44.dp)
                 .focusCard(shape = shape, onClick = onAdd)
                 .background(Tokens.Gradients.brand)
                 .border(Tokens.Size.hairline, Color.White.copy(alpha = 0.2f), shape),

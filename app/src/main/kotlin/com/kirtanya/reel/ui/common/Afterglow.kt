@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -44,6 +48,20 @@ fun ReelCard(modifier: Modifier = Modifier, padding: Dp = Tokens.Space.l, conten
     )
 }
 
+/**
+ * Canvas fade behind the status bar and a floating back button, so scrolled content
+ * slides under it instead of colliding with it.
+ */
+@Composable
+fun TopFade(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .windowInsetsTopHeight(WindowInsets.statusBars.add(WindowInsets(top = 80.dp)))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(0f to Tokens.Colors.canvas.copy(alpha = 0.92f), 0.6f to Tokens.Colors.canvas.copy(alpha = 0.6f), 1f to Color.Transparent)),
+    )
+}
+
 /** Small meta chip: "2019", "2h 19m", "★ 8.4", "4K". */
 @Composable
 fun Pill(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, accent: Boolean = false, onGlass: Boolean = false) {
@@ -51,14 +69,14 @@ fun Pill(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null,
     Row(
         modifier
             .clip(shape)
-            .background(if (accent) Tokens.Colors.accent.copy(alpha = 0.18f) else if (onGlass) Tokens.Colors.glass else Tokens.Colors.surface2)
-            .border(Tokens.Size.hairline, if (accent) Tokens.Colors.accent.copy(alpha = 0.45f) else Tokens.Colors.hairline, shape)
+            .then(if (accent) Modifier.background(Tokens.Gradients.brand) else Modifier.background(if (onGlass) Tokens.Colors.glass else Tokens.Colors.surface2))
+            .border(Tokens.Size.hairline, if (accent) Color.White.copy(alpha = 0.2f) else Tokens.Colors.hairline, shape)
             .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs + 1.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
     ) {
-        if (icon != null) Icon(icon, null, tint = if (accent) Tokens.Colors.accentBright else Tokens.Colors.textSecondary, modifier = Modifier.size(14.dp))
-        Text(text, style = Tokens.Type.caption, color = if (accent) Tokens.Colors.accentBright else Tokens.Colors.text, maxLines = 1)
+        if (icon != null) Icon(icon, null, tint = if (accent) Tokens.Colors.onAccent else Tokens.Colors.textSecondary, modifier = Modifier.size(14.dp))
+        Text(text, style = Tokens.Type.caption, color = if (accent) Tokens.Colors.onAccent else Tokens.Colors.text, maxLines = 1)
     }
 }
 
