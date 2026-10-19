@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+# Secrets — never commit
+tmdb.key
+key.properties
+*.jks
