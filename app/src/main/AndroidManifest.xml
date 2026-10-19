@@ -56,12 +56,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="magnet" />
             </intent-filter>
-            <!-- "Install" buttons on addon websites open stremio://…/manifest.json links. -->
+            <!-- "Install" buttons on addon websites open stremio://…/manifest.json links (only those). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="stremio" />
+                <data android:scheme="stremio" android:host="*" android:pathPattern=".*manifest\\.json" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

@@ -15,7 +15,12 @@ data class RankPrefs(
  */
 object SourceRanker {
     fun rank(sources: List<Source>, prefs: RankPrefs = RankPrefs()): List<Source> =
-        sources.sortedWith(compareByDescending<Source> { score(it, prefs) }.thenBy { it.title })
+        sources.sortedWith(
+            compareByDescending<Source> { score(it, prefs) }
+                // Same score: a smaller direct file starts sooner (a 1.7 GB MP4 beats a 10.7 GB MKV).
+                .thenBy { if (it.kind == SourceKind.DIRECT) it.sizeBytes ?: Long.MAX_VALUE else 0L }
+                .thenBy { it.title },
+        )
 
     fun fits(source: Source, prefs: RankPrefs): Boolean =
         source.kind != SourceKind.TORRENT || prefs.maxBytes == null || (source.sizeBytes ?: 0) <= prefs.maxBytes

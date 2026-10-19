@@ -11,7 +11,9 @@ import com.kirtanya.reel.core.sources.PluginProvider
 import com.kirtanya.reel.core.sources.PluginRuntime
 import com.kirtanya.reel.core.sources.SourceProvider
 import com.kirtanya.reel.core.sources.StremioAddon
+import com.kirtanya.reel.core.sync.ApplyResult
 import com.kirtanya.reel.core.sync.BundleAddon
+import kotlinx.coroutines.CancellationException
 import com.kirtanya.reel.core.sync.BundleRepo
 import com.kirtanya.reel.core.sync.LinkKind
 import com.kirtanya.reel.core.sync.SourceLinks
@@ -86,7 +88,7 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
                 .onFailure { Log.w(TAG, "built-in repo failed", it) }
         }
         val stale = _state.value.repos.filter { !it.builtIn && System.currentTimeMillis() - it.updatedAt > REFRESH_MS }
-        stale.forEach { repo -> runCatching { addRepo(repo.url, repo.builtIn) }.onFailure { Log.w(TAG, "refresh ${repo.url}", it) } }
+        stale.forEach { repo -> runCatching { addRepo(repo.url, repo.builtIn, refresh = true) }.onFailure { Log.w(TAG, "refresh ${repo.url}", it) } }
     }
 
     /** Providers to ask for a title, in the user's order. */
@@ -111,33 +113,35 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
 
     // ---- links (Install buttons, stremio:// links, pasted URLs)
 
-    /** What a link points at, for the "Add this?" dialog. */
-    data class LinkPreview(val url: String, val kind: LinkKind, val name: String, val detail: String?)
+    /** What a link points at, for the "Add this?" dialog. [body] is what gets installed if the user says yes. */
+    data class LinkPreview(val url: String, val kind: LinkKind, val name: String, val detail: String?, val body: String)
 
     suspend fun preview(link: String): LinkPreview {
-        val url = SourceLinks.extract(link) ?: throw SourceSetupException("That isn't an addon or plugin link")
+        val url = SourceLinks.fromUserInput(link) ?: throw SourceSetupException("That isn't an addon or plugin link")
         val body = get(url)
         return when (SourceLinks.detectKind(body)) {
             LinkKind.ADDON -> StremioAddon.parseManifest(body).let { m ->
+                if (!m.hasStreams && !m.hasSubtitles) throw SourceSetupException("${m.name} doesn't provide streams or subtitles, so Reel can't use it")
                 val what = listOfNotNull(if (m.hasStreams) "streams" else null, if (m.hasSubtitles) "subtitles" else null).joinToString(" + ")
-                LinkPreview(url, LinkKind.ADDON, m.name, listOfNotNull("Stremio addon · $what", m.description).joinToString("\n"))
+                LinkPreview(url, LinkKind.ADDON, m.name, listOfNotNull("Stremio addon · $what", m.description).joinToString("\n"), body)
             }
             LinkKind.PLUGIN_REPO -> NuvioPlugins.parseManifest(body).let { r ->
-                LinkPreview(url, LinkKind.PLUGIN_REPO, r.name, listOfNotNull("Plugin repository · ${r.scrapers.size} plugins", r.description).joinToString("\n"))
+                if (r.scrapers.isEmpty()) throw SourceSetupException("${r.name} has no plugins")
+                LinkPreview(url, LinkKind.PLUGIN_REPO, r.name, listOfNotNull("Plugin repository · ${r.scrapers.size} plugins (scripts that run on this device)", r.description).joinToString("\n"), body)
             }
             LinkKind.UNKNOWN -> throw SourceSetupException("That link isn't a Stremio addon or a plugin repository")
         }
     }
 
-    /** Adds whatever the link is (addon or plugin repo). Returns a message for the user. */
-    suspend fun addFromLink(link: String): String {
-        val url = SourceLinks.extract(link) ?: throw SourceSetupException("That isn't an addon or plugin link")
-        return when (SourceLinks.detectKind(get(url))) {
-            LinkKind.ADDON -> "Added ${addAddon(url).manifest.name}"
-            LinkKind.PLUGIN_REPO -> "Added ${addRepo(url).name}"
-            LinkKind.UNKNOWN -> throw SourceSetupException("That link isn't a Stremio addon or a plugin repository")
-        }
+    /** Installs exactly what [preview] showed (no second look at the link that could come back different). */
+    suspend fun addPreviewed(preview: LinkPreview): String = when (preview.kind) {
+        LinkKind.ADDON -> "Added ${addAddon(preview.url, prefetched = preview.body).manifest.name}"
+        LinkKind.PLUGIN_REPO -> "Added ${addRepo(preview.url, prefetched = preview.body).name}"
+        LinkKind.UNKNOWN -> throw SourceSetupException("That link isn't a Stremio addon or a plugin repository")
     }
+
+    /** Adds whatever the link is (addon or plugin repo; a bare addon address works too). */
+    suspend fun addFromLink(link: String): String = addPreviewed(preview(link))
 
     // ---- phone → TV sync
 
@@ -155,28 +159,39 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
      * Makes this device match [bundle] (sent by the phone). Links that can't be fetched are
      * skipped and reported; the built-in repo is never removed.
      */
-    suspend fun applyBundle(bundle: SourcesBundle): String {
+    suspend fun applyBundle(bundle: SourcesBundle): ApplyResult {
         ensureReady()
-        val builtIn = _state.value.repos.filter { it.builtIn }.map { it.url }.toSet()
-        val plan = SyncPlan.between(exportBundle(), bundle, builtIn)
-        val failed = mutableListOf<String>()
-        plan.removeAddons.forEach { removeAddon(it) }
-        plan.removeRepos.forEach { removeRepo(it) }
-        plan.addAddons.forEach { a ->
-            runCatching { addAddon(a.url) }.onSuccess { if (!a.enabled) setAddonEnabled(a.url, false) }.onFailure { failed += a.url }
+        // One lock for the whole apply: no refresh or Settings action can interleave and undo part of it.
+        return mutex.withLock {
+            val builtIn = _state.value.repos.filter { it.builtIn }.map { it.url }.toSet()
+            val plan = SyncPlan.between(exportBundle(), bundle, builtIn)
+            val failed = mutableListOf<String>()
+            plan.addAddons.forEach { a ->
+                runCatching { addAddonLocked(a.url, null) }
+                    .onSuccess { if (!a.enabled) setAddonEnabled(a.url, false) }
+                    .onFailure { if (it is CancellationException) throw it; failed += a.url }
+            }
+            plan.addRepos.forEach { r ->
+                runCatching { addRepoLocked(r.url, builtIn = false, prefetched = null, startedAt = 0) }
+                    .onFailure { if (it is CancellationException) throw it; failed += r.url }
+            }
+            // Removals after the adds, so a failed add never leaves the TV with less than before.
+            plan.removeAddons.forEach { removeAddon(it) }
+            plan.removeRepos.forEach { removeRepo(it) }
+            plan.toggleAddons.forEach { (url, on) -> setAddonEnabled(url, on) }
+            // Plugin switches for every repo now present (new ones included), as the phone has them.
+            bundle.repos.forEach { r -> r.plugins.forEach { (id, on) -> setPluginEnabled(r.url, id, on) } }
+            ApplyResult(plan.describe() + if (failed.isEmpty()) "" else " (${failed.size} couldn't be reached)", failed.size)
         }
-        plan.toggleAddons.forEach { (url, on) -> setAddonEnabled(url, on) }
-        plan.addRepos.forEach { r -> runCatching { addRepo(r.url) }.onFailure { failed += r.url } }
-        // Plugin switches for every repo now present (new ones included), as the phone has them.
-        bundle.repos.forEach { r -> r.plugins.forEach { (id, on) -> setPluginEnabled(r.url, id, on) } }
-        return plan.describe() + if (failed.isEmpty()) "" else " (${failed.size} couldn't be reached)"
     }
 
     // ---- addons
 
-    suspend fun addAddon(input: String): InstalledAddon = mutex.withLock {
+    suspend fun addAddon(input: String, prefetched: String? = null): InstalledAddon = mutex.withLock { addAddonLocked(input, prefetched) }
+
+    private suspend fun addAddonLocked(input: String, prefetched: String?): InstalledAddon {
         val url = StremioAddon.manifestUrl(input)
-        val body = get(url)
+        val body = prefetched ?: get(url)
         val manifest = try {
             StremioAddon.parseManifest(body)
         } catch (e: Exception) {
@@ -185,7 +200,7 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
         if (!manifest.hasStreams && !manifest.hasSubtitles) throw SourceSetupException("${manifest.name} doesn't provide streams or subtitles")
         val addon = InstalledAddon(url, body)
         update { s -> s.copy(addons = s.addons.filterNot { it.url == url } + addon) }
-        addon
+        return addon
     }
 
     fun setAddonEnabled(url: String, enabled: Boolean) =
@@ -193,12 +208,25 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
 
     fun removeAddon(url: String) = update { s -> s.copy(addons = s.addons.filterNot { it.url == url }) }
 
+    /** Repo URL → when it was removed: a refresh already in flight must not bring it back. */
+    private val removedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     // ---- plugin repos
 
-    suspend fun addRepo(input: String, builtIn: Boolean = false): InstalledRepo = mutex.withLock {
+    /** Adds or updates a plugin repo. [refresh] = background update: skipped if the repo was removed since. */
+    suspend fun addRepo(input: String, builtIn: Boolean = false, prefetched: String? = null, refresh: Boolean = false): InstalledRepo {
+        val startedAt = System.nanoTime()
+        return mutex.withLock {
+            val url = input.trim()
+            if (refresh && _state.value.repos.none { it.url == url }) throw SourceSetupException("Removed")
+            addRepoLocked(url, builtIn, prefetched, if (refresh) startedAt else 0)
+        }
+    }
+
+    private suspend fun addRepoLocked(input: String, builtIn: Boolean, prefetched: String?, startedAt: Long): InstalledRepo {
         val url = input.trim()
         val manifest = try {
-            NuvioPlugins.parseManifest(get(url))
+            NuvioPlugins.parseManifest(prefetched ?: get(url))
         } catch (e: SourceSetupException) {
             throw e
         } catch (e: Exception) {
@@ -220,13 +248,15 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
             )
         }
         val repo = InstalledRepo(url, manifest.name, manifest.version, builtIn, System.currentTimeMillis())
+        if (startedAt != 0L && (removedAt[url] ?: 0) > startedAt) throw SourceSetupException("Removed")
+        if (startedAt == 0L) removedAt.remove(url)
         update { s ->
             s.copy(
                 repos = s.repos.filterNot { it.url == url } + repo,
                 plugins = s.plugins.filterNot { it.repoUrl == url } + installed,
             )
         }
-        repo
+        return repo
     }
 
     fun setPluginEnabled(repoUrl: String, id: String, enabled: Boolean) =
@@ -234,6 +264,7 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
 
     fun removeRepo(url: String) {
         if (url == BUILTIN_REPO) return
+        removedAt[url] = System.nanoTime()
         File(codeDir, hash(url)).deleteRecursively()
         update { s -> s.copy(repos = s.repos.filterNot { it.url == url }, plugins = s.plugins.filterNot { it.repoUrl == url }) }
     }
@@ -243,6 +274,8 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
     private suspend fun get(url: String): String {
         val r = try {
             http.fetch(FetchRequest(url))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             throw SourceSetupException("Couldn't reach that link")
         }

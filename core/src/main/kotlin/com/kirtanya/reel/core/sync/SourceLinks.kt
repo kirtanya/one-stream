@@ -12,23 +12,40 @@ enum class LinkKind { ADDON, PLUGIN_REPO, UNKNOWN }
  * pasted manifest URL, or text containing one — into the https manifest URL to add.
  */
 object SourceLinks {
-    private val urlInText = Regex("""(?i)(stremio|https?)://[^\s"'<>]+""")
+    private const val MAX_LENGTH = 4096
+    private val urlInText = Regex("""(?i)(stremio|https?)://[^\s"'<>“”‘’]+""")
+    private val trailing = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '*', '”', '’', '"', '\'')
 
     /** The manifest URL in [text], or null if there isn't one. */
     fun extract(text: String): String? {
+        if (text.length > MAX_LENGTH * 4) return null
         for (m in urlInText.findAll(text.trim())) {
-            normalize(m.value.trimEnd('.', ',', ')', ']'))?.let { return it }
+            normalize(m.value.trimEnd(*trailing))?.let { return it }
         }
         return null
     }
 
+    /**
+     * Like [extract], but a bare http(s) address with no manifest.json (an addon's base URL)
+     * becomes `<url>/manifest.json`, as the Settings field always allowed.
+     */
+    fun fromUserInput(text: String): String? {
+        extract(text)?.let { return it }
+        val s = text.trim().trimEnd(*trailing)
+        if (s.length > MAX_LENGTH || !Regex("""(?i)^https?://[^\s]+$""").matches(s)) return null
+        return s.substringBefore('#').substringBefore('?').trimEnd('/') + "/manifest.json"
+    }
+
     /** One link → https manifest URL. Accepts stremio:// and web.stremio.com `…addons?addon=<url>` links. */
-    fun normalize(link: String): String? {
+    fun normalize(link: String): String? = normalize(link, depth = 0)
+
+    private fun normalize(link: String, depth: Int): String? {
         val s = link.trim()
-        if (s.isEmpty()) return null
+        if (s.isEmpty() || s.length > MAX_LENGTH || depth > 2) return null
         // web.stremio.com/#/addons?addon=https%3A%2F%2F…%2Fmanifest.json (Install buttons on some sites)
         Regex("""[?&#]addon=([^&#\s]+)""").find(s)?.let { m ->
-            return normalize(URLDecoder.decode(m.groupValues[1], Charsets.UTF_8))
+            val inner = runCatching { URLDecoder.decode(m.groupValues[1], Charsets.UTF_8) }.getOrNull() ?: return null
+            return normalize(inner, depth + 1)
         }
         val https = when {
             s.startsWith("stremio://", ignoreCase = true) -> "https://" + s.substring("stremio://".length)

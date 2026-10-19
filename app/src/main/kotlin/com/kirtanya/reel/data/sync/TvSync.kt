@@ -4,7 +4,10 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import com.kirtanya.reel.core.sync.ApplyResult
+import com.kirtanya.reel.core.sync.PairedPhone
 import com.kirtanya.reel.core.sync.SourcesBundle
+import com.kirtanya.reel.core.sync.SyncCrypto
 import com.kirtanya.reel.core.sync.SyncHost
 import com.kirtanya.reel.core.sync.SyncProtocol
 import com.kirtanya.reel.core.sync.SyncServer
@@ -12,25 +15,32 @@ import com.kirtanya.reel.data.SourcesStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.builtins.serializer
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /** What the TV's Settings shows. */
 data class TvSyncState(
     val running: Boolean = false,
+    /** Shown while pairing is open (the Phone & TV card is on screen), else empty. */
     val code: String = "",
+    val pairingUntil: Long = 0,
     val deviceName: String = "",
-    val pairedPhones: List<Pair<String, String>> = emptyList(), // token → phone name
+    val pairedPhones: List<PairedPhone> = emptyList(),
     val lastUpdate: String? = null,
     val lastUpdateAt: Long = 0,
 )
 
-/** TV side: runs the sync server while Reel is alive and announces it on the network. */
+/**
+ * TV side: runs the sync server while Reel's process is alive (kept up by the engine's foreground
+ * service) and announces it on the network. Pairing only opens while the Phone & TV card is shown.
+ */
 class TvSync(private val context: Context, private val sources: SourcesStore) : SyncHost {
     private val prefs = context.getSharedPreferences("sync_tv", Context.MODE_PRIVATE)
-    private val json = Json
-    private val tokenMap = MapSerializer(String.serializer(), String.serializer())
+    private val json = Json { ignoreUnknownKeys = true }
+    private val phones = ListSerializer(PairedPhone.serializer())
+    private val applyLock = Mutex()
     private var server: SyncServer? = null
     private var stopAnnouncing: (() -> Unit)? = null
 
@@ -40,6 +50,9 @@ class TvSync(private val context: Context, private val sources: SourcesStore) : 
     override val deviceName: String =
         Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)?.takeIf { it.isNotBlank() } ?: Build.MODEL
 
+    override val tvId: String = prefs.getString("tvId", null) ?: SyncCrypto.randomHex(8).also { prefs.edit().putString("tvId", it).apply() }
+
+    @Synchronized
     fun start() {
         if (server != null) return
         val s = runCatching { SyncServer(this, SyncProtocol.DEFAULT_PORT).apply { start(10_000, true) } }
@@ -54,34 +67,48 @@ class TvSync(private val context: Context, private val sources: SourcesStore) : 
             refresh()
         }
         server = s
-        stopAnnouncing = Nsd(context).announce(deviceName, s.listeningPort)
+        stopAnnouncing = Nsd(context).announce(deviceName, s.listeningPort, tvId)
         Log.i(TAG, "sync server on ${s.listeningPort}")
         refresh()
     }
 
-    fun forgetPhone(token: String) {
-        savePaired(pairedTokens() - token)
+    /** The Phone & TV card is on screen: show a fresh code for a few minutes. */
+    fun openPairing() {
+        start()
+        server?.openPairing()
         refresh()
     }
 
-    override fun currentBundle(): SourcesBundle = sources.exportBundle()
-    override suspend fun apply(bundle: SourcesBundle): String = sources.applyBundle(bundle)
-    override fun pairedTokens(): Map<String, String> =
-        prefs.getString("tokens", null)?.let { runCatching { json.decodeFromString(tokenMap, it) }.getOrNull() }.orEmpty()
+    fun closePairing() {
+        server?.closePairing()
+        refresh()
+    }
 
-    override fun savePairedToken(token: String, device: String) = savePaired(pairedTokens() + (token to device))
+    fun forgetPhone(id: String) {
+        savePhones(pairedPhones().filterNot { it.id == id })
+        refresh()
+    }
 
-    private fun savePaired(map: Map<String, String>) {
-        prefs.edit().putString("tokens", json.encodeToString(tokenMap, map)).apply()
+    /** One apply at a time (a phone retry can't run alongside its first attempt). */
+    override suspend fun apply(bundle: SourcesBundle): ApplyResult = applyLock.withLock { sources.applyBundle(bundle) }
+
+    override fun pairedPhones(): List<PairedPhone> =
+        prefs.getString("phones", null)?.let { runCatching { json.decodeFromString(phones, it) }.getOrNull() }.orEmpty()
+
+    override fun savePairedPhone(phone: PairedPhone) = savePhones(pairedPhones().filterNot { it.name == phone.name } + phone)
+
+    private fun savePhones(list: List<PairedPhone>) {
+        prefs.edit().putString("phones", json.encodeToString(phones, list)).apply()
     }
 
     private fun refresh() {
         val s = server
         _state.value = TvSyncState(
             running = s != null,
-            code = s?.code.orEmpty(),
+            code = if (s?.pairingOpen == true) s.code else "",
+            pairingUntil = if (s?.pairingOpen == true) System.currentTimeMillis() + SyncProtocol.PAIRING_WINDOW_MS else 0,
             deviceName = deviceName,
-            pairedPhones = pairedTokens().toList(),
+            pairedPhones = pairedPhones(),
             lastUpdate = prefs.getString("lastUpdate", null),
             lastUpdateAt = prefs.getLong("lastUpdateAt", 0),
         )

@@ -87,7 +87,7 @@ class SourcesProbe : BroadcastReceiver() {
 
     /**
      * Phone ↔ TV sync checks, all in the background:
-     * `--es sync info` (TV: code, port, paired phones; any device: its sources),
+     * `--es sync info` (TV: code, port, paired phones; any device: its sources), `--es sync open` (TV: open pairing),
      * `--es sync pair --es code 1234` (phone: find the first TV, pair, push),
      * `--es sync push` (phone: push to paired TVs now),
      * `--es sync add --es link <url>` / `--es sync remove --es link <url>` (add / remove an addon or repo by link).
@@ -108,6 +108,9 @@ class SourcesProbe : BroadcastReceiver() {
                             app.phoneSync.pushAll(force = true)
                             app.phoneSync.state.value.tvs.forEach { Log.i(TAG, "sync ${it.name}: ${it.lastSummary} err=${it.lastError}") }
                         }
+                        "open" -> {
+                            app.tvSync.openPairing() // TV: open the pairing window (as the Phone & TV card does)
+                        }
                         "add" -> Log.i(TAG, "sync add: ${app.sources.addFromLink(intent.getStringExtra("link").orEmpty())}")
                         "remove" -> {
                             val url = com.kirtanya.reel.core.sync.SourceLinks.extract(intent.getStringExtra("link").orEmpty())
@@ -116,8 +119,8 @@ class SourcesProbe : BroadcastReceiver() {
                             Log.i(TAG, "sync removed $url")
                         }
                     }
-                    if (app.isTv) app.tvSync.state.value.let { Log.i(TAG, "sync tv code=${it.code} port=${app.tvSync.port()} paired=${it.pairedPhones.map { p -> p.second }} last=${it.lastUpdate}") }
-                    else app.phoneSync.state.value.tvs.forEach { Log.i(TAG, "sync paired ${it.name} ${it.host}:${it.port} last=${it.lastSummary} err=${it.lastError}") }
+                    if (app.isTv) app.tvSync.state.value.let { Log.i(TAG, "sync tv code=${it.code} port=${app.tvSync.port()} paired=${it.pairedPhones.map { p -> p.name }} last=${it.lastUpdate}") }
+                    else app.phoneSync.state.value.tvs.forEach { Log.i(TAG, "sync paired ${it.name} ${it.host}:${it.port} last=${it.lastSummary} err=${it.lastError} repair=${it.needsPairing}") }
                     val b = app.sources.exportBundle()
                     Log.i(TAG, "sync sources addons=${b.addons.map { "${it.url}${if (it.enabled) "" else " (off)"}" }} repos=${b.repos.map { "${it.url} ${it.plugins}" }}")
                 }

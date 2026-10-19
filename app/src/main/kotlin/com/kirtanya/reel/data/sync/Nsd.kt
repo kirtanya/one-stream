@@ -14,7 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** A Reel TV found on the home network. */
-data class FoundTv(val serviceName: String, val name: String, val host: String, val port: Int) {
+data class FoundTv(val serviceName: String, val tvId: String, val name: String, val host: String, val port: Int) {
     val base: String get() = "http://$host:$port"
 }
 
@@ -23,13 +23,14 @@ class Nsd(private val context: Context) {
     private val nsd = context.getSystemService(NsdManager::class.java)
     private val executor = Executors.newSingleThreadExecutor()
 
-    /** TV: announce "Reel · <name>" on [port]. Returns a function that stops announcing. */
-    fun announce(name: String, port: Int): () -> Unit {
+    /** TV: announce "Reel · <name>" (with its id) on [port]. Returns a function that stops announcing. */
+    fun announce(name: String, port: Int, tvId: String): () -> Unit {
         val info = NsdServiceInfo().apply {
             serviceName = "Reel · $name".take(60)
             serviceType = SyncProtocol.SERVICE_TYPE
             setPort(port)
             setAttribute("name", name.take(60))
+            setAttribute("id", tvId)
         }
         val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(s: NsdServiceInfo) { Log.i(TAG, "announced ${s.serviceName} on $port") }
@@ -74,8 +75,11 @@ class Nsd(private val context: Context) {
                 override fun onServiceInfoCallbackUnregistered() = Unit
             }
             nsd.registerServiceInfoCallback(service, executor, cb)
-            val s = withTimeoutOrNull(4_000) { done.await() }
-            runCatching { nsd.unregisterServiceInfoCallback(cb) }
+            val s = try {
+                withTimeoutOrNull(4_000) { done.await() }
+            } finally {
+                runCatching { nsd.unregisterServiceInfoCallback(cb) }
+            }
             return s?.toFoundTv()
         }
         @Suppress("DEPRECATION")
@@ -88,9 +92,11 @@ class Nsd(private val context: Context) {
 
     private fun NsdServiceInfo.toFoundTv(): FoundTv? {
         val addresses = if (Build.VERSION.SDK_INT >= 34) hostAddresses else listOfNotNull(@Suppress("DEPRECATION") host)
-        val address = addresses.firstOrNull { it is Inet4Address } ?: addresses.firstOrNull() ?: return null
+        // IPv4 only: link-local IPv6 needs a scope id that doesn't fit in a URL.
+        val address = addresses.firstOrNull { it is Inet4Address } ?: return null
         val name = attributes["name"]?.toString(Charsets.UTF_8) ?: serviceName.removePrefix("Reel · ")
-        return FoundTv(serviceName, name, address.hostAddress ?: return null, port)
+        val id = attributes["id"]?.toString(Charsets.UTF_8) ?: return null
+        return FoundTv(serviceName, id, name, address.hostAddress ?: return null, port)
     }
 
     companion object {

@@ -76,6 +76,12 @@ class RankerTest {
         assertFalse(SourceRanker.fits(ranked.last(), prefs))
     }
 
+    @Test fun sameScoreDirectLinksPreferTheSmallerFile() {
+        fun direct(size: Long) = Source(SourceKind.DIRECT, "Film", "IA", Quality(resolution = 1080), url = "https://x/$size", sizeBytes = size)
+        val ranked = SourceRanker.rank(listOf(direct(10_700L shl 20), direct(1_700L shl 20)))
+        assertEquals(1_700L shl 20, ranked.first().sizeBytes) // starts faster
+    }
+
     @Test fun externalLinksLast() {
         val ext = Source(SourceKind.EXTERNAL, "Netflix", "p", Quality(), externalUrl = "https://netflix.com/x")
         assertEquals(SourceKind.EXTERNAL, SourceRanker.rank(listOf(ext, t(480, 1))).last().kind)

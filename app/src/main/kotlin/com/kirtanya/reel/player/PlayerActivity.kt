@@ -134,6 +134,8 @@ class PlayerActivity : ComponentActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+        // Phones: landscape from the first frame (most video is wide; a portrait video turns back below).
+        if (!isTelevision()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         setContentView(buildLayout())
         start()
     }
@@ -147,7 +149,10 @@ class PlayerActivity : ComponentActivity() {
             try {
                 val subtitles = async { findSubtitles() }
                 val url = when (source.kind) {
-                    SourceKind.DIRECT -> source.url ?: error("No link to play")
+                    SourceKind.DIRECT -> {
+                        showStatus("Loading…")
+                        source.url ?: error("No link to play")
+                    }
                     SourceKind.TORRENT -> prepareTorrent(source)
                     SourceKind.EXTERNAL -> error("This source opens in another app")
                 }
@@ -251,8 +256,9 @@ class PlayerActivity : ComponentActivity() {
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             // Phones turn sideways for wide video; TVs are always landscape.
-            if (videoSize.width > videoSize.height && !isTelevision()) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            if (!isTelevision() && videoSize.width > 0 && videoSize.height > 0) {
+                requestedOrientation = if (videoSize.width >= videoSize.height) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             }
         }
 

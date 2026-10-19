@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.BuildConfig
@@ -148,7 +150,7 @@ fun SettingsScreen(isTv: Boolean) {
 
             item {
                 Group(Icons.Rounded.Devices, "Phone & TV", cardWidth) {
-                    SyncContent(isTv) { message = it }
+                    SyncContent(isTv)
                 }
             }
 
@@ -270,11 +272,21 @@ internal fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemo
     }
 }
 
+/** Full-width field with its button underneath (on a phone the URL needs the whole width). */
 @Composable
-internal fun AddField(value: String, onChange: (String) -> Unit, button: String, busy: Boolean, placeholder: String = "https://…/manifest.json", onAdd: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+internal fun AddField(
+    value: String,
+    onChange: (String) -> Unit,
+    button: String,
+    busy: Boolean,
+    placeholder: String = "https://…/manifest.json",
+    keyboardOptions: KeyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+    ready: Boolean = value.isNotBlank(),
+    onAdd: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         OutlinedTextField(
-            value, onChange, Modifier.weight(1f), singleLine = true,
+            value, onChange, Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = keyboardOptions,
             shape = RoundedCornerShape(Tokens.Radius.pill),
             placeholder = { Text(placeholder) },
             colors = OutlinedTextFieldDefaults.colors(
@@ -282,6 +294,6 @@ internal fun AddField(value: String, onChange: (String) -> Unit, button: String,
                 focusedBorderColor = Tokens.Colors.accentBright, unfocusedBorderColor = Tokens.Colors.hairlineStrong,
             ),
         )
-        ReelButton(if (busy) "…" else button, onAdd, kind = ButtonKind.Primary, icon = Icons.Rounded.Add, enabled = value.isNotBlank() && !busy)
+        ReelButton(if (busy) "…" else button, onAdd, kind = ButtonKind.Primary, icon = Icons.Rounded.Add, enabled = ready && !busy)
     }
 }

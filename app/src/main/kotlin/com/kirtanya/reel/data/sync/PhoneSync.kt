@@ -7,14 +7,17 @@ import android.util.Log
 import com.kirtanya.reel.core.sources.HttpFetcher
 import com.kirtanya.reel.core.sync.SyncClient
 import com.kirtanya.reel.core.sync.SyncException
+import com.kirtanya.reel.core.sync.TvCredentials
 import com.kirtanya.reel.data.SourcesStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,23 +27,30 @@ import kotlinx.serialization.json.Json
 
 @Serializable
 data class PairedTv(
-    val serviceName: String,
+    /** The TV's own id (checked on every push, so a look-alike never gets anything). */
+    val tvId: String,
     val name: String,
     val host: String,
     val port: Int,
-    val token: String,
+    val phoneId: String,
+    val secret: String,
     val lastSyncAt: Long = 0,
     val lastSummary: String? = null,
     val lastError: String? = null,
-    /** Hash of the sources last delivered, so unchanged sources aren't sent again. */
+    /** The TV no longer knows this phone: needs pairing again. */
+    val needsPairing: Boolean = false,
+    /** Hash of the sources last fully delivered, so unchanged sources aren't sent again. */
     val lastHash: Int = 0,
-)
+) {
+    val credentials get() = TvCredentials(tvId, phoneId, secret)
+}
 
 data class PhoneSyncState(val tvs: List<PairedTv> = emptyList(), val autoSync: Boolean = true, val syncing: Boolean = false)
 
 /**
- * Phone side: pairs with TVs once (4-digit code), then sends this phone's addons and plugin repos
- * whenever they change, so the TV is set up without typing on it.
+ * Phone side: pairs with TVs once, then sends this phone's addons and plugin repos whenever they
+ * change (and retries every couple of minutes while a TV is unreachable), so the TV is set up
+ * without typing on it.
  */
 @OptIn(FlowPreview::class)
 class PhoneSync(
@@ -62,12 +72,17 @@ class PhoneSync(
     val deviceName: String =
         Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)?.takeIf { it.isNotBlank() } ?: Build.MODEL
 
-    /** Keeps paired TVs up to date: on start, and a few seconds after every change. */
     fun start() {
         scope.launch {
             sources.ensureReady()
-            if (_state.value.autoSync) pushAll()
-            sources.state.drop(1).debounce(3_000).collect { if (_state.value.autoSync) pushAll() }
+            // Every change (and the current state once) → a push a few seconds later; unchanged sources are skipped by hash.
+            sources.state.debounce(3_000).collect { if (_state.value.autoSync) pushAll() }
+        }
+        scope.launch {
+            while (isActive) {
+                delay(2 * 60_000)
+                if (_state.value.autoSync && _state.value.tvs.any { it.lastError != null && !it.needsPairing }) pushAll()
+            }
         }
     }
 
@@ -75,12 +90,13 @@ class PhoneSync(
 
     /** Pairs with [tv] using the code on its screen, then sends sources straight away. */
     suspend fun pair(tv: FoundTv, code: String): String {
-        val paired = client.pair(tv.base, code, deviceName)
-        save(_state.value.tvs.filterNot { it.serviceName == tv.serviceName } + PairedTv(tv.serviceName, paired.name, tv.host, tv.port, paired.token))
-        return push(tv.serviceName, force = true) ?: "Paired with ${paired.name}"
+        val p = client.pair(tv.base, code, deviceName)
+        val paired = PairedTv(p.tvId, p.name, tv.host, tv.port, p.phoneId, p.secret)
+        save(_state.value.tvs.filterNot { it.tvId == p.tvId } + paired)
+        return push(p.tvId, force = true) ?: "Paired with ${p.name}"
     }
 
-    fun forget(serviceName: String) = save(_state.value.tvs.filterNot { it.serviceName == serviceName })
+    fun forget(tvId: String) = save(_state.value.tvs.filterNot { it.tvId == tvId })
 
     fun setAutoSync(on: Boolean) {
         prefs.edit().putBoolean("auto", on).apply()
@@ -90,34 +106,48 @@ class PhoneSync(
 
     /** Sends to every paired TV whose copy is out of date. */
     suspend fun pushAll(force: Boolean = false) {
-        _state.value.tvs.forEach { push(it.serviceName, force) }
+        _state.value.tvs.forEach { push(it.tvId, force) }
     }
 
     /**
-     * Sends this phone's sources to one TV. Tries the last known address, then looks the TV up
-     * again on the network (its address can change). Returns a message, or null if nothing to do.
+     * Sends this phone's sources to one TV: at its last address, else wherever it is now on the
+     * network (found by its id). Returns a message, or null if there was nothing to send.
      */
-    suspend fun push(serviceName: String, force: Boolean = false): String? = pushLock.withLock {
-        val tv = _state.value.tvs.firstOrNull { it.serviceName == serviceName } ?: return@withLock null
+    suspend fun push(tvId: String, force: Boolean = false): String? = pushLock.withLock {
+        val tv = _state.value.tvs.firstOrNull { it.tvId == tvId } ?: return@withLock null
+        if (tv.needsPairing && !force) return@withLock null
         val bundle = sources.exportBundle(from = deviceName)
         val hash = bundle.copy(from = "").hashCode()
         if (!force && hash == tv.lastHash && tv.lastError == null) return@withLock null
         _state.value = _state.value.copy(syncing = true)
         try {
-            val summary = try {
-                client.push("http://${tv.host}:${tv.port}", tv.token, bundle)
+            val result = try {
+                client.push("http://${tv.host}:${tv.port}", tv.credentials, bundle)
             } catch (e: SyncException) {
-                if (e.message?.contains("Pair again") == true) throw e
-                // Address changed? Find it again by name.
-                val found = discover().firstOrNull { it.serviceName == tv.serviceName } ?: throw e
-                update(tv.serviceName) { it.copy(host = found.host, port = found.port) }
-                client.push(found.base, tv.token, bundle)
+                if (e.needsPairing) throw e
+                // Address changed (or someone else is there now)? Find the TV again by its id.
+                val found = discover().firstOrNull { it.tvId == tv.tvId } ?: throw e
+                update(tv.tvId) { it.copy(host = found.host, port = found.port) }
+                client.push(found.base, tv.credentials, bundle)
             }
-            update(tv.serviceName) { it.copy(lastSyncAt = System.currentTimeMillis(), lastSummary = summary, lastError = null, lastHash = hash) }
-            Log.i(TAG, "synced ${tv.name}: $summary")
-            "${tv.name}: $summary"
+            val failed = result.failed > 0
+            update(tv.tvId) {
+                it.copy(
+                    lastSyncAt = System.currentTimeMillis(),
+                    lastSummary = result.summary,
+                    // Partly failed: keep the old hash so the next round tries again.
+                    lastError = if (failed) "Some sources couldn't be reached by the TV; will retry" else null,
+                    needsPairing = false,
+                    lastHash = if (failed) it.lastHash else hash,
+                )
+            }
+            Log.i(TAG, "synced ${tv.name}: ${result.summary}")
+            "${tv.name}: ${result.summary}"
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            update(tv.serviceName) { it.copy(lastError = e.message ?: "Couldn't reach the TV") }
+            val pair = (e as? SyncException)?.needsPairing == true
+            update(tv.tvId) { it.copy(lastError = e.message ?: "Couldn't reach the TV", needsPairing = pair) }
             Log.w(TAG, "sync ${tv.name} failed: ${e.message}")
             e.message
         } finally {
@@ -125,8 +155,8 @@ class PhoneSync(
         }
     }
 
-    private fun update(serviceName: String, change: (PairedTv) -> PairedTv) =
-        save(_state.value.tvs.map { if (it.serviceName == serviceName) change(it) else it })
+    private fun update(tvId: String, change: (PairedTv) -> PairedTv) =
+        save(_state.value.tvs.map { if (it.tvId == tvId) change(it) else it })
 
     private fun save(tvs: List<PairedTv>) {
         prefs.edit().putString("tvs", json.encodeToString(list, tvs)).apply()

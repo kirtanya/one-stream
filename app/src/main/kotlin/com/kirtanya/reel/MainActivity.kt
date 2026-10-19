@@ -1,11 +1,9 @@
 package com.kirtanya.reel
 
 import android.Manifest
-import android.app.UiModeManager
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -46,14 +44,16 @@ class MainActivity : ComponentActivity() {
         EngineService.start(this)
         // `adb shell am start -n com.kirtanya.reel/.MainActivity --ez forceTv true` previews the TV UI on a phone.
         val forceTv = intent.getBooleanExtra(EXTRA_FORCE_TV, false)
-        val isTv = forceTv || isTelevision()
+        val isTv = forceTv || ReelApp.get(this).isTv
         if (forceTv) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         if (!isTv && Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
-        handleIntent(intent)
+        // Only a fresh launch: not when Android recreates the activity or it's reopened from Recents
+        // (the same link would ask again).
+        if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) handleIntent(intent)
         setContent {
             ReelTheme {
                 Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
@@ -62,7 +62,9 @@ class MainActivity : ComponentActivity() {
                     } else {
                         PhoneApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null })
                     }
-                    incomingSourceLink?.let { link -> AddSourceLinkDialog(link, isTv = isTv, onDone = { incomingSourceLink = null }) }
+                    incomingSourceLink?.let { link ->
+                        androidx.compose.runtime.key(link) { AddSourceLinkDialog(link, isTv = isTv, onDone = { incomingSourceLink = null }) }
+                    }
                 }
             }
         }
@@ -92,6 +94,10 @@ class MainActivity : ComponentActivity() {
                 incomingSourceLink = it
                 return
             }
+            if (intent?.data?.scheme.equals("stremio", ignoreCase = true)) {
+                android.widget.Toast.makeText(this, "That stremio:// link isn't an addon Reel can add", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
         }
         val link = Regex("""magnet:\?[^\s"'<>]+""", RegexOption.IGNORE_CASE).find(text)?.value ?: return
         if (Magnet.parse(link) != null) incomingMagnet = link
@@ -114,9 +120,4 @@ class MainActivity : ComponentActivity() {
                 .putExtra(EXTRA_OPEN_EPISODE, episode ?: -1)
     }
 
-    private fun isTelevision(): Boolean {
-        val uiMode = getSystemService(UiModeManager::class.java)
-        return uiMode.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-    }
 }

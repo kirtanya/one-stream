@@ -11,6 +11,11 @@ import com.kirtanya.reel.core.sync.SyncException
 import com.kirtanya.reel.core.sync.SyncHost
 import com.kirtanya.reel.core.sync.SyncPlan
 import com.kirtanya.reel.core.sync.SyncServer
+import com.kirtanya.reel.core.sync.ApplyResult
+import com.kirtanya.reel.core.sync.PairedPhone
+import com.kirtanya.reel.core.sync.SyncCrypto
+import com.kirtanya.reel.core.sync.SyncProtocol
+import com.kirtanya.reel.core.sync.TvCredentials
 import java.net.ServerSocket
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -40,6 +45,23 @@ class SourceLinksTest {
         "https://raw.example.com/me/repo/main/manifest.json",
         SourceLinks.extract("Try my plugins: https://raw.example.com/me/repo/main/manifest.json."),
     )
+
+    @Test fun punctuationAndQuotes() {
+        assertEquals("https://a.example/manifest.json", SourceLinks.extract("“https://a.example/manifest.json”"))
+        assertEquals("https://a.example/manifest.json", SourceLinks.extract("add https://a.example/manifest.json; thanks!"))
+    }
+
+    @Test fun bareBaseUrlFromTheSettingsField() {
+        assertEquals("https://watchhub.strem.io/manifest.json", SourceLinks.fromUserInput("https://watchhub.strem.io/"))
+        assertNull(SourceLinks.fromUserInput("not a link"))
+    }
+
+    @Test fun nestedAddonParamsAreBounded() {
+        var link = "https://x.example/manifest.json"
+        repeat(10) { link = "https://web.stremio.com/#/addons?addon=" + java.net.URLEncoder.encode(link, Charsets.UTF_8) }
+        assertNull(SourceLinks.normalize(link))
+        assertNull(SourceLinks.extract("https://a/" + "x".repeat(20_000) + "/manifest.json"))
+    }
 
     @Test fun notAManifest() {
         assertNull(SourceLinks.normalize("https://example.com/page"))
@@ -83,62 +105,95 @@ class SyncPlanTest {
     }
 }
 
-/** Real HTTP on localhost: pair with the code, push with the token. */
+/** Real HTTP on localhost: pairing window + code, verified and encrypted pushes. */
 class SyncServerTest {
-    private class FakeTv : SyncHost {
+    private class FakeTv(override val tvId: String = "tv-1") : SyncHost {
         override val deviceName = "Living room TV"
         var applied: SourcesBundle? = null
-        val tokens = mutableMapOf<String, String>()
-        override fun currentBundle() = SourcesBundle()
-        override suspend fun apply(bundle: SourcesBundle): String { applied = bundle; return "+${bundle.addons.size} addons" }
-        override fun pairedTokens() = tokens
-        override fun savePairedToken(token: String, device: String) { tokens[token] = device }
+        val phones = mutableListOf<PairedPhone>()
+        override suspend fun apply(bundle: SourcesBundle): ApplyResult { applied = bundle; return ApplyResult("+${bundle.addons.size} addons") }
+        override fun pairedPhones() = phones
+        override fun savePairedPhone(phone: PairedPhone) { phones += phone }
     }
 
     private fun freePort() = ServerSocket(0).use { it.localPort }
+    private val client = SyncClient(OkHttpFetcher(OkHttpClient()))
 
-    @Test fun pairThenPush(): Unit = runBlocking {
-        val tv = FakeTv()
+    private fun <T> withServer(tv: FakeTv, clock: () -> Long = System::currentTimeMillis, block: suspend (SyncServer, String) -> T): T {
         val port = freePort()
-        val server = SyncServer(tv, port).apply { start(5_000, true) }
+        val server = SyncServer(tv, port, clock).apply { start(5_000, true) }
         try {
-            val client = SyncClient(OkHttpFetcher(OkHttpClient()))
-            val base = "http://127.0.0.1:$port"
-            assertEquals("Living room TV", client.hello(base).name)
-
-            val unpaired = assertFailsWith<SyncException> { client.push(base, "nope", SourcesBundle()) }
-            assertTrue(unpaired.message!!.contains("Pair again"))
-            assertFailsWith<SyncException> { client.pair(base, if (server.code == "1234") "4321" else "1234", "Pixel 8") }
-
-            val codeBefore = server.code
-            val paired = client.pair(base, codeBefore, "Pixel 8")
-            assertEquals("Living room TV", paired.name)
-            assertEquals("Pixel 8", tv.tokens[paired.token])
-
-            val summary = client.push(base, paired.token, SourcesBundle(addons = listOf(BundleAddon("https://x/manifest.json"))))
-            assertEquals("+1 addons", summary)
-            assertEquals("Pixel 8", tv.applied!!.from) // the server stamps who sent it
+            return runBlocking { block(server, "http://127.0.0.1:$port") }
         } finally {
             server.stop()
         }
     }
 
-    @Test fun fiveWrongCodesLockPairing(): Unit = runBlocking {
-        val tv = FakeTv()
-        val port = freePort()
+    @Test fun pairingOnlyWhileTheTvShowsTheCode() = withServer(FakeTv()) { server, base ->
+        val closed = assertFailsWith<SyncException> { client.pair(base, "123456", "Pixel 8") }
+        assertTrue(closed.message!!.contains("Pairing is closed"))
+        server.openPairing()
+        assertEquals(6, server.code.length)
+        val paired = client.pair(base, server.code, "Pixel 8")
+        assertEquals("tv-1", paired.tvId)
+        assertEquals("", server.code) // closes after pairing
+        assertFailsWith<SyncException> { client.pair(base, "000000", "Other") }
+    }
+
+    @Test fun threeWrongCodesCloseTheWindow() = withServer(FakeTv()) { server, base ->
+        server.openPairing()
+        val right = server.code
+        val wrong = if (right == "111111") "222222" else "111111"
+        repeat(2) { assertEquals("Wrong code", assertFailsWith<SyncException> { client.pair(base, wrong, "x") }.message) }
+        assertTrue(assertFailsWith<SyncException> { client.pair(base, wrong, "x") }.message!!.contains("Too many"))
+        assertFailsWith<SyncException> { client.pair(base, right, "x") } // window is closed now
+    }
+
+    @Test fun windowExpires() {
         var now = 1_000_000L
-        val server = SyncServer(tv, port, clock = { now }).apply { start(5_000, true) }
-        try {
-            val client = SyncClient(OkHttpFetcher(OkHttpClient()))
-            val base = "http://127.0.0.1:$port"
-            val wrong = { if (server.code == "1111") "2222" else "1111" }
-            repeat(5) { assertFailsWith<SyncException> { client.pair(base, wrong(), "x") } }
-            val locked = assertFailsWith<SyncException> { client.pair(base, server.code, "x") }
-            assertTrue(locked.message!!.contains("Too many"))
-            now += 61_000
-            assertEquals("Living room TV", client.pair(base, server.code, "x").name)
-        } finally {
-            server.stop()
+        withServer(FakeTv(), clock = { now }) { server, base ->
+            server.openPairing()
+            now += SyncProtocol.PAIRING_WINDOW_MS + 1
+            assertTrue(assertFailsWith<SyncException> { client.pair(base, server.code, "x") }.message!!.contains("closed"))
         }
+    }
+
+    @Test fun verifiedEncryptedPush() {
+        val tv = FakeTv()
+        withServer(tv) { server, base ->
+            server.openPairing()
+            val p = client.pair(base, server.code, "Pixel 8")
+            val creds = TvCredentials(p.tvId, p.phoneId, p.secret)
+            val result = client.push(base, creds, SourcesBundle(addons = listOf(BundleAddon("https://x/manifest.json"))))
+            assertEquals("+1 addons", result.summary)
+            assertEquals("Pixel 8", tv.applied!!.from)
+            // Wrong secret → refused, nothing applied.
+            tv.applied = null
+            assertFailsWith<SyncException> { client.push(base, creds.copy(secret = "00".repeat(32)), SourcesBundle()) }
+            assertNull(tv.applied)
+        }
+    }
+
+    @Test fun neverSendsToAnImpostor() {
+        val real = FakeTv("tv-real")
+        val creds = withServer(real) { server, base ->
+            server.openPairing()
+            client.pair(base, server.code, "Pixel 8").let { TvCredentials(it.tvId, it.phoneId, it.secret) }
+        }
+        // Another Reel TV (or anything claiming the name) at the remembered address.
+        val impostor = FakeTv("tv-real") // even copying the TV's id doesn't help: it can't answer the challenge
+        withServer(impostor) { _, base ->
+            val e = assertFailsWith<SyncException> { client.push(base, creds, SourcesBundle(addons = listOf(BundleAddon("https://secret-key/manifest.json")))) }
+            assertTrue(e.needsPairing || e.message!!.contains("isn't your paired TV"))
+            assertNull(impostor.applied)
+        }
+    }
+
+    @Test fun cryptoRoundTripAndTamper() {
+        val secret = SyncCrypto.randomHex(32)
+        val box = SyncCrypto.encrypt(secret, "hello".toByteArray(), "n1")
+        assertEquals("hello", SyncCrypto.decrypt(secret, box, "n1").decodeToString())
+        assertFailsWith<Exception> { SyncCrypto.decrypt(secret, box, "n2") }
+        assertFailsWith<Exception> { SyncCrypto.decrypt(SyncCrypto.randomHex(32), box, "n1") }
     }
 }
