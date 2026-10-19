@@ -57,7 +57,11 @@ import com.kirtanya.reel.data.SourceSetupException
 import com.kirtanya.reel.ui.common.AddSourceLinkDialog
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.GlassIconButton
+import com.kirtanya.reel.ui.common.EmptyState
 import com.kirtanya.reel.ui.common.Pill
+import com.kirtanya.reel.ui.common.ReelCard
+import com.kirtanya.reel.ui.common.TopFade
+import com.kirtanya.reel.ui.phone.SearchField
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RemoteImage
 import com.kirtanya.reel.ui.common.RequestFocusOnce
@@ -95,7 +99,7 @@ fun AddonStoreScreen(isTv: Boolean, onClose: () -> Unit) {
     val results = remember(store.addons, query, filter) { AddonCatalog.search(store.addons, query, filter) }
     val hidden = remember(store.addons) { store.addons.count { !it.usable } }
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
         Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
             LazyColumn(
@@ -112,18 +116,7 @@ fun AddonStoreScreen(isTv: Boolean, onClose: () -> Unit) {
                         GlassIconButton(Icons.Rounded.Close, "Close", onClose)
                     }
                 }
-                item {
-                    OutlinedTextField(
-                        query, { query = it }, Modifier.fillMaxWidth().widthIn(max = 860.dp).focusRequester(searchFocus), singleLine = true,
-                        shape = RoundedCornerShape(Tokens.Radius.pill),
-                        leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Tokens.Colors.textSecondary) },
-                        placeholder = { Text("Search addons") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Tokens.Colors.surface2, unfocusedContainerColor = Tokens.Colors.surface2,
-                            focusedBorderColor = Tokens.Colors.accentBright, unfocusedBorderColor = Tokens.Colors.hairlineStrong,
-                        ),
-                    )
-                }
+                item { SearchField(query, { query = it }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus)) }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
                         StoreFilter.entries.forEach { f ->
@@ -134,6 +127,11 @@ fun AddonStoreScreen(isTv: Boolean, onClose: () -> Unit) {
                 item {
                     when {
                         loading && store.addons.isEmpty() -> CircularProgressIndicator(color = Tokens.Colors.accent)
+                        results.isEmpty() -> EmptyState(
+                            Icons.Rounded.Search,
+                            if (store.addons.isEmpty()) "Couldn't load the store" else "No addons match",
+                            if (store.addons.isEmpty()) "Check your connection and tap Refresh below." else "Try another word or filter.",
+                        )
                         else -> Text(
                             buildString {
                                 append("${results.size} addons")
@@ -186,6 +184,7 @@ fun AddonStoreScreen(isTv: Boolean, onClose: () -> Unit) {
                     }
                 }
             }
+            if (!isTv) TopFade()
             // Same "Add this?" check as Install links: shows what it is, installs exactly that.
             adding?.let { link -> key(link) { AddSourceLinkDialog(link, isTv = isTv, onDone = { adding = null }) } }
         }
@@ -194,11 +193,8 @@ fun AddonStoreScreen(isTv: Boolean, onClose: () -> Unit) {
 
 @Composable
 private fun StoreRow(addon: StoreAddon, installed: Boolean, isTv: Boolean, onAdd: () -> Unit, onSetUp: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().widthIn(max = 860.dp).clip(RoundedCornerShape(Tokens.Radius.m)).background(Tokens.Colors.surface1).padding(Tokens.Space.m),
-        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-        verticalAlignment = Alignment.Top,
-    ) {
+    ReelCard(Modifier.fillMaxWidth().widthIn(max = 860.dp), padding = Tokens.Space.m) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.Top) {
         RemoteImage(addon.logo, Modifier.size(48.dp).clip(RoundedCornerShape(Tokens.Radius.s)))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
             Text(addon.name, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -212,9 +208,10 @@ private fun StoreRow(addon: StoreAddon, installed: Boolean, isTv: Boolean, onAdd
                 when {
                     installed -> Pill("Added", accent = true)
                     addon.needsSetup -> ReelButton(if (isTv) "Set up on phone" else "Set up", onSetUp, kind = ButtonKind.Secondary, icon = Icons.Rounded.Settings)
-                    else -> ReelButton("Add", onAdd, kind = ButtonKind.Primary, icon = Icons.Rounded.Add)
+                    else -> ReelButton("Add", onAdd, kind = ButtonKind.Secondary, icon = Icons.Rounded.Add)
                 }
             }
         }
+    }
     }
 }
