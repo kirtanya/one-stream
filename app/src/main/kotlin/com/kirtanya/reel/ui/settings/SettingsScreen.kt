@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
@@ -85,6 +86,8 @@ fun SettingsScreen(isTv: Boolean) {
     var message by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableLongStateOf(0L) }
+    var showStore by remember { mutableStateOf(false) }
+    if (showStore) com.kirtanya.reel.ui.store.AddonStoreScreen(isTv) { showStore = false }
     LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { app.engine.cacheBytes() } }
 
     fun run(action: suspend () -> String) {
@@ -156,6 +159,7 @@ fun SettingsScreen(isTv: Boolean) {
 
             item {
                 Group(Icons.Rounded.Hub, "Addons", cardWidth, "Stremio addons answer “where can I play this?”. Tap Install on an addon's website, or paste its link (manifest.json or stremio://).") {
+                    ReelButton("Browse addons", { showStore = true }, kind = ButtonKind.Primary, icon = Icons.Rounded.Storefront)
                     if (state.addons.isEmpty()) Text("No addons yet.", style = Tokens.Type.body, color = Tokens.Colors.textTertiary)
                     state.addons.forEach { addon ->
                         val m = runCatching { addon.manifest }.getOrNull()

@@ -35,6 +35,7 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val pluginRuntime by lazy { PluginRuntime(fetcher) }
     val sources by lazy { SourcesStore(this, fetcher, pluginRuntime) }
     val aggregator by lazy { SourceAggregator() }
+    val addonStore by lazy { com.kirtanya.reel.data.AddonStore(this, fetcher) }
     val history by lazy { WatchHistoryStore(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
 
