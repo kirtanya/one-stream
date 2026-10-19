@@ -143,7 +143,7 @@ private fun FloatingBar(selected: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Uni
                 .clip(shape)
                 .background(Tokens.Colors.surface1.copy(alpha = 0.94f))
                 .border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape)
-                // A faint violet wash along the top edge, like the reference.
+                // A faint accent wash along the top edge, like the reference.
                 .drawBehind {
                     drawRect(Brush.verticalGradient(0f to Tokens.Colors.accent.copy(alpha = 0.10f), 0.6f to Color.Transparent))
                 },
@@ -175,7 +175,7 @@ private fun BarItem(tab: Tab, filled: ImageVector, outlined: ImageVector, select
     }
 }
 
-/** Centre action: gradient pill sitting in its own violet glow. */
+/** Centre action: gradient pill sitting in its own accent glow. */
 @Composable
 private fun AddButton(onAdd: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)

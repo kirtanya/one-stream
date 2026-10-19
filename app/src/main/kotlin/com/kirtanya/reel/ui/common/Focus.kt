@@ -38,7 +38,7 @@ fun Modifier.focusCard(
     val focused by interaction.collectIsFocusedAsState()
     val s by animateFloatAsState(if (focused) scale else 1f, tween(Tokens.Motion.focusMs), label = "cardFocus")
     if (onFocus != null) androidx.compose.runtime.LaunchedEffect(focused) { if (focused) onFocus() }
-    // Afterglow focus: lift, accent ring and a violet glow (the remote's "you are here").
+    // Afterglow focus: lift, accent ring and an accent glow (the remote's "you are here").
     this
         .graphicsLayer { scaleX = s; scaleY = s }
         .then(if (focused) Modifier.shadow(24.dp, shape, ambientColor = Tokens.Colors.accent, spotColor = Tokens.Colors.accent) else Modifier)

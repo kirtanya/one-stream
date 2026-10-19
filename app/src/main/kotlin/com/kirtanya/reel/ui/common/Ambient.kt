@@ -33,6 +33,7 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
+import com.kirtanya.reel.ui.theme.MediaAccent
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,20 +43,21 @@ private val ambientCache = LruCache<String, Int>(200)
 
 /**
  * The colour a title "lights the room" with: the poster's most vivid colour, lifted so it reads
- * as light on the night canvas. Brand violet until (or unless) an image is available.
- * Animated, so the light drifts from one title to the next.
+ * as light on the night canvas. The app accent until (or unless) an image gives one.
+ * Animated, so the light drifts from one title to the next. While composed it also sets the
+ * app's accent to this colour ([MediaAccent]), so buttons, rings and progress match the title.
  */
 @Composable
 fun rememberAmbientColor(imageUrl: String?): State<Color> {
     val context = LocalContext.current
-    var target by remember { mutableStateOf(imageUrl?.let { ambientCache.get(it) }?.let(::Color) ?: Tokens.Colors.accent) }
+    var media by remember { mutableStateOf(imageUrl?.let { ambientCache.get(it) }?.takeIf { it != NO_COLOUR }?.let(::Color)) }
     LaunchedEffect(imageUrl) {
         if (imageUrl == null) {
-            target = Tokens.Colors.accent
+            media = null
             return@LaunchedEffect
         }
         ambientCache.get(imageUrl)?.let {
-            target = Color(it)
+            media = if (it == NO_COLOUR) null else Color(it)
             return@LaunchedEffect
         }
         val color = withContext(Dispatchers.Default) {
@@ -65,19 +67,23 @@ fun rememberAmbientColor(imageUrl: String?): State<Color> {
                 result?.image?.toBitmap()?.let(::lightFrom)
             }.getOrNull()
         }
-        if (color != null) {
-            ambientCache.put(imageUrl, color.toArgb())
-            target = color
-        }
+        // A grey poster has no colour to give: remember that, and keep the user's accent.
+        ambientCache.put(imageUrl, color?.toArgb() ?: NO_COLOUR)
+        media = color
     }
-    return animateColorAsState(target, tween(Tokens.Motion.ambientMs), label = "ambient")
+    // The whole app takes this title's colour while the screen is showing (Settings → Appearance).
+    MediaAccent(media)
+    return animateColorAsState(media ?: Tokens.Colors.accent, tween(Tokens.Motion.ambientMs), label = "ambient")
 }
+
+private const val NO_COLOUR = 0
 
 private fun lightFrom(bitmap: Bitmap): Color? {
     val p = Palette.from(bitmap).maximumColorCount(16).generate()
     val swatch = p.vibrantSwatch ?: p.lightVibrantSwatch ?: p.darkVibrantSwatch ?: p.dominantSwatch ?: return null
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(swatch.rgb, hsv)
+    if (hsv[1] < 0.15f) return null
     // Light, not paint: keep the hue, make it saturated and bright enough to glow on near-black.
     hsv[1] = hsv[1].coerceIn(0.45f, 0.85f)
     hsv[2] = hsv[2].coerceIn(0.75f, 1f)

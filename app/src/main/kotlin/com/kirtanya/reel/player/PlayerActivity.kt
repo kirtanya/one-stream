@@ -630,7 +630,7 @@ class PlayerActivity : ComponentActivity() {
             setShowSubtitleButton(true)
         }
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        // Violet seek bar to match the rest of Reel.
+        // Accent seek bar: the title's colour, like the rest of Reel.
         playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
             setPlayedColor(accent)
             setScrubberColor(Tokens.Colors.accentBright.toArgb())

@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -47,8 +46,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.store.AddonCatalog
 import com.kirtanya.reel.core.store.StoreAddon
@@ -60,12 +57,13 @@ import com.kirtanya.reel.ui.common.GlassIconButton
 import com.kirtanya.reel.ui.common.EmptyState
 import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.ReelCard
-import com.kirtanya.reel.ui.common.TopFade
 import com.kirtanya.reel.ui.phone.SearchField
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RemoteImage
 import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.settings.AddField
+import com.kirtanya.reel.ui.settings.PageList
+import com.kirtanya.reel.ui.settings.PageTitle
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.launch
 
@@ -75,7 +73,7 @@ import kotlinx.coroutines.launch
  * choices open their setup page; on a TV, set them up on the phone and sync.
  */
 @Composable
-fun AddonStoreScreen(isTv: Boolean, onClose: () -> Unit) {
+fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
     val app = ReelApp.get(context)
     val store by app.addonStore.state.collectAsState()
@@ -99,95 +97,79 @@ fun AddonStoreScreen(isTv: Boolean, onClose: () -> Unit) {
     val results = remember(store.addons, query, filter) { AddonCatalog.search(store.addons, query, filter) }
     val hidden = remember(store.addons) { store.addons.count { !it.usable } }
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
-        Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.tvSafeV else Tokens.Space.l, bottom = Tokens.Space.xxl),
-                verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-            ) {
-                item {
-                    Row(Modifier.then(if (isTv) Modifier else Modifier.statusBarsPadding()), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Addon store", style = Tokens.Type.display, color = Tokens.Colors.text)
-                            Text("Addons from Stremio's official catalog and any catalogs you add.", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
-                        }
-                        GlassIconButton(Icons.Rounded.Close, "Close", onClose)
-                    }
-                }
-                item { SearchField(query, { query = it }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus)) }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
-                        StoreFilter.entries.forEach { f ->
-                            ReelButton(f.label, { filter = f }, kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost)
-                        }
-                    }
-                }
-                item {
-                    when {
-                        loading && store.addons.isEmpty() -> CircularProgressIndicator(color = Tokens.Colors.accent)
-                        results.isEmpty() -> EmptyState(
-                            Icons.Rounded.Search,
-                            if (store.addons.isEmpty()) "Couldn't load the store" else "No addons match",
-                            if (store.addons.isEmpty()) "Check your connection and tap Refresh below." else "Try another word or filter.",
-                        )
-                        else -> Text(
-                            buildString {
-                                append("${results.size} addons")
-                                if (hidden > 0) append(" · $hidden catalog-only addons hidden (Reel uses streams and subtitles)")
-                                if (store.failed.isNotEmpty()) append(" · couldn't load: ${store.failed.joinToString()}")
-                            },
-                            style = Tokens.Type.caption, color = Tokens.Colors.textTertiary,
-                        )
-                    }
-                }
-                items(results, key = { it.manifestUrl }) { addon ->
-                    StoreRow(
-                        addon, installed = addon.id in installed, isTv = isTv,
-                        onAdd = { adding = addon.manifestUrl },
-                        onSetUp = {
-                            try {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(addon.configureUrl)))
-                            } catch (e: ActivityNotFoundException) {
-                                note = "No browser here. Set ${addon.name} up on your phone; it will sync to this TV."
-                            }
-                        },
-                    )
-                }
-                item {
-                    Column(Modifier.widthIn(max = 860.dp).padding(top = Tokens.Space.xl), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                        Text("Catalogs", style = Tokens.Type.heading, color = Tokens.Colors.text)
-                        Text(
-                            "Add another addon catalog by its link. You choose what to add — streaming content you don't have rights to is illegal in most countries.",
-                            style = Tokens.Type.caption, color = Tokens.Colors.textTertiary,
-                        )
-                        store.catalogs.forEach { c ->
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                                Text(c.name, style = Tokens.Type.label, color = Tokens.Colors.text, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (c.builtIn) Pill("Built in") else GlassIconButton(Icons.Rounded.Delete, "Remove ${c.name}", { app.addonStore.removeCatalog(c.url) })
-                            }
-                        }
-                        AddField(catalogUrl, { catalogUrl = it }, "Add catalog", busy, placeholder = "https://…") {
-                            busy = true
-                            app.appScope.launch {
-                                note = try {
-                                    app.addonStore.addCatalog(catalogUrl).also { catalogUrl = "" }
-                                } catch (e: SourceSetupException) {
-                                    e.message
-                                }
-                                busy = false
-                            }
-                        }
-                        ReelButton("Refresh", { app.appScope.launch { app.addonStore.refresh(force = true) } }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
-                        note?.let { Text(it, style = Tokens.Type.label, color = Tokens.Colors.accentBright) }
+    Box(Modifier.fillMaxSize()) {
+        PageList(isTv) {
+            item { PageTitle("Addon store", "Addons from Stremio's official catalog and any catalogs you add.", isTv, onBack) }
+            item { SearchField(query, { query = it }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus)) }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
+                    StoreFilter.entries.forEach { f ->
+                        ReelButton(f.label, { filter = f }, kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost)
                     }
                 }
             }
-            if (!isTv) TopFade()
-            // Same "Add this?" check as Install links: shows what it is, installs exactly that.
-            adding?.let { link -> key(link) { AddSourceLinkDialog(link, isTv = isTv, onDone = { adding = null }) } }
+            item {
+                when {
+                    loading && store.addons.isEmpty() -> CircularProgressIndicator(color = Tokens.Colors.accent)
+                    results.isEmpty() -> EmptyState(
+                        Icons.Rounded.Search,
+                        if (store.addons.isEmpty()) "Couldn't load the store" else "No addons match",
+                        if (store.addons.isEmpty()) "Check your connection and tap Refresh below." else "Try another word or filter.",
+                    )
+                    else -> Text(
+                        buildString {
+                            append("${results.size} addons")
+                            if (hidden > 0) append(" · $hidden catalog-only addons hidden (Reel uses streams and subtitles)")
+                            if (store.failed.isNotEmpty()) append(" · couldn't load: ${store.failed.joinToString()}")
+                        },
+                        style = Tokens.Type.caption, color = Tokens.Colors.textTertiary,
+                    )
+                }
+            }
+            items(results, key = { it.manifestUrl }) { addon ->
+                StoreRow(
+                    addon, installed = addon.id in installed, isTv = isTv,
+                    onAdd = { adding = addon.manifestUrl },
+                    onSetUp = {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(addon.configureUrl)))
+                        } catch (e: ActivityNotFoundException) {
+                            note = "No browser here. Set ${addon.name} up on your phone; it will sync to this TV."
+                        }
+                    },
+                )
+            }
+            item {
+                Column(Modifier.widthIn(max = 860.dp).padding(top = Tokens.Space.xl), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    Text("Catalogs", style = Tokens.Type.heading, color = Tokens.Colors.text)
+                    Text(
+                        "Add another addon catalog by its link. You choose what to add — streaming content you don't have rights to is illegal in most countries.",
+                        style = Tokens.Type.caption, color = Tokens.Colors.textTertiary,
+                    )
+                    store.catalogs.forEach { c ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                            Text(c.name, style = Tokens.Type.label, color = Tokens.Colors.text, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (c.builtIn) Pill("Built in") else GlassIconButton(Icons.Rounded.Delete, "Remove ${c.name}", { app.addonStore.removeCatalog(c.url) })
+                        }
+                    }
+                    AddField(catalogUrl, { catalogUrl = it }, "Add catalog", busy, placeholder = "https://…") {
+                        busy = true
+                        app.appScope.launch {
+                            note = try {
+                                app.addonStore.addCatalog(catalogUrl).also { catalogUrl = "" }
+                            } catch (e: SourceSetupException) {
+                                e.message
+                            }
+                            busy = false
+                        }
+                    }
+                    ReelButton("Refresh", { app.appScope.launch { app.addonStore.refresh(force = true) } }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
+                    note?.let { Text(it, style = Tokens.Type.label, color = Tokens.Colors.accentBright) }
+                }
+            }
         }
+        // Same "Add this?" check as Install links: shows what it is, installs exactly that.
+        adding?.let { link -> key(link) { AddSourceLinkDialog(link, isTv = isTv, onDone = { adding = null }) } }
     }
 }
 

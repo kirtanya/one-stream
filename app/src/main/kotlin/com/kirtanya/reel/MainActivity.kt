@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         EngineService.start(this)
+        com.kirtanya.reel.ui.theme.AccentState.init(this)
         // `adb shell am start -n com.kirtanya.reel/.MainActivity --ez forceTv true` previews the TV UI on a phone.
         val forceTv = intent.getBooleanExtra(EXTRA_FORCE_TV, false)
         val isTv = forceTv || ReelApp.get(this).isTv

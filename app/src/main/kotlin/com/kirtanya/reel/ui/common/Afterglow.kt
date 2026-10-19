@@ -97,7 +97,7 @@ fun GlassIconButton(icon: ImageVector, contentDescription: String?, onClick: () 
 }
 
 /**
- * Circle image with the violet gradient ring (cast, providers, quick picks), label below.
+ * Circle image with the accent gradient ring (cast, providers, quick picks), label below.
  * [placeholder] shows when there's no image (e.g. initials).
  */
 @Composable

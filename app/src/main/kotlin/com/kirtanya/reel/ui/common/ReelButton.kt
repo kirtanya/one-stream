@@ -31,7 +31,7 @@ import com.kirtanya.reel.ui.theme.Tokens
 
 /**
  * Afterglow buttons:
- * - [ButtonKind.Primary] — gradient pill with a violet glow (one per screen: Play, Resume, Add).
+ * - [ButtonKind.Primary] — gradient pill with an accent glow (one per screen: Play, Resume, Add).
  * - [ButtonKind.Secondary] — tonal: surface2 with accent-bright text ("Follow" in the reference).
  * - [ButtonKind.Ghost] — hairline pill, white text.
  * - [ButtonKind.Glass] — for use on images: translucent with hairline.
@@ -61,7 +61,7 @@ fun ReelButton(
     Row(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.4f }
-            // The violet glow behind primary actions (stronger when focused on TV).
+            // The accent glow behind primary actions (stronger when focused on TV).
             .then(if (glow) Modifier.shadow(if (focused) 28.dp else 16.dp, shape, ambientColor = Tokens.Colors.accent, spotColor = Tokens.Colors.accent) else Modifier)
             .clip(shape)
             .then(

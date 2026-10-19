@@ -196,7 +196,7 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
     val done = t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING
     ReelCard(Modifier.widthIn(max = 980.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
-            // Tile: initial on a violet gradient (torrents have no artwork).
+            // Tile: initial on the accent gradient (torrents have no artwork).
             Box(
                 Modifier.size(56.dp).clip(RoundedCornerShape(Tokens.Radius.m))
                     .background(Brush.linearGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.surface3)))

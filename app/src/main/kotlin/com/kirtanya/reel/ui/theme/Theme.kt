@@ -4,18 +4,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 
 /** Material 3 mapped onto Afterglow, so stock components (fields, switches, sheets) match. */
 @Composable
 fun ReelTheme(content: @Composable () -> Unit) {
     val c = Tokens.Colors
+    // Stock components follow where the live accent is heading (not every animation frame).
+    val target = AccentState.target
+    val a = remember(target) { AccentTones.from(target) }
+    AccentHost()
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = c.accent,
+            primary = a.base,
             onPrimary = c.onAccent,
-            primaryContainer = c.accentDeep,
+            primaryContainer = a.deep,
             onPrimaryContainer = c.text,
-            secondary = c.accentBright,
+            secondary = a.bright,
             background = c.canvas,
             onBackground = c.text,
             surface = c.surface1,

@@ -29,13 +29,14 @@ object Tokens {
         val textSecondary = Color(0xFFA1A1AA)
         val textTertiary = Color(0xFF6B6B75)
 
-        // The one accent: violet light.
-        val accent = Color(0xFF8B5CF6)
-        val accentBright = Color(0xFFA78BFA)
-        val accentDeep = Color(0xFF6D28D9)
+        // The one accent: live (AccentState). Blue by default or the user's pick; with "match what's
+        // on screen", the colour of the poster in focus.
+        val accent: Color get() = AccentState.tones.base
+        val accentBright: Color get() = AccentState.tones.bright
+        val accentDeep: Color get() = AccentState.tones.deep
         val onAccent = Color(0xFFFFFFFF)
-        val ringStart = Color(0xFFC4B5FD)
-        val ringEnd = Color(0xFF7C3AED)
+        val ringStart: Color get() = AccentState.tones.ringStart
+        val ringEnd: Color get() = AccentState.tones.ringEnd
 
         val good = Color(0xFF4ADE80)
         val warn = Color(0xFFFBBF24)
@@ -48,14 +49,14 @@ object Tokens {
         val surfaceHigh = surface2
         val outline = hairlineStrong
         val textMuted = textSecondary
-        val focus = accentBright
+        val focus: Color get() = accentBright
         val onFocus = text
     }
 
     object Gradients {
-        val brand = Brush.linearGradient(listOf(Colors.accentBright, Colors.accentDeep))
-        val ring = Brush.linearGradient(listOf(Colors.ringStart, Colors.ringEnd))
-        val progress = Brush.horizontalGradient(listOf(Colors.accentDeep, Colors.accentBright))
+        val brand: Brush get() = Brush.linearGradient(listOf(Colors.accentBright, Colors.accent, Colors.accentDeep))
+        val ring: Brush get() = Brush.linearGradient(listOf(Colors.ringStart, Colors.ringEnd))
+        val progress: Brush get() = Brush.horizontalGradient(listOf(Colors.accentDeep, Colors.accentBright))
     }
 
     object Space {
