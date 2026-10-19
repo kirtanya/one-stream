@@ -96,6 +96,9 @@ fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: D
             }
         }
 
+        // Tab screens scroll under the status bar: a light canvas fade keeps it readable.
+        if (nav.stack.isEmpty()) com.kirtanya.reel.ui.common.TopFade(extra = 8.dp)
+
         AnimatedVisibility(
             visible = nav.stack.isEmpty(),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -168,7 +171,7 @@ private fun BarItem(tab: Tab, filled: ImageVector, outlined: ImageVector, select
             Icon(if (on) filled else outlined, contentDescription = tab.label, tint = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, modifier = Modifier.size(24.dp))
             if (badge) Box(Modifier.align(Alignment.TopEnd).size(8.dp).clip(CircleShape).background(Tokens.Colors.accentBright))
         }
-        Text(tab.label, style = Tokens.Type.caption, color = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, maxLines = 1, softWrap = false)
+        Text(tab.label, style = Tokens.Type.caption.copy(fontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp)), color = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, maxLines = 1, softWrap = false)
     }
 }
 

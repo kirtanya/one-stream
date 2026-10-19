@@ -83,11 +83,11 @@ fun ReelButton(
             )
             .clickable(interactionSource = interaction, indication = ripple(), enabled = enabled, onClick = onClick)
             .heightIn(min = if (large) 56.dp else Tokens.Size.touchTarget)
-            .padding(horizontal = if (text.isEmpty()) Tokens.Space.m else if (large) Tokens.Space.xl else Tokens.Space.l, vertical = Tokens.Space.s),
+            .padding(horizontal = if (text.isEmpty()) Tokens.Space.m else Tokens.Space.l, vertical = Tokens.Space.s),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s, Alignment.CenterHorizontally),
     ) {
         if (icon != null) Icon(icon, contentDescription = text.ifEmpty { null }, tint = fg, modifier = Modifier.size(if (large) 24.dp else 20.dp))
-        if (text.isNotEmpty()) Text(text, style = if (large) Tokens.Type.heading else Tokens.Type.label, color = fg, maxLines = 1)
+        if (text.isNotEmpty()) Text(text, style = if (large) Tokens.Type.heading.copy(fontSize = androidx.compose.ui.unit.TextUnit(16f, androidx.compose.ui.unit.TextUnitType.Sp)) else Tokens.Type.label, color = fg, maxLines = 1, softWrap = false)
     }
 }

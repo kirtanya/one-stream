@@ -53,11 +53,11 @@ fun ReelCard(modifier: Modifier = Modifier, padding: Dp = Tokens.Space.l, conten
  * slides under it instead of colliding with it.
  */
 @Composable
-fun TopFade(modifier: Modifier = Modifier) {
+fun TopFade(modifier: Modifier = Modifier, extra: Dp = 80.dp) {
     Box(
         modifier
             .fillMaxWidth()
-            .windowInsetsTopHeight(WindowInsets.statusBars.add(WindowInsets(top = 80.dp)))
+            .windowInsetsTopHeight(WindowInsets.statusBars.add(WindowInsets(top = extra)))
             .background(androidx.compose.ui.graphics.Brush.verticalGradient(0f to Tokens.Colors.canvas.copy(alpha = 0.92f), 0.6f to Tokens.Colors.canvas.copy(alpha = 0.6f), 1f to Color.Transparent)),
     )
 }

@@ -97,7 +97,7 @@ fun PhoneSearch(onOpen: (TitleSummary) -> Unit) {
                 }
             }
             SearchResults(
-                debounced, kind, GridCells.Adaptive(104.dp), Tokens.Space.phoneGutter, Tokens.Space.bottomBarClearance + Tokens.Space.xl,
+                debounced, kind, GridCells.Fixed(3), Tokens.Space.phoneGutter, Tokens.Space.bottomBarClearance + Tokens.Space.xl,
                 onOpen = { item ->
                     if (debounced.isNotEmpty()) recents = RecentSearches.add(context, debounced)
                     onOpen(item)

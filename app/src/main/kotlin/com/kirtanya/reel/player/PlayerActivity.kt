@@ -632,12 +632,29 @@ class PlayerActivity : ComponentActivity() {
             setUnplayedColor(0x26FFFFFF)
         }
 
+        playerView.findViewById<android.widget.ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.indeterminateTintList =
+            android.content.res.ColorStateList.valueOf(accent)
+
+        // Title strip: shows with the controls (what's playing, e.g. "Show · S1 E3").
+        val titleStrip = text(18f, Color.WHITE, medium = true).apply {
+            text = playback.displayTitle
+            setPadding(dp(24), dp(28), dp(24), dp(40))
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xB3000000.toInt(), Color.TRANSPARENT))
+            visibility = View.GONE
+        }
+        root.addView(titleStrip, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> titleStrip.visibility = v })
+
         status = text(15f, Color.WHITE, medium = true).apply {
             setPadding(dp(18), dp(10), dp(18), dp(10))
             background = glass(radius = 999)
+            // Hidden until there's something to say (it showed as an empty pill on direct links).
+            visibility = View.GONE
         }
         // Top-left, so it never covers the seek bar or controls.
-        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(24), dp(32), dp(24), 0) })
+        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { setMargins(dp(24), dp(84), dp(24), 0) })
 
         resumeChip = button("") {
             player?.seekTo(0)
