@@ -2,6 +2,7 @@ package com.kirtanya.reel.ui.common
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,11 +10,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -21,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -28,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.playback.ContinueItem
 import com.kirtanya.reel.core.playback.ContinueWatching
@@ -85,8 +93,9 @@ fun ContinueRow(
     if (items.isEmpty()) return
     val context = LocalContext.current
     val history = ReelApp.get(context).history
+    val shape = RoundedCornerShape(Tokens.Radius.media)
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        Text("Continue watching", style = Tokens.Type.heading, color = Tokens.Colors.text, modifier = Modifier.padding(horizontal = sidePadding))
+        SectionHeader("Continue watching", Modifier.padding(horizontal = sidePadding))
         LazyRow(
             state = listState,
             contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
@@ -101,31 +110,33 @@ fun ContinueRow(
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
                             .focusCard(
+                                shape = shape,
                                 onFocus = onFocus?.let { { it(item) } },
                                 onLongClick = {
                                     history.removeTitle(p.titleKey)
                                     Toast.makeText(context, "Removed ${p.title} from Continue watching", Toast.LENGTH_SHORT).show()
                                 },
                                 onClick = { openContinue(context, item, onOpenDest) },
-                            ),
+                            )
+                            .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
                     ) {
                         RemoteImage(TmdbImages.still(p.stillPath, "w780") ?: TmdbImages.backdrop(p.backdropPath, "w780"), Modifier.fillMaxSize())
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Tokens.Colors.scrim)))
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Tokens.Colors.scrim)))
+                        // Play affordance: glass circle, bottom-left.
+                        Box(
+                            Modifier.align(Alignment.BottomStart).padding(Tokens.Space.m).size(36.dp).clip(CircleShape)
+                                .background(Tokens.Colors.glass).border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.Rounded.PlayArrow, null, tint = Tokens.Colors.text, modifier = Modifier.size(20.dp)) }
+                        if (item is ContinueItem.UpNext) {
+                            Pill("Up next · ${item.next.label}", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), accent = true)
+                        }
                         if (item is ContinueItem.Resume) {
-                            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(Tokens.Size.progressBar).background(Tokens.Colors.surfaceHigh))
-                            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(item.entry.progress).height(Tokens.Size.progressBar).background(Tokens.Colors.accent))
-                        } else {
-                            Text(
-                                "Up next",
-                                style = Tokens.Type.caption,
-                                color = Tokens.Colors.onAccent,
-                                modifier = Modifier.align(Alignment.TopStart).padding(Tokens.Space.s).roundedClip(Tokens.Radius.s)
-                                    .background(Tokens.Colors.accent).padding(horizontal = Tokens.Space.s, vertical = Tokens.Space.xxs),
-                            )
+                            GradientProgress(item.entry.progress, Modifier.align(Alignment.BottomCenter).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs), height = 3.dp, track = Color.White.copy(alpha = 0.18f))
                         }
                     }
                     Text(continueTitle(item), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(continueDetail(item), style = Tokens.Type.caption, color = Tokens.Colors.textMuted, maxLines = 1)
+                    Text(continueDetail(item), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1)
                 }
             }
         }

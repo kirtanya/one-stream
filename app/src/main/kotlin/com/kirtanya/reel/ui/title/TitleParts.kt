@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,4 +98,24 @@ fun EpisodeCard(episode: Episode, width: Dp, onClick: () -> Unit, modifier: Modi
         Text("${episode.number}. ${episode.name}", style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         episode.runtimeMin?.let { Text("${it}m", style = Tokens.Type.caption, color = Tokens.Colors.textMuted) }
     }
+}
+
+/** This show's watched episodes: episode → its history entry (progress / finished). */
+@Composable
+fun rememberEpisodeProgress(tvId: Int): Map<com.kirtanya.reel.core.playback.EpisodeNumber, com.kirtanya.reel.core.playback.WatchEntry> {
+    val history = ReelApp.get(LocalContext.current).history
+    val entries by history.entries.collectAsState()
+    return remember(entries, tvId) {
+        entries.filter { it.playback.titleKey == "tv:$tvId" && it.playback.episode != null }
+            .groupBy { it.playback.episode!! }
+            .mapValues { (_, list) -> list.maxBy { it.updatedAt } }
+    }
+}
+
+/** Share a title as its TMDB page. */
+fun shareTitle(context: android.content.Context, d: TitleDetails) {
+    val url = "https://www.themoviedb.org/${d.summary.ref.type.path}/${d.summary.ref.id}"
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+        .putExtra(android.content.Intent.EXTRA_TEXT, "${d.summary.title} — $url")
+    context.startActivity(android.content.Intent.createChooser(send, "Share ${d.summary.title}"))
 }

@@ -49,6 +49,15 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
         ).filter { it.items.isNotEmpty() }
     }
 
+    /** What's streaming on a service in India: films and shows, interleaved by popularity. */
+    suspend fun onService(providerId: Int): List<TitleSummary> = coroutineScope {
+        val movies = async { list(TmdbPaths.onService(MediaType.MOVIE, providerId, region), MediaType.MOVIE) }
+        val shows = async { list(TmdbPaths.onService(MediaType.TV, providerId, region), MediaType.TV) }
+        val m = movies.await()
+        val t = shows.await()
+        (0 until maxOf(m.size, t.size)).flatMap { i -> listOfNotNull(t.getOrNull(i), m.getOrNull(i)) }
+    }
+
     suspend fun search(query: String): List<TitleSummary> =
         if (query.isBlank()) emptyList() else list(TmdbPaths.search(query))
 

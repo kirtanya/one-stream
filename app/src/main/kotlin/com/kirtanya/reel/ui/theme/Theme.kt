@@ -1,23 +1,44 @@
 package com.kirtanya.reel.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
+/** Material 3 mapped onto Afterglow, so stock components (fields, switches, sheets) match. */
 @Composable
 fun ReelTheme(content: @Composable () -> Unit) {
+    val c = Tokens.Colors
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = Tokens.Colors.accent,
-            onPrimary = Tokens.Colors.onAccent,
-            background = Tokens.Colors.bg,
-            onBackground = Tokens.Colors.text,
-            surface = Tokens.Colors.surface,
-            onSurface = Tokens.Colors.text,
-            surfaceVariant = Tokens.Colors.surfaceHigh,
-            onSurfaceVariant = Tokens.Colors.textMuted,
-            outline = Tokens.Colors.outline,
-            error = Tokens.Colors.danger,
+            primary = c.accent,
+            onPrimary = c.onAccent,
+            primaryContainer = c.accentDeep,
+            onPrimaryContainer = c.text,
+            secondary = c.accentBright,
+            background = c.canvas,
+            onBackground = c.text,
+            surface = c.surface1,
+            onSurface = c.text,
+            surfaceVariant = c.surface2,
+            onSurfaceVariant = c.textSecondary,
+            surfaceContainer = c.surface1,
+            surfaceContainerHigh = c.surface2,
+            surfaceContainerHighest = c.surface3,
+            surfaceContainerLow = c.surface1,
+            outline = c.hairlineStrong,
+            outlineVariant = c.hairline,
+            error = c.danger,
+        ),
+        typography = Typography(
+            bodyLarge = Tokens.Type.body,
+            bodyMedium = Tokens.Type.body,
+            bodySmall = Tokens.Type.caption,
+            labelLarge = Tokens.Type.label,
+            labelMedium = Tokens.Type.caption,
+            titleMedium = Tokens.Type.heading,
+            titleLarge = Tokens.Type.title,
+            headlineMedium = Tokens.Type.display,
         ),
         content = content,
     )

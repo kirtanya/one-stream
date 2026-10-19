@@ -1,21 +1,27 @@
 package com.kirtanya.reel.ui.tv
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,27 +34,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.kirtanya.reel.core.playback.EpisodeNumber
+import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TmdbImages
+import com.kirtanya.reel.ui.common.AmbientGlow
+import com.kirtanya.reel.ui.common.Backdrop
 import com.kirtanya.reel.ui.common.ButtonKind
+import com.kirtanya.reel.ui.common.GradientProgress
 import com.kirtanya.reel.ui.common.Load
 import com.kirtanya.reel.ui.common.LoadView
 import com.kirtanya.reel.ui.common.LoadingBox
+import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RemoteImage
 import com.kirtanya.reel.ui.common.RequestFocusOnce
-import com.kirtanya.reel.ui.title.EpisodeCard
-import com.kirtanya.reel.ui.title.ProviderChip
-import com.kirtanya.reel.ui.title.detailsMeta
+import com.kirtanya.reel.ui.common.RingAvatar
+import com.kirtanya.reel.ui.common.SectionHeader
+import com.kirtanya.reel.ui.common.focusCard
+import com.kirtanya.reel.ui.common.rememberAmbientColor
+import com.kirtanya.reel.ui.theme.Tokens
+import com.kirtanya.reel.ui.title.PlayAction
+import com.kirtanya.reel.ui.title.rememberEpisodeProgress
+import com.kirtanya.reel.ui.title.rememberPlayAction
 import com.kirtanya.reel.ui.title.rememberProviderOpener
 import com.kirtanya.reel.ui.title.rememberSeason
 import com.kirtanya.reel.ui.title.rememberTitle
-import com.kirtanya.reel.ui.theme.Tokens
+import com.kirtanya.reel.ui.title.runPlayAction
 
 @Composable
 fun TvTitle(ref: TitleRef, onPlay: (season: Int?, episode: Int?) -> Unit) {
@@ -58,76 +75,102 @@ fun TvTitle(ref: TitleRef, onPlay: (season: Int?, episode: Int?) -> Unit) {
 
 @Composable
 private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
-    var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull()?.number) }
+    val context = LocalContext.current
+    val glow by rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
+    val action = rememberPlayAction(d)
+    var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number) }
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
+    val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
     val openProvider = rememberProviderOpener(d.providers.link)
-    val firstAction = remember { FocusRequester() }
-    RequestFocusOnce(firstAction)
-    val firstSeason = d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number
+    val playFocus = remember { FocusRequester() }
+    RequestFocusOnce(playFocus)
+    val openSources: (EpisodeNumber?) -> Unit = { ep -> onPlay(ep?.season, ep?.episode) }
+    val side = Tokens.Space.tvSafeH
 
-    Box(Modifier.fillMaxSize()) {
-        RemoteImage(TmdbImages.backdrop(d.summary.backdropPath), Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Tokens.Colors.bg, 0.7f to Color.Transparent)))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.3f to Color.Transparent, 0.8f to Tokens.Colors.bg)))
+    Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
+        Backdrop(TmdbImages.backdrop(d.summary.backdropPath), Modifier.fillMaxSize(), fromLeft = true)
+        AmbientGlow(glow, height = 700.dp, strength = 0.4f)
 
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = Tokens.Space.tvSafeH, vertical = Tokens.Space.tvSafeV),
-            verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
+            contentPadding = PaddingValues(vertical = Tokens.Space.tvSafeV),
+            verticalArrangement = Arrangement.spacedBy(Tokens.Space.xl),
         ) {
-            item {
-                Column(Modifier.fillMaxWidth(0.55f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    Spacer(Modifier.height(48.dp))
-                    Text(d.summary.title, style = Tokens.Type.display, color = Tokens.Colors.text, maxLines = 2)
-                    Text(detailsMeta(d), style = Tokens.Type.label, color = Tokens.Colors.textMuted)
-                    if (d.genres.isNotEmpty()) Text(d.genres.take(3).joinToString(" · "), style = Tokens.Type.caption, color = Tokens.Colors.textMuted)
-                    Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            item(key = "hero") {
+                Column(Modifier.padding(horizontal = side).fillMaxWidth(0.55f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+                    Spacer(Modifier.height(64.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                        Pill(if (d.summary.ref.type == MediaType.TV) "Series" else "Film", onGlass = true)
+                        d.summary.year?.let { Pill(it.toString(), onGlass = true) }
+                        d.runtimeMin?.let { Pill(if (it >= 60) "${it / 60}h ${it % 60}m" else "${it}m", onGlass = true) }
+                        d.certification?.let { Pill(it, onGlass = true) }
+                        d.summary.rating?.let { Pill("★ %.1f".format(it), accent = true) }
+                    }
+                    Text(d.summary.title, style = Tokens.Type.hero, color = Tokens.Colors.text, maxLines = 2)
+                    if (d.genres.isNotEmpty()) Text(d.genres.take(3).joinToString(" · "), style = Tokens.Type.label, color = Tokens.Colors.textSecondary)
+                    Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
+                        ReelButton(action.label, { runPlayAction(context, action, openSources) }, Modifier.focusRequester(playFocus), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
+                        val ep = (action as? PlayAction.Resume)?.entry?.playback?.episode ?: (action as? PlayAction.Choose)?.episode
+                        ReelButton("All sources", { openSources(ep) }, kind = ButtonKind.Glass, icon = Icons.Rounded.Hub, large = true)
+                    }
+                    if (action is PlayAction.Resume) GradientProgress(action.entry.progress, Modifier.width(320.dp), height = 3.dp)
                 }
             }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    ReelButton(
-                        if (d.seasons.isEmpty()) "Play" else "Play S${firstSeason} E1",
-                        { if (d.seasons.isEmpty()) onPlay(null, null) else onPlay(firstSeason, 1) },
-                        kind = ButtonKind.Primary,
-                        icon = Icons.Rounded.PlayArrow,
-                        modifier = Modifier.focusRequester(firstAction),
-                    )
-                    val all = d.providers.groups.flatMap { (label, list) -> list.map { label to it } }
-                    if (all.isEmpty()) {
-                        Text("Not on any streaming service in India right now.", style = Tokens.Type.body, color = Tokens.Colors.textMuted)
-                    } else {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-                            contentPadding = PaddingValues(vertical = Tokens.Space.s),
-                        ) {
-                            itemsIndexed(all) { i, (label, p) ->
-                                ProviderChip(p, label = if (label == "Stream") p.name else "$label · ${p.name}", onClick = { openProvider(p) })
+            val providers = d.providers.groups.flatMap { (label, list) -> list.map { label to it } }.distinctBy { it.second.id }
+            if (providers.isNotEmpty()) {
+                item(key = "where") {
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        SectionHeader("Where to watch in India", Modifier.padding(horizontal = side))
+                        LazyRow(contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                            items(providers, key = { it.second.id }) { (label, p) ->
+                                RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 80.dp, onClick = { openProvider(p) }, sublabel = label)
                             }
                         }
-                        Text("Where to watch in India · data by JustWatch", style = Tokens.Type.caption, color = Tokens.Colors.textMuted)
                     }
                 }
             }
             if (d.seasons.isNotEmpty()) {
-                item {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), contentPadding = PaddingValues(vertical = Tokens.Space.s)) {
-                        itemsIndexed(d.seasons, key = { _, s -> s.number }) { i, s ->
-                            ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost)
+                item(key = "seasons") {
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        SectionHeader("Episodes", Modifier.padding(horizontal = side))
+                        LazyRow(contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                            items(d.seasons, key = { it.number }) { s ->
+                                ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost)
+                            }
                         }
                     }
                 }
-                item {
+                item(key = "episodes") {
                     when (episodes) {
-                        Load.Loading -> LoadingBox(Modifier.height(180.dp))
-                        is Load.Failed -> ReelButton("Couldn't load episodes. Try again", { retryEpisodes() }, kind = ButtonKind.Ghost)
-                        is Load.Ready -> LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l),
-                            contentPadding = PaddingValues(vertical = Tokens.Space.s),
-                        ) {
-                            items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
-                                EpisodeCard(e, width = 240.dp, onClick = { onPlay(e.season, e.number) })
+                        Load.Loading -> LoadingBox(Modifier.height(200.dp))
+                        is Load.Failed -> ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = side), kind = ButtonKind.Ghost)
+                        is Load.Ready -> LazyRow(contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.m), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
+                            itemsIndexed(episodes.value, key = { _, e -> "${e.season}x${e.number}" }) { _, e ->
+                                val watched = progress[EpisodeNumber(e.season, e.number)]
+                                val shape = RoundedCornerShape(Tokens.Radius.media)
+                                Column(Modifier.width(280.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
+                                        RemoteImage(TmdbImages.still(e.stillPath, "w780"), Modifier.fillMaxSize())
+                                        when {
+                                            watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), icon = Icons.Rounded.Check, accent = true)
+                                            watched != null -> GradientProgress(watched.progress, Modifier.align(Alignment.BottomCenter).padding(Tokens.Space.s), height = 3.dp, track = Color.White.copy(alpha = 0.2f))
+                                        }
+                                    }
+                                    Text("${e.number}. ${e.name}", style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(listOfNotNull(e.runtimeMin?.let { "${it}m" }, e.airDate?.take(4)).joinToString(" · "), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
+                                }
                             }
+                        }
+                    }
+                }
+            }
+            if (d.cast.isNotEmpty()) {
+                item(key = "cast") {
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        SectionHeader("Cast", Modifier.padding(horizontal = side))
+                        LazyRow(contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                            items(d.cast) { c -> RingAvatar(TmdbImages.profile(c.profilePath), c.name, 80.dp, onClick = {}, sublabel = c.character, placeholder = c.name.take(1)) }
                         }
                     }
                 }

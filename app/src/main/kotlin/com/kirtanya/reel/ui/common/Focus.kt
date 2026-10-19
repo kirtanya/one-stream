@@ -14,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -36,9 +38,11 @@ fun Modifier.focusCard(
     val focused by interaction.collectIsFocusedAsState()
     val s by animateFloatAsState(if (focused) scale else 1f, tween(Tokens.Motion.focusMs), label = "cardFocus")
     if (onFocus != null) androidx.compose.runtime.LaunchedEffect(focused) { if (focused) onFocus() }
+    // Afterglow focus: lift, accent ring and a violet glow (the remote's "you are here").
     this
         .graphicsLayer { scaleX = s; scaleY = s }
-        .border(Tokens.Size.focusBorder, if (focused) Tokens.Colors.focus else Color.Transparent, shape)
+        .then(if (focused) Modifier.shadow(24.dp, shape, ambientColor = Tokens.Colors.accent, spotColor = Tokens.Colors.accent) else Modifier)
+        .border(Tokens.Size.focusBorder, if (focused) Tokens.Colors.accentBright else Color.Transparent, shape)
         .clip(shape)
         .combinedClickable(interactionSource = interaction, indication = ripple(), onLongClick = onLongClick, onClick = onClick)
 }
@@ -51,7 +55,8 @@ fun RequestFocusOnce(requester: androidx.compose.ui.focus.FocusRequester, key: A
     androidx.compose.runtime.LaunchedEffect(key) {
         repeat(10) {
             androidx.compose.runtime.withFrameNanos { }
-            if (runCatching { requester.requestFocus() }.isSuccess) return@LaunchedEffect
+            // requestFocus() never throws when the node isn't attached yet; the Boolean overload says if it worked.
+            if (runCatching { requester.requestFocus(androidx.compose.ui.focus.FocusDirection.Enter) }.getOrDefault(false)) return@LaunchedEffect
         }
     }
 }

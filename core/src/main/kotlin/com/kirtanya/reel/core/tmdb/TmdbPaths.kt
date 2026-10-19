@@ -12,6 +12,10 @@ object TmdbPaths {
     fun discoverFromCountry(type: MediaType, country: String = "IN") =
         "discover/${type.path}?language=en-US&sort_by=popularity.desc&with_origin_country=$country&include_adult=false"
 
+    /** Popular titles streaming on one service in [region] (TMDB provider id, e.g. 8 = Netflix). */
+    fun onService(type: MediaType, providerId: Int, region: String = "IN") =
+        "discover/${type.path}?language=en-US&sort_by=popularity.desc&watch_region=$region&with_watch_providers=$providerId&include_adult=false"
+
     fun search(query: String) = "search/multi?language=en-US&include_adult=false&query=${URLEncoder.encode(query.trim(), Charsets.UTF_8)}"
 
     fun details(ref: TitleRef): String {

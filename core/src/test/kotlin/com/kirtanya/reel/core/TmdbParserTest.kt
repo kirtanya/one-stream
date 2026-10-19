@@ -73,6 +73,7 @@ class TmdbParserTest {
         assertEquals("search/multi?language=en-US&include_adult=false&query=the+matrix", TmdbPaths.search(" the matrix "))
         assertTrue(TmdbPaths.details(TitleRef(MediaType.TV, 1)).contains("content_ratings"))
         assertEquals("tv/1399/season/2?language=en-US", TmdbPaths.season(1399, 2))
+        assertTrue(TmdbPaths.onService(MediaType.TV, 8).contains("with_watch_providers=8&") && TmdbPaths.onService(MediaType.TV, 8).startsWith("discover/tv?"))
     }
 
     @Test fun images() {

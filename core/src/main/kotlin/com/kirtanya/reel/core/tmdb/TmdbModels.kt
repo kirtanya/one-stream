@@ -21,7 +21,22 @@ data class TitleSummary(
 
 data class CastMember(val name: String, val character: String?, val profilePath: String?)
 
-data class Provider(val id: Int, val name: String, val logoPath: String?)
+data class Provider(val id: Int, val name: String, val logoPath: String?) {
+    companion object {
+        /** Streaming services shown on Home ("On your services"), India first. Logos from TMDB. */
+        val FEATURED = listOf(
+            Provider(8, "Netflix", "/rK1KljqmbvO9HQa1PBFLILWah72.png"),
+            Provider(119, "Prime Video", "/gMZdpavHmxFNnLpMHwVxfqeux2g.png"),
+            Provider(2336, "JioHotstar", "/ledoS6EgdjTNq8F1e6wubUQer18.png"),
+            Provider(350, "Apple TV", "/9icYBfYFcwgCbky5VdGUIKJ4C5i.png"),
+            Provider(237, "Sony LIV", "/coM4QWbmIOa0xJ5cGR9BRmoV25B.png"),
+            Provider(232, "Zee5", "/uQvhdtB8skccsGHmvKi3y5bqBsX.png"),
+            Provider(283, "Crunchyroll", "/uFL3c4Cq8M6WoLymlC5Y8bmGytV.png"),
+            Provider(11, "MUBI", "/k7iSlvgWzZuO4zU5PcBjhABMuia.png"),
+            Provider(309, "Sun NXT", "/1T9VcLknesOZZen9ZgLfcDdm5Ys.png"),
+        )
+    }
+}
 
 /** Where a title can be watched in one country (data from JustWatch via TMDB). */
 data class WatchProviders(

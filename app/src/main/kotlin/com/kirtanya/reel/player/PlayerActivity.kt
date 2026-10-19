@@ -20,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.annotation.OptIn
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -61,6 +62,7 @@ import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.engine.EngineException
 import com.kirtanya.reel.engine.TorrentPhase
 import com.kirtanya.reel.ui.formatBytes
+import com.kirtanya.reel.ui.theme.Tokens
 import com.kirtanya.reel.ui.sources.rankPrefs
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -601,6 +603,12 @@ class PlayerActivity : ComponentActivity() {
         return SourceRequest(id, playback.imdbId, type, playback.title, playback.year, episode?.season, episode?.episode)
     }
 
+    // ---------------------------------------------------------------- Afterglow overlays (docs/DESIGN_STYLE.md)
+
+    private val accent get() = Tokens.Colors.accent.toArgb()
+    private val glassColor get() = Tokens.Colors.glass.toArgb()
+    private val hairline get() = Tokens.Colors.hairlineStrong.toArgb()
+
     private fun buildLayout(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         playerView = PlayerView(this).apply {
@@ -609,10 +617,17 @@ class PlayerActivity : ComponentActivity() {
             setShowSubtitleButton(true)
         }
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        // Violet seek bar to match the rest of Reel.
+        playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
+            setPlayedColor(accent)
+            setScrubberColor(Tokens.Colors.accentBright.toArgb())
+            setBufferedColor(0x55FFFFFF)
+            setUnplayedColor(0x26FFFFFF)
+        }
 
-        status = text(18f, Color.WHITE).apply {
-            setPadding(dp(20), dp(12), dp(20), dp(12))
-            background = rounded(0x99000000.toInt())
+        status = text(15f, Color.WHITE, medium = true).apply {
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            background = glass(radius = 999)
         }
         // Top-left, so it never covers the seek bar or controls.
         root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(24), dp(32), dp(24), 0) })
@@ -625,54 +640,88 @@ class PlayerActivity : ComponentActivity() {
 
         nextCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-            background = rounded(0xE617191E.toInt())
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = glass(radius = 24)
             visibility = View.GONE
-            nextTitle = text(18f, Color.WHITE)
-            nextCountdown = text(14f, 0xFF9AA0AB.toInt())
+            nextTitle = text(18f, Color.WHITE, medium = true)
+            nextCountdown = text(14f, Tokens.Colors.textSecondary.toArgb()).apply { setPadding(0, dp(4), 0, dp(14)) }
             addView(nextTitle)
             addView(nextCountdown)
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
-                nextPlay = button("Play now") { playNext() }
+                nextPlay = button("Play now", primary = true) { playNext() }
                 addView(nextPlay)
-                addView(button("Cancel") { cancelNext() })
+                addView(button("Cancel") { cancelNext() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
             })
         }
-        root.addView(nextCard, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(48), dp(96)) })
+        root.addView(nextCard, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(48), dp(110)) })
 
         errorPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             visibility = View.GONE
-            setBackgroundColor(0xE6000000.toInt())
-            errorText = text(20f, Color.WHITE).apply {
+            setBackgroundColor(Tokens.Colors.canvas.copy(alpha = 0.94f).toArgb())
+            errorText = text(20f, Color.WHITE, medium = true).apply {
                 gravity = Gravity.CENTER
-                setPadding(dp(48), 0, dp(48), dp(24))
+                setPadding(dp(48), 0, dp(48), dp(28))
             }
             addView(errorText)
-            errorSources = button("Other sources") {
+            val gap = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) }
+            errorSources = button("Other sources", primary = true) {
                 openSources(playback.episode)
                 finish()
             }
-            addView(errorSources)
+            addView(errorSources, LinearLayout.LayoutParams(-2, -2))
             errorExternal = button("Open in another player") { openExternal() }
-            addView(errorExternal)
-            addView(button("Back") { finish() })
+            addView(errorExternal, gap)
+            addView(button("Back") { finish() }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) })
         }
         root.addView(errorPanel, FrameLayout.LayoutParams(-1, -1))
         return root
     }
 
-    private fun text(sizeSp: Float, color: Int) = TextView(this).apply {
+    private fun font(medium: Boolean) =
+        androidx.core.content.res.ResourcesCompat.getFont(this, if (medium) com.kirtanya.reel.R.font.instrument_sans_semibold else com.kirtanya.reel.R.font.instrument_sans_regular)
+
+    private fun text(sizeSp: Float, color: Int, medium: Boolean = false) = TextView(this).apply {
         setTextColor(color)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+        typeface = font(medium)
     }
 
-    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
+    /** Pill button: brand gradient (primary) or glass; a bright ring when the remote focuses it. */
+    private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
+        typeface = font(medium = true)
+        setTextColor(Color.WHITE)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        minHeight = dp(48)
+        minimumHeight = dp(48)
+        setPadding(dp(22), dp(10), dp(22), dp(10))
+        stateListAnimator = null
+        fun shape(focused: Boolean) = GradientDrawable().apply {
+            cornerRadius = dp(999).toFloat()
+            if (primary) {
+                orientation = GradientDrawable.Orientation.TL_BR
+                colors = intArrayOf(Tokens.Colors.accentBright.toArgb(), Tokens.Colors.accentDeep.toArgb())
+            } else {
+                setColor(glassColor)
+            }
+            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (primary) 0x2EFFFFFF else hairline)
+        }
+        background = android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), shape(true))
+            addState(intArrayOf(android.R.attr.state_pressed), shape(true))
+            addState(intArrayOf(), shape(false))
+        }
         setOnClickListener { onClick() }
+    }
+
+    private fun glass(radius: Int) = GradientDrawable().apply {
+        setColor(glassColor)
+        cornerRadius = dp(radius).toFloat()
+        setStroke(dp(1), hairline)
     }
 
     private fun rounded(color: Int) = GradientDrawable().apply {

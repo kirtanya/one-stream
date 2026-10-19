@@ -14,7 +14,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -35,7 +34,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Afterglow is always dark: light status/nav bar icons, content drawn edge to edge.
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         EngineService.start(this)
         // `adb shell am start -n com.kirtanya.reel/.MainActivity --ez forceTv true` previews the TV UI on a phone.
         val forceTv = intent.getBooleanExtra(EXTRA_FORCE_TV, false)
@@ -49,7 +52,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
         setContent {
             ReelTheme {
-                Box(Modifier.fillMaxSize().background(Tokens.Colors.bg).safeDrawingPadding()) {
+                Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
                     if (isTv) {
                         TvApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null })
                     } else {
