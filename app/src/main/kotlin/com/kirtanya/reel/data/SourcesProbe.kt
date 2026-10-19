@@ -19,6 +19,8 @@ import kotlinx.coroutines.withTimeout
  * `[--es addAddon <manifest url>] [--es removeAddon <manifest url>]` installs / removes an addon around the search.
  * `--ez history true` dumps watch history and Continue watching instead of searching.
  * `--ez mainThreadTest true` adds OpenSubtitles (removed after), searches subtitles + sources on the main thread.
+ * `--ez playTest true --es url <direct> [--ei tmdb --ei season --ei episode --ei nextEpisode --el startMs --el durationMs]` plays a test video as an episode.
+ * `--es removeTitle <titleKey>` removes a film/show from watch history.
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
@@ -31,6 +33,15 @@ class SourcesProbe : BroadcastReceiver() {
             }
             app.history.continueWatching().forEach { Log.i(TAG, "continue ${it::class.simpleName} ${it.entry.playback.key}") }
             Log.i(TAG, "history done")
+            return
+        }
+        intent.getStringExtra("removeTitle")?.let {
+            app.history.removeTitle(it)
+            Log.i(TAG, "removed $it from history")
+            return
+        }
+        if (intent.getBooleanExtra("playTest", false)) {
+            playTest(context, app, intent)
             return
         }
         if (intent.getBooleanExtra("mainThreadTest", false)) {
@@ -68,6 +79,41 @@ class SourcesProbe : BroadcastReceiver() {
                 pending.finish()
             }
         }
+    }
+
+    /**
+     * Plays a direct [url] labelled as an episode of a real show (TMDB [tmdb], S`season`E`episode`,
+     * next = E`nextEpisode`), optionally starting at `startMs` of `durationMs` (seeded as history so
+     * the player resumes there). Exercises Up next / Continue watching with legal test video.
+     * Reel must be in the foreground (activity starts from the background are blocked).
+     */
+    private fun playTest(context: Context, app: ReelApp, intent: Intent) {
+        val id = intent.getIntExtra("tmdb", 1396)
+        val season = intent.getIntExtra("season", 1)
+        val episode = intent.getIntExtra("episode", 1)
+        val next = intent.getIntExtra("nextEpisode", episode + 1)
+        val url = intent.getStringExtra("url") ?: return
+        val playback = com.kirtanya.reel.core.playback.Playback(
+            key = com.kirtanya.reel.core.playback.Playback.keyFor("tv", id, com.kirtanya.reel.core.playback.EpisodeNumber(season, episode)),
+            titleKey = "tv:$id",
+            title = intent.getStringExtra("title") ?: "Test show",
+            subtitle = "S$season E$episode · test",
+            tmdbType = "tv",
+            tmdbId = id,
+            imdbId = intent.getStringExtra("imdb"),
+            year = null,
+            episode = com.kirtanya.reel.core.playback.EpisodeNumber(season, episode),
+            backdropPath = intent.getStringExtra("backdrop"),
+            next = com.kirtanya.reel.core.playback.EpisodeNumber(season, next),
+            source = com.kirtanya.reel.core.sources.Source(
+                com.kirtanya.reel.core.sources.SourceKind.DIRECT, "Test video", "Test",
+                com.kirtanya.reel.core.sources.QualityParser.parse("1080p"), url = url,
+            ),
+        )
+        val start = intent.getLongExtra("startMs", 0)
+        if (start > 0) app.history.save(playback, start, intent.getLongExtra("durationMs", start * 2))
+        context.startActivity(com.kirtanya.reel.player.PlayerActivity.forPlayback(context, playback).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        Log.i(TAG, "playTest started ${playback.key} at ${start / 1000}s")
     }
 
     /**
