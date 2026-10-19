@@ -297,8 +297,8 @@ iOS, desktop, Play Store release, user accounts or cloud sync, debrid services, 
 | Milestone | State (2026-10-19) |
 |---|---|
 | M0 Scaffold | ✅ Built: one app, phone + TV launcher entries, tokens, per-ABI APKs (~10 MB release) |
-| M1 Engine | 🟡 Code done (`engine/TorrentEngine.kt`, `EngineService`): add magnet / stream / download / pause / keep / delete, resume after restart. **Not yet run on a device.** |
-| M2 Stream | 🟡 Code done (`server/LocalStreamServer.kt`, `player/PlayerActivity.kt`): local Range server, piece deadlines, ExoPlayer, external-player fallback. **Not yet run on a device.** |
+| M1 Engine | 🟡 Engine starts and fetches on the phone. Download / pause / keep / delete / restart-resume not yet tested. |
+| M2 Stream | 🟡 **Works on the Pixel 8** (2026-10-19, mobile data): Big Buck Bunny played after ~20 s at 2.9 MB/s, 30 peers, no errors. Seeking far ahead not verified yet. TV not tested. |
 | `core` tests | ✅ 30/30 passing (magnets, ranges, piece planning, file picking) |
 
 Next: install on the phone and the TV at home → test the three open movies (stream, seek, download, keep) → fix issues → M3.

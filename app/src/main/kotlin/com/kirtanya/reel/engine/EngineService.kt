@@ -36,10 +36,16 @@ class EngineService : LifecycleService() {
         engine.start()
         lifecycleScope.launch {
             engine.torrents.collectLatest { list ->
+                val streaming = list.filter { engine.isStreaming(it.infoHash) }
                 val active = list.count { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA }
                 val down = list.sumOf { it.downBps.toLong() }
                 val up = list.sumOf { it.upBps.toLong() }
-                val text = if (active == 0) "Idle" else "$active active · ↓ ${formatBytes(down)}/s · ↑ ${formatBytes(up)}/s"
+                val rates = "↓ ${formatBytes(down)}/s · ↑ ${formatBytes(up)}/s"
+                val text = when {
+                    streaming.isNotEmpty() -> "Streaming ${streaming.first().name} · $rates"
+                    active > 0 -> "$active downloading · $rates"
+                    else -> "Idle"
+                }
                 getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
             }
         }

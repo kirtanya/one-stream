@@ -2,6 +2,8 @@ package com.kirtanya.reel.player
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -22,6 +24,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -107,6 +110,13 @@ class PlayerActivity : ComponentActivity() {
                 if (state == Player.STATE_BUFFERING && hash != null) status.visibility = View.VISIBLE
             }
 
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                // Phones turn sideways for wide video; TVs are always landscape.
+                if (videoSize.width > videoSize.height && !isTelevision()) {
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 showError("This device can't play this file (${error.errorCodeName}).")
             }
@@ -186,8 +196,9 @@ class PlayerActivity : ComponentActivity() {
             setPadding(dp(20), dp(12), dp(20), dp(12))
             setBackgroundColor(0x99000000.toInt())
         }
-        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
-            setMargins(dp(48), 0, 0, dp(48))
+        // Top-left, so it never covers the seek bar or controls.
+        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
+            setMargins(dp(24), dp(32), dp(24), 0)
         })
         errorPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -209,6 +220,8 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private fun isTelevision() = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
 
     companion object {
         private const val EXTRA_MAGNET = "magnet"
