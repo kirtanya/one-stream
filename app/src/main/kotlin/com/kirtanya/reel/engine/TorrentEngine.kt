@@ -338,6 +338,22 @@ class TorrentEngine(private val context: Context) {
 
     fun isStreaming(hash: String): Boolean = streams.containsKey(hash)
 
+    /**
+     * The player went to the background: stop fetching [owner]'s stream-mode torrent so it doesn't
+     * eat bandwidth (e.g. while another app plays). Downloads and other players' streams are untouched.
+     */
+    fun suspendStream(hash: String, owner: StreamInfo?) = streamHandleIfOwned(hash, owner)?.pause()
+
+    /** The player is visible again: carry on fetching. */
+    fun resumeStream(hash: String, owner: StreamInfo?) = streamHandleIfOwned(hash, owner)?.resume()
+
+    private fun streamHandleIfOwned(hash: String, owner: StreamInfo?): TorrentHandle? = synchronized(streamLock) {
+        val s = streams[hash] ?: return null
+        if (owner != null && s.info !== owner) return null
+        if (metas[hash]?.mode != TorrentMode.STREAM) return null
+        find(hash)
+    }
+
     /** Is any player (ours or an external one) reading [owner]'s stream right now? */
     fun hasReaders(hash: String, owner: StreamInfo?): Boolean =
         streams[hash]?.takeIf { owner == null || it.info === owner }?.readers?.isNotEmpty() == true

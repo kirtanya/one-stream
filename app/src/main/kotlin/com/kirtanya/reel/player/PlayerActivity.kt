@@ -557,6 +557,11 @@ class PlayerActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- lifecycle
 
+    override fun onStart() {
+        super.onStart()
+        hash?.let { app.engine.resumeStream(it, preparedStream) }
+    }
+
     override fun onResume() {
         super.onResume()
         // The chooser is translucent: if it was dismissed without opening anything, we never
@@ -572,6 +577,8 @@ class PlayerActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         if (externalHandoff) stoppedSinceHandoff = true
+        // In the background: stop fetching the torrent (an external player keeps it running).
+        else hash?.let { app.engine.suspendStream(it, preparedStream) }
         saveProgress()
         player?.pause()
         if (nextCard.visibility == View.VISIBLE) {
