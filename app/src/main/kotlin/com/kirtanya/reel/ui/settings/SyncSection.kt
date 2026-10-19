@@ -95,7 +95,7 @@ private fun TvSyncContent() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
             Text(phone.name, style = Tokens.Type.label, color = Tokens.Colors.text, modifier = Modifier.weight(1f))
             Pill("Paired", accent = true)
-            GlassIconButton(Icons.Rounded.Delete, "Forget ${phone.name}", { app.tvSync.forgetPhone(phone.id) })
+            ForgetButton(phone.name) { app.tvSync.forgetPhone(phone.id) }
         }
     }
 }
@@ -172,7 +172,7 @@ private fun PhoneSyncContent() {
                         enabled = !state.syncing,
                     )
                 }
-                GlassIconButton(Icons.Rounded.Delete, "Forget ${tv.name}", { app.phoneSync.forget(tv.tvId) })
+                ForgetButton(tv.name) { app.phoneSync.forget(tv.tvId) }
             }
         }
     }
@@ -237,6 +237,21 @@ private fun PhoneSyncContent() {
         )
     }
     note?.let { Text(it, style = Tokens.Type.label, color = Tokens.Colors.accentBright) }
+}
+
+/**
+ * Forget needs a second press: on the TV it can be the only focusable thing in the card,
+ * so one stray OK on the remote mustn't unpair.
+ */
+@Composable
+private fun ForgetButton(name: String, onForget: () -> Unit) {
+    var armed by remember { mutableStateOf(false) }
+    if (!armed) {
+        GlassIconButton(Icons.Rounded.Delete, "Forget $name", { armed = true })
+    } else {
+        ReelButton("Forget $name", onForget, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
+        ReelButton("Keep", { armed = false }, kind = ButtonKind.Ghost)
+    }
 }
 
 private fun ago(at: Long): String {

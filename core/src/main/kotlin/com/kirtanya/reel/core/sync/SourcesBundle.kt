@@ -36,13 +36,16 @@ data class SyncPlan(
         get() = addAddons.isEmpty() && removeAddons.isEmpty() && toggleAddons.isEmpty() &&
             addRepos.isEmpty() && removeRepos.isEmpty() && togglePlugins.isEmpty()
 
+    /** "1 addon added, 2 plugin repos removed", read as "Synced just now · …". */
     fun describe(): String = listOfNotNull(
-        addAddons.size.takeIf { it > 0 }?.let { "+$it addon${if (it > 1) "s" else ""}" },
-        removeAddons.size.takeIf { it > 0 }?.let { "−$it addon${if (it > 1) "s" else ""}" },
-        addRepos.size.takeIf { it > 0 }?.let { "+$it plugin repo${if (it > 1) "s" else ""}" },
-        removeRepos.size.takeIf { it > 0 }?.let { "−$it plugin repo${if (it > 1) "s" else ""}" },
-        (toggleAddons.size + togglePlugins.values.sumOf { it.size }).takeIf { it > 0 }?.let { "$it switched" },
+        count(addAddons.size, "addon", "added"),
+        count(removeAddons.size, "addon", "removed"),
+        count(addRepos.size, "plugin repo", "added"),
+        count(removeRepos.size, "plugin repo", "removed"),
+        (toggleAddons.size + togglePlugins.values.sumOf { it.size }).takeIf { it > 0 }?.let { "$it switched on/off" },
     ).joinToString(", ").ifEmpty { "already up to date" }
+
+    private fun count(n: Int, noun: String, verb: String) = n.takeIf { it > 0 }?.let { "$it $noun${if (it > 1) "s" else ""} $verb" }
 
     companion object {
         /**

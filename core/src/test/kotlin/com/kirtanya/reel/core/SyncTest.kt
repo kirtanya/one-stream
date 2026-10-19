@@ -95,7 +95,7 @@ class SyncPlanTest {
         assertEquals(listOf("r2"), plan.addRepos.map { it.url })
         assertEquals(listOf("tvonly"), plan.removeRepos)
         assertEquals(mapOf(builtIn to mapOf("ia" to false)), plan.togglePlugins)
-        assertEquals("+1 addon, −1 addon, +1 plugin repo, −1 plugin repo, 2 switched", plan.describe())
+        assertEquals("1 addon added, 1 addon removed, 1 plugin repo added, 1 plugin repo removed, 2 switched on/off", plan.describe())
     }
 
     @Test fun builtInRepoIsNeverRemoved() {

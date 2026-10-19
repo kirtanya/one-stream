@@ -68,7 +68,10 @@ fun AddSourceLinkDialog(link: String, isTv: Boolean, onDone: () -> Unit) {
                         Load.Loading -> CircularProgressIndicator(color = Tokens.Colors.accent)
                         is Load.Failed -> Text(preview.message, style = Tokens.Type.body, color = Tokens.Colors.warn)
                         is Load.Ready -> {
-                            preview.value.detail?.let { Text(it, style = Tokens.Type.body, color = Tokens.Colors.textSecondary) }
+                            // First line says what it is; the addon's own description goes underneath.
+                            val (kind, description) = (preview.value.detail ?: "").split("\n", limit = 2).let { it[0] to it.getOrNull(1) }
+                            if (kind.isNotBlank()) Text(kind, style = Tokens.Type.label, color = Tokens.Colors.text)
+                            description?.takeIf { it.isNotBlank() }?.let { Text(it, style = Tokens.Type.body, color = Tokens.Colors.textSecondary) }
                             Text(preview.value.url, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 2)
                             Text(
                                 "You choose what to add. Streaming or downloading content you don't have rights to is illegal in most countries.",
