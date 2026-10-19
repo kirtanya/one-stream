@@ -44,15 +44,12 @@ object ContinueWatching {
             .filter { now - it.updatedAt < MAX_AGE_MS }
             .groupBy { it.playback.titleKey }
             .mapNotNull { (_, list) ->
-                // Newest entry that means something: a barely-started newer episode shouldn't hide
-                // "Up next" from the episode you just finished.
-                list.sortedByDescending { it.updatedAt }.firstNotNullOfOrNull { e ->
-                    when {
-                        e.finished -> e.playback.next?.let { ContinueItem.UpNext(e, it) }
-                        e.positionMs >= MIN_WATCHED_MS -> ContinueItem.Resume(e)
-                        else -> null
-                    }
-                }
+                // The newest entry that means something decides. Barely-started newer episodes are
+                // skipped (they shouldn't hide "Up next"), but a finished one with nothing after it
+                // ends the search: you're caught up, so the show drops out.
+                val e = list.sortedByDescending { it.updatedAt }.firstOrNull { it.finished || it.positionMs >= MIN_WATCHED_MS }
+                    ?: return@mapNotNull null
+                if (e.finished) e.playback.next?.let { ContinueItem.UpNext(e, it) } else ContinueItem.Resume(e)
             }
             .sortedByDescending { it.entry.updatedAt }
             .take(limit)

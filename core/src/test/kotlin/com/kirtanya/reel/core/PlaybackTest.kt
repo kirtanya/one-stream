@@ -5,6 +5,7 @@ import com.kirtanya.reel.core.playback.ContinueWatching
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.playback.Playback
 import com.kirtanya.reel.core.playback.WatchEntry
+import com.kirtanya.reel.core.playback.hasAired
 import com.kirtanya.reel.core.playback.nextEpisode
 import com.kirtanya.reel.core.playback.pickNextSource
 import com.kirtanya.reel.core.sources.FetchResponse
@@ -50,6 +51,9 @@ class NextEpisodeTest {
         assertEquals(EpisodeNumber(2, 3), nextEpisode(seasons, EpisodeNumber(2, 2), lastAired = 2 to 3))
         assertNull(nextEpisode(seasons, EpisodeNumber(2, 3), lastAired = 2 to 3))
         assertNull(nextEpisode(seasons, EpisodeNumber(1, 10), lastAired = 1 to 10))
+        // A special as the latest aired episode is ignored.
+        assertEquals(EpisodeNumber(2, 5), nextEpisode(seasons, EpisodeNumber(2, 4), lastAired = 0 to 3))
+        assertTrue(hasAired(EpisodeNumber(2, 3), 2 to 3) && !hasAired(EpisodeNumber(2, 4), 2 to 3) && hasAired(EpisodeNumber(5, 1), null))
     }
 }
 
@@ -101,6 +105,17 @@ class ContinueWatchingTest {
             now,
         )
         assertEquals(EpisodeNumber(1, 4), assertIs<ContinueItem.UpNext>(items.single()).next)
+    }
+
+    @Test fun caughtUpShowDropsOutInsteadOfOfferingTheEpisodeJustWatched() {
+        val items = ContinueWatching.select(
+            listOf(
+                entry(pb("tv:9:s1e9", "tv:9", next = EpisodeNumber(1, 10)), 99 * MIN, ago = 9_000),
+                entry(pb("tv:9:s1e10", "tv:9"), 99 * MIN, ago = 1_000), // latest aired, finished, nothing after
+            ),
+            now,
+        )
+        assertTrue(items.isEmpty())
     }
 
     @Test fun resumePosition() {

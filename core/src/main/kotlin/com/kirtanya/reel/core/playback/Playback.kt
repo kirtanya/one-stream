@@ -68,9 +68,17 @@ fun nextEpisode(seasons: List<SeasonSummary>, current: EpisodeNumber, lastAired:
     } else {
         regular.firstOrNull { it.number > current.season }?.let { EpisodeNumber(it.number, 1) }
     } ?: return null
-    if (lastAired != null && (next.season > lastAired.first || next.season == lastAired.first && next.episode > lastAired.second)) return null
+    // A special (season 0) as the latest aired episode says nothing about regular seasons.
+    if (lastAired != null && lastAired.first > 0 &&
+        (next.season > lastAired.first || next.season == lastAired.first && next.episode > lastAired.second)
+    ) return null
     return next
 }
+
+/** True when [episode] is at or before the latest aired episode (unknown → assume aired). */
+fun hasAired(episode: EpisodeNumber, lastAired: Pair<Int, Int>?): Boolean =
+    lastAired == null || lastAired.first == 0 ||
+        episode.season < lastAired.first || episode.season == lastAired.first && episode.episode <= lastAired.second
 
 /**
  * For auto-playing the next episode: stay with what worked — same binge group, then the same

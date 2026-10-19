@@ -64,7 +64,8 @@ object TmdbParser {
             lastAired = o.obj("last_episode_to_air")?.let { e ->
                 val s = e.int("season_number")
                 val n = e.int("episode_number")
-                if (s != null && n != null) s to n else null
+                // Specials (season 0) are ignored: they don't tell us what has aired in regular seasons.
+                if (s != null && n != null && s > 0) s to n else null
             },
         )
     }

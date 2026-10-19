@@ -9,6 +9,7 @@ import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.ui.sources.rankPrefs
 import com.kirtanya.reel.ui.sources.requestFor
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
@@ -17,6 +18,7 @@ import kotlinx.coroutines.withTimeout
  * `adb shell am broadcast -n com.kirtanya.reel/.data.SourcesProbe --ei tmdb 10378 [--es type tv --ei season 1 --ei episode 1]`
  * `[--es addAddon <manifest url>] [--es removeAddon <manifest url>]` installs / removes an addon around the search.
  * `--ez history true` dumps watch history and Continue watching instead of searching.
+ * `--ez mainThreadTest true` adds OpenSubtitles (removed after), searches subtitles + sources on the main thread.
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
@@ -29,6 +31,10 @@ class SourcesProbe : BroadcastReceiver() {
             }
             app.history.continueWatching().forEach { Log.i(TAG, "continue ${it::class.simpleName} ${it.entry.playback.key}") }
             Log.i(TAG, "history done")
+            return
+        }
+        if (intent.getBooleanExtra("mainThreadTest", false)) {
+            mainThreadTest(app, goAsync())
             return
         }
         val pending = goAsync()
@@ -59,6 +65,36 @@ class SourcesProbe : BroadcastReceiver() {
                 Log.e(TAG, "probe failed: " + generateSequence(t) { it.cause }.joinToString(" ← ") { it.toString() })
             } finally {
                 intent.getStringExtra("removeAddon")?.let { app.sources.removeAddon(it); Log.i(TAG, "removed addon $it") }
+                pending.finish()
+            }
+        }
+    }
+
+    /**
+     * Runs what the screens run, on the main thread: add a subtitle addon (Settings), search
+     * subtitles (player) and sources (Sources screen). Any network-on-main bug shows up here.
+     */
+    private fun mainThreadTest(app: ReelApp, pending: PendingResult) {
+        val subsUrl = "https://opensubtitles-v3.strem.io/manifest.json"
+        kotlinx.coroutines.MainScope().launch {
+            val hadAddon = app.sources.state.value.addons.any { it.url == subsUrl }
+            try {
+                withTimeout(60_000) {
+                    Log.i(TAG, "main-thread test on ${Thread.currentThread().name}")
+                    app.sources.ensureReady()
+                    if (!hadAddon) Log.i(TAG, "added ${app.sources.addAddon(subsUrl).manifest.name}")
+                    val d = app.tmdb.details(TitleRef(MediaType.MOVIE, 10331))
+                    val req = requestFor(d, null, null)
+                    val subs = com.kirtanya.reel.core.sources.Subtitles.search(req, app.sources.subtitleAddons(), app.fetcher)
+                    Log.i(TAG, "subtitles: ${subs.size} tracks, languages=${subs.map { it.language }.distinct().take(12)} formats=${subs.mapNotNull { it.format }.distinct()}")
+                    val search = app.aggregator.search(req, app.sources.providers(), rankPrefs(app, isTv = false)).first { it.done }
+                    Log.i(TAG, "sources: ${search.sources.size} found, failed=${search.failed}")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "main-thread test failed: " + generateSequence(t) { it.cause }.joinToString(" ← ") { it.toString() })
+            } finally {
+                if (!hadAddon) app.sources.removeAddon(subsUrl)
+                Log.i(TAG, "main-thread test done")
                 pending.finish()
             }
         }
