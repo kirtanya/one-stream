@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,6 +72,8 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
             backdrop = focused.backdropPath
         }
         val firstCard = remember { FocusRequester() }
+        val columnState = rememberLazyListState()
+        val continueState = rememberLazyListState()
         RequestFocusOnce(firstCard)
         // A Continue watching card was removed (hold OK) or changed: refresh the header and put the
         // remote's focus back on the first card instead of losing it.
@@ -81,8 +84,13 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
                 focused = still.info()
             } else {
                 focused = continueItems.firstOrNull()?.info() ?: rows.first().items.first().info()
-                withFrameNanos { }
-                runCatching { firstCard.requestFocus() }
+                // The first card may have scrolled out (and been disposed): bring it back, then focus it.
+                runCatching { columnState.scrollToItem(0) }
+                if (continueItems.isNotEmpty()) runCatching { continueState.scrollToItem(0) }
+                repeat(10) {
+                    withFrameNanos { }
+                    if (runCatching { firstCard.requestFocus() }.isSuccess) return@LaunchedEffect
+                }
             }
         }
 
@@ -103,6 +111,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
                 }
                 LazyColumn(
                     Modifier.weight(1f),
+                    state = columnState,
                     contentPadding = PaddingValues(bottom = Tokens.Space.tvSafeV),
                     verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
                 ) {
@@ -115,6 +124,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
                                 onOpenDest = onOpenDest,
                                 onFocus = { focused = it.info() },
                                 firstFocus = firstCard,
+                                listState = continueState,
                             )
                         }
                     }

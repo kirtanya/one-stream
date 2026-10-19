@@ -8,7 +8,12 @@ import com.kirtanya.reel.core.playback.Playback
 import com.kirtanya.reel.core.playback.WatchEntry
 import android.util.AtomicFile
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.builtins.ListSerializer
@@ -38,20 +43,33 @@ class WatchHistoryStore(context: Context) {
     /** Removes everything for a film or show from Continue watching. */
     fun removeTitle(titleKey: String) = update { list -> list.filterNot { it.playback.titleKey == titleKey } }
 
+    /** Latest snapshot to write; the writer always saves the newest one (older ones are skipped). */
+    private val pending = Channel<List<WatchEntry>>(Channel.CONFLATED)
+
+    init {
+        // One writer, off the main thread: fsync can take a while on a busy TV's flash.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            for (snapshot in pending) write(snapshot)
+        }
+    }
+
     private fun update(change: (List<WatchEntry>) -> List<WatchEntry>) {
-        synchronized(lock) {
-            val next = change(_entries.value)
-            _entries.value = next
-            // AtomicFile: write to a side file, fsync, then swap — a crash never leaves half a file.
-            var out: java.io.FileOutputStream? = null
-            runCatching {
-                out = file.startWrite()
-                out!!.write(json.encodeToString(ListSerializer(WatchEntry.serializer()), next).toByteArray())
-                file.finishWrite(out)
-            }.onFailure {
-                out?.let(file::failWrite)
-                Log.w(TAG, "save failed", it)
-            }
+        val next = synchronized(lock) {
+            change(_entries.value).also { _entries.value = it }
+        }
+        pending.trySend(next)
+    }
+
+    /** AtomicFile: write to a side file, fsync, then swap — a crash never leaves half a file. */
+    private fun write(snapshot: List<WatchEntry>) {
+        var out: java.io.FileOutputStream? = null
+        runCatching {
+            out = file.startWrite()
+            out!!.write(json.encodeToString(ListSerializer(WatchEntry.serializer()), snapshot).toByteArray())
+            file.finishWrite(out)
+        }.onFailure {
+            out?.let(file::failWrite)
+            Log.w(TAG, "save failed", it)
         }
     }
 

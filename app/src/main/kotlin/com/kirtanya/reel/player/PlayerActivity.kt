@@ -47,6 +47,7 @@ import com.kirtanya.reel.core.magnet.Magnet
 import com.kirtanya.reel.core.playback.ContinueWatching
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.playback.Playback
+import com.kirtanya.reel.core.playback.hasAired
 import com.kirtanya.reel.core.playback.nextEpisode
 import com.kirtanya.reel.core.playback.pickNextSource
 import com.kirtanya.reel.core.sources.QualityParser
@@ -58,7 +59,6 @@ import com.kirtanya.reel.core.sources.Subtitles
 import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.engine.EngineException
-import com.kirtanya.reel.engine.TorrentMode
 import com.kirtanya.reel.engine.TorrentPhase
 import com.kirtanya.reel.ui.formatBytes
 import com.kirtanya.reel.ui.sources.rankPrefs
@@ -103,6 +103,8 @@ class PlayerActivity : ComponentActivity() {
     private var nextCardPending = false
     private var leavingForNext = false
     private var externalHandoff = false
+    /** We were stopped after handing off: an external player really took over (not a cancelled chooser). */
+    private var stoppedSinceHandoff = false
 
     private lateinit var playerView: PlayerView
     private lateinit var status: TextView
@@ -170,10 +172,12 @@ class PlayerActivity : ComponentActivity() {
         val engine = app.engine
         engine.start()
         val magnet = source.magnetUri() ?: error("No magnet for this torrent")
-        val h = engine.addMagnet(magnet, TorrentMode.STREAM)
-        hash = h
-        startStats(h)
-        val info = engine.prepareStream(h, source.fileIdx, source.filename)
+        Magnet.parse(magnet)?.infoHash?.let {
+            hash = it
+            startStats(it)
+        }
+        val info = engine.startStream(magnet, source.fileIdx, source.filename)
+        hash = info.infoHash
         preparedStream = info
         return app.streamServer.urlFor(info)
     }
@@ -197,11 +201,12 @@ class PlayerActivity : ComponentActivity() {
             .setBufferDurationsMs(15_000, 60_000, 2_500, 5_000)
             .build()
         // Some direct sources need headers (Referer, User-Agent…) on every request.
-        // Only the stream's own server gets them, not subtitle hosts.
+        // Every request of the stream gets them (playlists, CDN segments, redirects), but they're
+        // never sent to third-party subtitle hosts.
         val headers = playback.source.headers
-        val streamHost = Uri.parse(url).host
+        val subtitleUrls = subtitles.map { it.url }.toSet()
         val http = ResolvingDataSource.Factory(DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)) { spec ->
-            if (headers.isNotEmpty() && spec.uri.host == streamHost) spec.withAdditionalHeaders(headers) else spec
+            if (headers.isNotEmpty() && spec.uri.toString() !in subtitleUrls) spec.withAdditionalHeaders(headers) else spec
         }
         val exo = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
@@ -274,11 +279,17 @@ class PlayerActivity : ComponentActivity() {
     /** Subtitles show in the chosen language, or stay off (still pickable from the CC button). */
     private fun applySubtitlePrefs(exo: ExoPlayer) {
         val lang = prefs.subtitleLanguage
+        val captions = getSystemService(android.view.accessibility.CaptioningManager::class.java)
         exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
             .apply {
-                // "Off" still honours Android's accessibility captions setting.
-                if (lang == null) setPreferredTextLanguageAndRoleFlagsToCaptioningManagerSettings(this@PlayerActivity)
-                else setPreferredTextLanguage(lang)
+                when {
+                    lang != null -> setPreferredTextLanguage(lang)
+                    // "Off" still honours Android's accessibility captions: their language, or the
+                    // device language when captions are on with "Default" language.
+                    captions.isEnabled && captions.locale == null -> setPreferredTextLanguage(Locale.getDefault().language)
+                    captions.isEnabled -> setPreferredTextLanguageAndRoleFlagsToCaptioningManagerSettings(this@PlayerActivity)
+                    else -> setPreferredTextLanguage(null)
+                }
             }
             .setSelectUndeterminedTextLanguage(false)
             // A file's "default" flag shouldn't pick subtitles for you; language does.
@@ -356,9 +367,11 @@ class PlayerActivity : ComponentActivity() {
         val id = playback.tmdbId ?: return null
         val details = runCatching { app.tmdb.details(TitleRef(MediaType.TV, id)) }.getOrNull()
         val ep = runCatching { app.tmdb.season(id, next.season) }.getOrNull()?.firstOrNull { it.number == next.episode }
-        // Announced but not out yet (or unknown) → no Up next.
-        val aired = ep?.airDate?.let { runCatching { !java.time.LocalDate.parse(it).isAfter(java.time.LocalDate.now()) }.getOrNull() }
-        if (aired != true) return null
+        // Announced but not out yet → no Up next. Without an air date (or if TMDB is unreachable)
+        // fall back to the show's latest aired episode; [playback.next] was already checked against it.
+        val airDate = ep?.airDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        val aired = if (airDate != null) !airDate.isAfter(java.time.LocalDate.now()) else hasAired(next, details?.lastAired)
+        if (!aired) return null
         return playback.copy(
             key = Playback.keyFor("tv", id, next),
             subtitle = listOfNotNull(next.label, ep?.name).joinToString(" · "),
@@ -529,6 +542,7 @@ class PlayerActivity : ComponentActivity() {
         val url = streamUrl ?: return
         val mime = hash?.let { app.engine.streamInfo(it)?.mimeType } ?: "video/*"
         externalHandoff = true
+        stoppedSinceHandoff = false
         startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), mime), "Open with"))
     }
 
@@ -541,10 +555,12 @@ class PlayerActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- lifecycle
 
-    override fun onStart() {
-        super.onStart()
-        // Back from the external-player chooser (or the player itself): we own the stream again.
-        externalHandoff = false
+    override fun onResume() {
+        super.onResume()
+        // The chooser is translucent: if it was dismissed without opening anything, we never
+        // stopped, and the stream is ours again.
+        if (externalHandoff && !stoppedSinceHandoff) externalHandoff = false
+        // Lifecycle is STARTED here (not yet in onStart), so the card can come back.
         if (nextCardPending) {
             nextCardPending = false
             showNextCard()
@@ -553,6 +569,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        if (externalHandoff) stoppedSinceHandoff = true
         saveProgress()
         player?.pause()
         if (nextCard.visibility == View.VISIBLE) {
@@ -567,7 +584,10 @@ class PlayerActivity : ComponentActivity() {
         player?.removeListener(listener)
         player?.release()
         player = null
-        if (!externalHandoff) hash?.let { app.engine.stopStream(it, preparedStream) }
+        hash?.let {
+            // Handed to VLC/MX: keep serving while it reads; the engine stops it once it goes quiet.
+            if (externalHandoff) app.engine.stopWhenIdle(it, preparedStream) else app.engine.stopStream(it, preparedStream)
+        }
         super.onDestroy()
     }
 

@@ -80,6 +80,7 @@ fun ContinueRow(
     onOpenDest: (Dest) -> Unit,
     onFocus: ((ContinueItem) -> Unit)? = null,
     firstFocus: FocusRequester? = null,
+    listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
 ) {
     if (items.isEmpty()) return
     val context = LocalContext.current
@@ -87,6 +88,7 @@ fun ContinueRow(
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         Text("Continue watching", style = Tokens.Type.heading, color = Tokens.Colors.text, modifier = Modifier.padding(horizontal = sidePadding))
         LazyRow(
+            state = listState,
             contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {

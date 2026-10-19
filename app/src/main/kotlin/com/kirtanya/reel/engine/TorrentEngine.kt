@@ -75,6 +75,10 @@ class TorrentEngine(private val context: Context) {
     private val metadataWaiters = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
     private val pieceWaiters = ConcurrentHashMap<String, ConcurrentHashMap<Int, CompletableDeferred<Unit>>>()
     private val streams = ConcurrentHashMap<String, ActiveStream>()
+    /** Players currently starting a stream on a torrent (hash → count): cache trimming leaves these alone. */
+    private val starting = ConcurrentHashMap<String, Int>()
+    /** Makes "register a stream + resume" and "unregister + pause / delete" atomic with each other. */
+    private val streamLock = Any()
     private val readerIds = AtomicLong()
 
     private val _torrents = MutableStateFlow<List<TorrentSnapshot>>(emptyList())
@@ -296,8 +300,6 @@ class TorrentEngine(private val context: Context) {
             } else if (handle.filePriority(file.index) == Priority.IGNORE) {
                 handle.filePriority(file.index, Priority.DEFAULT)
             }
-            handle.resume()
-
             val span = FileSpan(fs.fileOffset(file.index), fs.fileSize(file.index), info.pieceLength(), info.numPieces())
             val stream = StreamInfo(
                 infoHash = hash,
@@ -307,10 +309,29 @@ class TorrentEngine(private val context: Context) {
                 path = File(handle.savePath(), fs.filePath(file.index)),
             )
             metas[hash]?.let { saveMeta(it.copy(streamFileIndex = file.index, lastUsedAt = System.currentTimeMillis())) }
-            streams[hash] = ActiveStream(stream, StreamPlanner(span))
+            synchronized(streamLock) {
+                // Register and resume together: a player stopping at the same moment can't pause us after.
+                streams[hash] = ActiveStream(stream, StreamPlanner(span))
+                handle.resume()
+            }
             retarget(hash)
             stream
         }
+
+    /**
+     * What a player calls: adds the torrent (stream mode) and prepares the file, holding a claim
+     * on the torrent the whole time so a finishing player's cache trim can't delete it underneath.
+     */
+    suspend fun startStream(magnet: String, fileIdx: Int?, filenameHint: String?): StreamInfo {
+        val hash = Magnet.parse(magnet)?.infoHash ?: throw EngineException("That isn't a valid magnet link")
+        starting.merge(hash, 1, Int::plus)
+        try {
+            addMagnet(magnet, TorrentMode.STREAM)
+            return prepareStream(hash, fileIdx, filenameHint)
+        } finally {
+            starting.computeIfPresent(hash) { _, n -> (n - 1).takeIf { it > 0 } }
+        }
+    }
 
     fun streamInfo(hash: String): StreamInfo? = streams[hash]?.info
 
@@ -322,22 +343,46 @@ class TorrentEngine(private val context: Context) {
      * stream is left alone. Stream-mode torrents pause and stay in the cache.
      */
     fun stopStream(hash: String, owner: StreamInfo? = null) {
-        val stream = streams[hash] ?: return
-        if (owner != null && stream.info !== owner) return
-        if (!streams.remove(hash, stream)) return
-        val h = find(hash) ?: return
-        h.clearPieceDeadlines()
-        if (metas[hash]?.mode == TorrentMode.STREAM) {
-            h.pause()
-            h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+        val stream: ActiveStream
+        synchronized(streamLock) {
+            stream = streams[hash] ?: return
+            if (owner != null && stream.info !== owner) return
+            if (!streams.remove(hash, stream)) return
+            val h = find(hash) ?: return
+            // Another player is starting this torrent (next episode of a season pack): leave it running.
+            if (starting.containsKey(hash) || streams.containsKey(hash)) return
+            h.clearPieceDeadlines()
+            if (metas[hash]?.mode == TorrentMode.STREAM) {
+                h.pause()
+                h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+            }
         }
         Log.i(TAG, "stream stopped ${stream.info.file.name}")
         scope.launch(Dispatchers.IO) { trimCache(DEFAULT_CACHE_BUDGET) }
     }
 
+    /**
+     * For a stream handed to an external player: keep serving while it reads, and stop once no
+     * player has read anything for [idleMs] (the external app was closed).
+     */
+    fun stopWhenIdle(hash: String, owner: StreamInfo?, idleMs: Long = 10 * 60_000L) {
+        scope.launch {
+            while (isActive) {
+                delay(60_000)
+                val s = streams[hash] ?: return@launch
+                if (owner != null && s.info !== owner) return@launch
+                if (s.readers.isEmpty() && System.currentTimeMillis() - s.lastActivityAt > idleMs) {
+                    Log.i(TAG, "external player idle; stopping ${s.info.file.name}")
+                    stopStream(hash, owner)
+                    return@launch
+                }
+            }
+        }
+    }
+
     fun openReader(hash: String, filePos: Long): Long {
         val id = readerIds.incrementAndGet()
-        streams[hash]?.readers?.put(id, filePos)
+        streams[hash]?.let { it.readers[id] = filePos; it.lastActivityAt = System.currentTimeMillis() }
         retarget(hash)
         return id
     }
@@ -345,12 +390,15 @@ class TorrentEngine(private val context: Context) {
     /** The reader moved to [filePos]; re-plans deadlines when it enters a new piece. */
     fun readerAt(hash: String, readerId: Long, filePos: Long) {
         val stream = streams[hash] ?: return
+        stream.lastActivityAt = System.currentTimeMillis()
         val old = stream.readers.put(readerId, filePos)
         if (old == null || stream.info.span.pieceOf(old) != stream.info.span.pieceOf(filePos)) retarget(hash)
     }
 
     fun closeReader(hash: String, readerId: Long) {
-        streams[hash]?.readers?.remove(readerId) ?: return
+        val stream = streams[hash] ?: return
+        stream.readers.remove(readerId) ?: return
+        stream.lastActivityAt = System.currentTimeMillis()
         retarget(hash)
     }
 
@@ -408,11 +456,17 @@ class TorrentEngine(private val context: Context) {
         var used = cacheBytes()
         for (meta in cached) {
             if (used <= budgetBytes) break
-            // A player may have started this torrent again since the list was made.
-            if (streams.containsKey(meta.infoHash)) continue
             val size = streamBytes(meta.infoHash)
-            remove(meta.infoHash, deleteFiles = true)
-            used -= size
+            val removed = synchronized(streamLock) {
+                // A player may have started this torrent again since the list was made.
+                if (streams.containsKey(meta.infoHash) || starting.containsKey(meta.infoHash)) {
+                    false
+                } else {
+                    remove(meta.infoHash, deleteFiles = true)
+                    true
+                }
+            }
+            if (removed) used -= size
         }
     }
 
@@ -561,6 +615,7 @@ class TorrentEngine(private val context: Context) {
     private class ActiveStream(val info: StreamInfo, val planner: StreamPlanner) {
         /** Each open HTTP connection from the player → its current file position. */
         val readers = ConcurrentHashMap<Long, Long>()
+        @Volatile var lastActivityAt: Long = System.currentTimeMillis()
     }
 
     companion object {
