@@ -55,13 +55,21 @@ data class Playback(
     }
 }
 
-/** The episode after [current], moving to the next season when a season ends. Specials (season 0) are skipped. */
-fun nextEpisode(seasons: List<SeasonSummary>, current: EpisodeNumber): EpisodeNumber? {
+/**
+ * The episode after [current], moving to the next season when a season ends. Specials (season 0)
+ * are skipped. TMDB season counts include announced episodes, so with [lastAired] (season, episode)
+ * nothing after the latest aired episode is returned.
+ */
+fun nextEpisode(seasons: List<SeasonSummary>, current: EpisodeNumber, lastAired: Pair<Int, Int>? = null): EpisodeNumber? {
     val regular = seasons.filter { it.number > 0 && it.episodeCount > 0 }.sortedBy { it.number }
     val season = regular.firstOrNull { it.number == current.season }
-    if (season != null && current.episode < season.episodeCount) return EpisodeNumber(current.season, current.episode + 1)
-    val following = regular.firstOrNull { it.number > current.season } ?: return null
-    return EpisodeNumber(following.number, 1)
+    val next = if (season != null && current.episode < season.episodeCount) {
+        EpisodeNumber(current.season, current.episode + 1)
+    } else {
+        regular.firstOrNull { it.number > current.season }?.let { EpisodeNumber(it.number, 1) }
+    } ?: return null
+    if (lastAired != null && (next.season > lastAired.first || next.season == lastAired.first && next.episode > lastAired.second)) return null
+    return next
 }
 
 /**

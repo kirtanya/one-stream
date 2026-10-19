@@ -23,6 +23,7 @@ import androidx.annotation.OptIn
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -34,6 +35,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -62,12 +64,14 @@ import com.kirtanya.reel.ui.formatBytes
 import com.kirtanya.reel.ui.sources.rankPrefs
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 
@@ -84,6 +88,8 @@ class PlayerActivity : ComponentActivity() {
 
     private var player: ExoPlayer? = null
     private var hash: String? = null
+    /** The stream this player prepared; only this one is stopped when we leave. */
+    private var preparedStream: com.kirtanya.reel.engine.StreamInfo? = null
     private var streamUrl: String? = null
     private var statsJob: Job? = null
     private var progressJob: Job? = null
@@ -93,6 +99,8 @@ class PlayerActivity : ComponentActivity() {
     /** Next episode + the source chosen for it (null source = none found), once looked up. */
     private var nextReady: Pair<Playback, Source?>? = null
     private var nextCancelled = false
+    /** The Up next card was up when we went to the background; show it again on return. */
+    private var nextCardPending = false
     private var leavingForNext = false
     private var externalHandoff = false
 
@@ -143,7 +151,10 @@ class PlayerActivity : ComponentActivity() {
                 // don't hold a direct link up for long.
                 val tracks = withTimeoutOrNull(if (source.kind == SourceKind.TORRENT) 1_500L else 2_500L) { subtitles.await() }
                 if (tracks == null) subtitles.cancel()
-                play(url, (source.subtitles + tracks.orEmpty()).distinctBy { it.url }, resumeAt)
+                val fromSource = source.subtitles.map {
+                    it.copy(language = Subtitles.normalizeLanguage(it.language), format = it.format ?: Subtitles.formatOf(it.url))
+                }
+                play(url, (fromSource + tracks.orEmpty()).distinctBy { it.url }, resumeAt)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: EngineException) {
@@ -163,6 +174,7 @@ class PlayerActivity : ComponentActivity() {
         hash = h
         startStats(h)
         val info = engine.prepareStream(h, source.fileIdx, source.filename)
+        preparedStream = info
         return app.streamServer.urlFor(info)
     }
 
@@ -171,7 +183,9 @@ class PlayerActivity : ComponentActivity() {
         val req = sourceRequest(playback.episode) ?: return emptyList()
         val addons = app.sources.subtitleAddons()
         if (addons.isEmpty()) return emptyList()
-        return runCatching { Subtitles.search(req, addons, app.fetcher, filename = playback.source.filename) }
+        return runCatching {
+            withContext(Dispatchers.Default) { Subtitles.search(req, addons, app.fetcher, filename = playback.source.filename) }
+        }
             .onFailure { if (it is CancellationException) throw it else Log.w(TAG, "subtitles failed", it) }
             .getOrDefault(emptyList())
     }
@@ -183,11 +197,12 @@ class PlayerActivity : ComponentActivity() {
             .setBufferDurationsMs(15_000, 60_000, 2_500, 5_000)
             .build()
         // Some direct sources need headers (Referer, User-Agent…) on every request.
+        // Only the stream's own server gets them, not subtitle hosts.
         val headers = playback.source.headers
-        val http = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
-            .setDefaultRequestProperties(headers)
-            .apply { headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.let { setUserAgent(it.value) } }
+        val streamHost = Uri.parse(url).host
+        val http = ResolvingDataSource.Factory(DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)) { spec ->
+            if (headers.isNotEmpty() && spec.uri.host == streamHost) spec.withAdditionalHeaders(headers) else spec
+        }
         val exo = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
@@ -218,6 +233,7 @@ class PlayerActivity : ComponentActivity() {
                 Player.STATE_ENDED -> {
                     saveProgress(ended = true)
                     if (nextReady?.second != null && !nextCancelled && prefs.autoplayNext) playNext()
+                    else if (nextCard.visibility == View.VISIBLE) nextPlay.requestFocus()
                 }
             }
         }
@@ -259,9 +275,14 @@ class PlayerActivity : ComponentActivity() {
     private fun applySubtitlePrefs(exo: ExoPlayer) {
         val lang = prefs.subtitleLanguage
         exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
-            .setPreferredTextLanguage(lang)
+            .apply {
+                // "Off" still honours Android's accessibility captions setting.
+                if (lang == null) setPreferredTextLanguageAndRoleFlagsToCaptioningManagerSettings(this@PlayerActivity)
+                else setPreferredTextLanguage(lang)
+            }
             .setSelectUndeterminedTextLanguage(false)
-            .setIgnoredTextSelectionFlags(if (lang == null) C.SELECTION_FLAG_DEFAULT else 0)
+            // A file's "default" flag shouldn't pick subtitles for you; language does.
+            .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
             .build()
         playerView.subtitleView?.apply {
             setFractionalTextSize(prefs.subtitleSize.fraction)
@@ -335,12 +356,15 @@ class PlayerActivity : ComponentActivity() {
         val id = playback.tmdbId ?: return null
         val details = runCatching { app.tmdb.details(TitleRef(MediaType.TV, id)) }.getOrNull()
         val ep = runCatching { app.tmdb.season(id, next.season) }.getOrNull()?.firstOrNull { it.number == next.episode }
+        // Announced but not out yet (or unknown) → no Up next.
+        val aired = ep?.airDate?.let { runCatching { !java.time.LocalDate.parse(it).isAfter(java.time.LocalDate.now()) }.getOrNull() }
+        if (aired != true) return null
         return playback.copy(
             key = Playback.keyFor("tv", id, next),
             subtitle = listOfNotNull(next.label, ep?.name).joinToString(" · "),
             episode = next,
             stillPath = ep?.stillPath,
-            next = details?.let { nextEpisode(it.seasons, next) },
+            next = details?.let { nextEpisode(it.seasons, next, it.lastAired) },
         )
     }
 
@@ -362,6 +386,14 @@ class PlayerActivity : ComponentActivity() {
 
     private fun showNextCard() {
         val (next, source) = nextReady ?: return
+        if (nextCancelled || errorPanel.visibility == View.VISIBLE) return
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            nextCardPending = true
+            return
+        }
+        // Keep the controls from popping up over the card (they'd take the remote's focus at the end).
+        playerView.controllerAutoShow = false
+        playerView.hideController()
         nextTitle.text = "Up next · ${next.subtitle ?: next.episode?.label.orEmpty()}"
         nextPlay.text = if (source != null) "Play now" else "Choose a source"
         nextCard.visibility = View.VISIBLE
@@ -372,24 +404,34 @@ class PlayerActivity : ComponentActivity() {
         }
         countdownJob?.cancel()
         countdownJob = lifecycleScope.launch {
-            for (s in 10 downTo 1) {
-                nextCountdown.text = "Playing in $s…"
+            var left = 10
+            while (left > 0) {
+                nextCountdown.text = "Playing in $left…"
                 delay(1_000)
+                val exo = player ?: return@launch
+                // Paused by the user → the countdown waits too.
+                if (exo.isPlaying || exo.playbackState == Player.STATE_ENDED) left--
             }
             playNext()
         }
     }
 
-    private fun cancelNext() {
-        nextCancelled = true
+    private fun hideNextCard() {
         countdownJob?.cancel()
         nextCard.visibility = View.GONE
+        playerView.controllerAutoShow = true
+    }
+
+    private fun cancelNext() {
+        nextCancelled = true
+        hideNextCard()
         playerView.requestFocus()
     }
 
     private fun playNext() {
         val (next, source) = nextReady ?: return
-        if (leavingForNext) return
+        // Never jump to the next episode from the background.
+        if (leavingForNext || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
         leavingForNext = true
         saveProgress()
         if (source != null) startActivity(forPlayback(this, next)) else openSources(next.episode)
@@ -398,23 +440,36 @@ class PlayerActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- remote control
 
-    /** TV remote: ←/→ skip 10 s while the controls are hidden (with them shown, the controls take the keys). */
+    /** Key whose press we used for seeking: its release is ours too, or PlayerView would open the controls. */
+    private var seekKey: Int? = null
+    private var lastSeekAt = 0L
+
+    /**
+     * TV remote: ←/→ skip 10 s while the controls are hidden (with them shown, the controls take
+     * the keys). Holding the key keeps skipping, about three times a second, 30 s at a time after 2 s.
+     */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val exo = player
+        val isSeekKey = event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+        if (isSeekKey && event.action == KeyEvent.ACTION_UP && seekKey == event.keyCode) {
+            seekKey = null
+            return true
+        }
         val overlayUp = nextCard.visibility == View.VISIBLE || resumeChip.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE
-        if (exo != null && event.action == KeyEvent.ACTION_DOWN && !overlayUp && !playerView.isControllerFullyVisible) {
-            val step = when (event.keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> -10_000L
-                KeyEvent.KEYCODE_DPAD_RIGHT -> 10_000L
-                else -> 0L
-            }
-            if (step != 0L) {
-                val end = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
-                val target = (exo.currentPosition + step).coerceIn(0, end)
-                exo.seekTo(target)
-                flashStatus((if (step > 0) "+10 s · " else "−10 s · ") + formatTime(target))
-                return true
-            }
+        if (exo != null && isSeekKey && event.action == KeyEvent.ACTION_DOWN && !overlayUp &&
+            (seekKey == event.keyCode || !playerView.isControllerFullyVisible)
+        ) {
+            seekKey = event.keyCode
+            val now = android.os.SystemClock.uptimeMillis()
+            if (event.repeatCount > 0 && now - lastSeekAt < 300) return true
+            lastSeekAt = now
+            val held = event.eventTime - event.downTime
+            val step = (if (held > 2_000) 30_000L else 10_000L) * (if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
+            val end = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
+            val target = (exo.currentPosition + step).coerceIn(0, end)
+            exo.seekTo(target)
+            flashStatus((if (step > 0) "+" else "−") + "${kotlin.math.abs(step) / 1000} s · " + formatTime(target))
+            return true
         }
         if (resumeChip.visibility == View.VISIBLE && resumeChip.hasFocus() && event.action == KeyEvent.ACTION_DOWN &&
             event.keyCode != KeyEvent.KEYCODE_DPAD_CENTER && event.keyCode != KeyEvent.KEYCODE_ENTER
@@ -460,8 +515,8 @@ class PlayerActivity : ComponentActivity() {
 
     private fun showError(text: String) {
         status.visibility = View.GONE
-        nextCard.visibility = View.GONE
-        countdownJob?.cancel()
+        nextCancelled = true
+        hideNextCard()
         errorText.text = text
         errorPanel.visibility = View.VISIBLE
         errorExternal.visibility = if (streamUrl != null) View.VISIBLE else View.GONE
@@ -486,10 +541,24 @@ class PlayerActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- lifecycle
 
+    override fun onStart() {
+        super.onStart()
+        // Back from the external-player chooser (or the player itself): we own the stream again.
+        externalHandoff = false
+        if (nextCardPending) {
+            nextCardPending = false
+            showNextCard()
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         saveProgress()
         player?.pause()
+        if (nextCard.visibility == View.VISIBLE) {
+            nextCardPending = true
+            hideNextCard()
+        }
     }
 
     override fun onDestroy() {
@@ -498,7 +567,7 @@ class PlayerActivity : ComponentActivity() {
         player?.removeListener(listener)
         player?.release()
         player = null
-        if (!externalHandoff) hash?.let { app.engine.stopStream(it) }
+        if (!externalHandoff) hash?.let { app.engine.stopStream(it, preparedStream) }
         super.onDestroy()
     }
 

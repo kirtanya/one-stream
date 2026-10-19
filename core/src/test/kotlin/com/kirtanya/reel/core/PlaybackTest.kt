@@ -45,6 +45,12 @@ class NextEpisodeTest {
     @Test fun acrossSeasons() = assertEquals(EpisodeNumber(2, 1), nextEpisode(seasons, EpisodeNumber(1, 10)))
     @Test fun lastEpisodeHasNoNext() = assertNull(nextEpisode(seasons, EpisodeNumber(2, 8)))
     @Test fun specialsAreSkipped() = assertEquals(EpisodeNumber(1, 1), nextEpisode(seasons, EpisodeNumber(0, 5)))
+    @Test fun unairedEpisodesAreNotNext() {
+        // Season 2 is announced with 8 episodes but only 3 have aired.
+        assertEquals(EpisodeNumber(2, 3), nextEpisode(seasons, EpisodeNumber(2, 2), lastAired = 2 to 3))
+        assertNull(nextEpisode(seasons, EpisodeNumber(2, 3), lastAired = 2 to 3))
+        assertNull(nextEpisode(seasons, EpisodeNumber(1, 10), lastAired = 1 to 10))
+    }
 }
 
 class PickNextSourceTest {
@@ -86,6 +92,17 @@ class ContinueWatchingTest {
         assertIs<ContinueItem.Resume>(items[1])
     }
 
+    @Test fun barelyStartedNewerEpisodeDoesNotHideUpNext() {
+        val items = ContinueWatching.select(
+            listOf(
+                entry(pb("tv:9:s1e3", "tv:9", next = EpisodeNumber(1, 4)), 97 * MIN, ago = 9_000),
+                entry(pb("tv:9:s1e4", "tv:9"), 20_000, ago = 1_000), // opened S1E4 for 20 s
+            ),
+            now,
+        )
+        assertEquals(EpisodeNumber(1, 4), assertIs<ContinueItem.UpNext>(items.single()).next)
+    }
+
     @Test fun resumePosition() {
         assertEquals(0, ContinueWatching.resumePositionMs(null))
         assertEquals(0, ContinueWatching.resumePositionMs(entry(pb("m"), 20_000)))
@@ -115,6 +132,7 @@ class SubtitlesTest {
         assertEquals("hi", Subtitles.normalizeLanguage("hin"))
         assertEquals("es", Subtitles.normalizeLanguage("Spanish"))
         assertEquals("en", Subtitles.normalizeLanguage("en"))
+        assertEquals("pt", Subtitles.normalizeLanguage("pb"))
     }
 
     @Test fun urlAndParse() {

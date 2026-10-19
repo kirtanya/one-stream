@@ -16,11 +16,21 @@ import kotlinx.coroutines.withTimeout
  * Developer check without touching the screen. Only adb can send it (guarded by the DUMP permission):
  * `adb shell am broadcast -n com.kirtanya.reel/.data.SourcesProbe --ei tmdb 10378 [--es type tv --ei season 1 --ei episode 1]`
  * `[--es addAddon <manifest url>] [--es removeAddon <manifest url>]` installs / removes an addon around the search.
+ * `--ez history true` dumps watch history and Continue watching instead of searching.
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = ReelApp.get(context)
+        if (intent.getBooleanExtra("history", false)) {
+            // Watch history + what Continue watching would show right now.
+            app.history.entries.value.take(20).forEach { e ->
+                Log.i(TAG, "history ${e.playback.key} ${e.positionMs / 1000}s/${e.durationMs / 1000}s finished=${e.finished} next=${e.playback.next?.label} src=${e.playback.source.provider}")
+            }
+            app.history.continueWatching().forEach { Log.i(TAG, "continue ${it::class.simpleName} ${it.entry.playback.key}") }
+            Log.i(TAG, "history done")
+            return
+        }
         val pending = goAsync()
         val type = if (intent.getStringExtra("type") == "tv") MediaType.TV else MediaType.MOVIE
         val ref = TitleRef(type, intent.getIntExtra("tmdb", 10378))

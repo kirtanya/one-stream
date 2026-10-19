@@ -26,6 +26,16 @@ class Navigator {
 
     fun open(dest: Dest) = stack.add(dest)
 
+    /** Opens [dest] unless it's already showing; if it's further back, returns to it instead of stacking a copy. */
+    fun openOrReturn(dest: Dest) {
+        val existing = stack.lastIndexOf(dest)
+        when {
+            existing == stack.lastIndex && existing >= 0 -> Unit
+            existing >= 0 -> while (stack.lastIndex > existing) stack.removeAt(stack.lastIndex)
+            else -> stack.add(dest)
+        }
+    }
+
     fun select(t: Tab) {
         stack.clear()
         tab = t

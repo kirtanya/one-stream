@@ -1,7 +1,9 @@
 package com.kirtanya.reel.core.sources
 
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -44,7 +46,10 @@ class OkHttpFetcher(
 ) : HttpFetcher {
     private val noRedirects by lazy { client.newBuilder().followRedirects(false).followSslRedirects(false).build() }
 
-    override suspend fun fetch(request: FetchRequest): FetchResponse {
+    /** Runs on IO: callers include Compose effects on the main thread, and reading a body is network I/O. */
+    override suspend fun fetch(request: FetchRequest): FetchResponse = withContext(Dispatchers.IO) { fetchBlocking(request) }
+
+    private suspend fun fetchBlocking(request: FetchRequest): FetchResponse {
         var url = request.url.toHttpUrlOrNull() ?: throw IOException("Bad URL: ${request.url}")
         val headers = request.headers.toMutableMap()
         if (url.host == "api.themoviedb.org" && url.queryParameter("api_key") == TMDB_KEY_PLACEHOLDER && !tmdbBearer.isNullOrBlank()) {

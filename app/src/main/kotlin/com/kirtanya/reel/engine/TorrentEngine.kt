@@ -316,9 +316,15 @@ class TorrentEngine(private val context: Context) {
 
     fun isStreaming(hash: String): Boolean = streams.containsKey(hash)
 
-    /** Called when the player is done. Stream-mode torrents pause and stay in the cache. */
-    fun stopStream(hash: String) {
-        val stream = streams.remove(hash) ?: return
+    /**
+     * Called when a player is done with [owner] (the stream it prepared). If another player has
+     * since prepared a different file of the same torrent (next episode of a season pack), its
+     * stream is left alone. Stream-mode torrents pause and stay in the cache.
+     */
+    fun stopStream(hash: String, owner: StreamInfo? = null) {
+        val stream = streams[hash] ?: return
+        if (owner != null && stream.info !== owner) return
+        if (!streams.remove(hash, stream)) return
         val h = find(hash) ?: return
         h.clearPieceDeadlines()
         if (metas[hash]?.mode == TorrentMode.STREAM) {
@@ -402,6 +408,8 @@ class TorrentEngine(private val context: Context) {
         var used = cacheBytes()
         for (meta in cached) {
             if (used <= budgetBytes) break
+            // A player may have started this torrent again since the list was made.
+            if (streams.containsKey(meta.infoHash)) continue
             val size = streamBytes(meta.infoHash)
             remove(meta.infoHash, deleteFiles = true)
             used -= size

@@ -54,7 +54,9 @@
  ],
  "overview": "Seven noble families fight for control of the mythical land ",
  "last_episode_to_air": {
-  "runtime": 80
+  "runtime": 80,
+  "season_number": 8,
+  "episode_number": 6
  },
  "credits": {
   "cast": [

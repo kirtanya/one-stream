@@ -49,6 +49,7 @@ class TmdbParserTest {
         assertEquals("A", d.certification)
         assertEquals("JioHotstar", d.providers.stream.first().name)
         assertEquals("tt0944947", d.imdbId)
+        assertEquals(8 to 6, d.lastAired)
     }
 
     @Test fun missingRegionMeansNoProviders() {

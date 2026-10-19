@@ -89,7 +89,7 @@ fun playbackFor(d: TitleDetails, episode: EpisodeNumber?, episodeName: String?, 
         posterPath = d.summary.posterPath,
         backdropPath = d.summary.backdropPath,
         stillPath = stillPath,
-        next = episode?.let { nextEpisode(d.seasons, it) },
+        next = episode?.let { nextEpisode(d.seasons, it, d.lastAired) },
         source = source,
     )
 }

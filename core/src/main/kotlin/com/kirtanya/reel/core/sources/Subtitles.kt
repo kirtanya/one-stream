@@ -69,8 +69,8 @@ object Subtitles {
     /** "eng" / "en" / "English" → "en"; unknown codes are kept as they are. */
     fun normalizeLanguage(code: String): String {
         val c = code.trim().lowercase()
-        if (c.length == 2) return c
         LANGS[c]?.let { return it }
+        if (c.length == 2) return c
         if (c.length == 3) {
             Locale.getISOLanguages().firstOrNull { runCatching { Locale(it).isO3Language == c }.getOrDefault(false) }?.let { return it }
         }

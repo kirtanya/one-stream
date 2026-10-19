@@ -31,7 +31,7 @@ import com.kirtanya.reel.ui.theme.Tokens
 fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest? = null, onOpenHandled: () -> Unit = {}) {
     val nav = rememberNavigator()
     androidx.compose.runtime.LaunchedEffect(openDest) {
-        openDest?.let { nav.open(it); onOpenHandled() }
+        openDest?.let { nav.openOrReturn(it); onOpenHandled() }
     }
     val saveable = rememberSaveableStateHolder()
     BackHandler(enabled = nav.stack.isNotEmpty() || nav.tab != Tab.Home) { nav.back() }

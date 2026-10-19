@@ -36,7 +36,7 @@ val TvTopBarHeight = 80.dp
 fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest? = null, onOpenHandled: () -> Unit = {}) {
     val nav = rememberNavigator()
     androidx.compose.runtime.LaunchedEffect(openDest) {
-        openDest?.let { nav.open(it); onOpenHandled() }
+        openDest?.let { nav.openOrReturn(it); onOpenHandled() }
     }
     val activity = LocalContext.current as? Activity
     BackHandler { if (!nav.back()) activity?.finish() }

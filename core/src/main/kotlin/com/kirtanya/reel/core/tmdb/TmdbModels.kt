@@ -56,6 +56,8 @@ data class TitleDetails(
     val seasons: List<SeasonSummary>,
     val imdbId: String?,
     val providers: WatchProviders,
+    /** Shows: the latest episode that has aired (TMDB `last_episode_to_air`), so Up next never points past it. */
+    val lastAired: Pair<Int, Int>? = null,
 )
 
 data class Episode(

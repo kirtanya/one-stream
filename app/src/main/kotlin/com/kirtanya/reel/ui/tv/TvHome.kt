@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
@@ -43,12 +44,13 @@ import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.delay
 
-/** What the big info block and backdrop show for the focused card. */
-private data class HomeInfo(val title: String, val meta: String, val overview: String, val backdropPath: String?)
+/** What the big info block and backdrop show for the focused card. [key] identifies the card. */
+private data class HomeInfo(val key: String, val title: String, val meta: String, val overview: String, val backdropPath: String?)
 
-private fun TitleSummary.info() = HomeInfo(title, metaLine(this), overview, backdropPath)
+private fun TitleSummary.info() = HomeInfo("poster:$ref", title, metaLine(this), overview, backdropPath)
 
-private fun ContinueItem.info() = HomeInfo(entry.playback.title, continueDetail(this), entry.playback.subtitle.orEmpty(), entry.playback.backdropPath)
+private fun ContinueItem.info() =
+    HomeInfo("continue:${entry.playback.titleKey}", entry.playback.title, continueDetail(this), entry.playback.subtitle.orEmpty(), entry.playback.backdropPath)
 
 /**
  * Cinematic home: the focused card's backdrop fills the screen, its details sit top-left,
@@ -70,6 +72,19 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
         }
         val firstCard = remember { FocusRequester() }
         RequestFocusOnce(firstCard)
+        // A Continue watching card was removed (hold OK) or changed: refresh the header and put the
+        // remote's focus back on the first card instead of losing it.
+        LaunchedEffect(continueItems) {
+            if (!focused.key.startsWith("continue:")) return@LaunchedEffect
+            val still = continueItems.firstOrNull { "continue:${it.entry.playback.titleKey}" == focused.key }
+            if (still != null) {
+                focused = still.info()
+            } else {
+                focused = continueItems.firstOrNull()?.info() ?: rows.first().items.first().info()
+                withFrameNanos { }
+                runCatching { firstCard.requestFocus() }
+            }
+        }
 
         Box(Modifier.fillMaxSize()) {
             RemoteImage(TmdbImages.backdrop(backdrop), Modifier.fillMaxSize())

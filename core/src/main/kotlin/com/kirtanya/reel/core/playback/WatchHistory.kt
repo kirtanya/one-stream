@@ -44,11 +44,14 @@ object ContinueWatching {
             .filter { now - it.updatedAt < MAX_AGE_MS }
             .groupBy { it.playback.titleKey }
             .mapNotNull { (_, list) ->
-                val latest = list.maxBy { it.updatedAt }
-                when {
-                    latest.finished -> latest.playback.next?.let { ContinueItem.UpNext(latest, it) }
-                    latest.positionMs >= MIN_WATCHED_MS -> ContinueItem.Resume(latest)
-                    else -> null
+                // Newest entry that means something: a barely-started newer episode shouldn't hide
+                // "Up next" from the episode you just finished.
+                list.sortedByDescending { it.updatedAt }.firstNotNullOfOrNull { e ->
+                    when {
+                        e.finished -> e.playback.next?.let { ContinueItem.UpNext(e, it) }
+                        e.positionMs >= MIN_WATCHED_MS -> ContinueItem.Resume(e)
+                        else -> null
+                    }
                 }
             }
             .sortedByDescending { it.entry.updatedAt }

@@ -61,6 +61,11 @@ object TmdbParser {
             seasons = seasons,
             imdbId = (o.obj("external_ids")?.str("imdb_id") ?: o.str("imdb_id"))?.takeIf { it.startsWith("tt") },
             providers = providers(o.obj("watch/providers"), region),
+            lastAired = o.obj("last_episode_to_air")?.let { e ->
+                val s = e.int("season_number")
+                val n = e.int("episode_number")
+                if (s != null && n != null) s to n else null
+            },
         )
     }
 
