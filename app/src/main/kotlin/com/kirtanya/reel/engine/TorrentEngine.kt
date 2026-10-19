@@ -324,7 +324,8 @@ class TorrentEngine(private val context: Context) {
      */
     suspend fun startStream(magnet: String, fileIdx: Int?, filenameHint: String?): StreamInfo {
         val hash = Magnet.parse(magnet)?.infoHash ?: throw EngineException("That isn't a valid magnet link")
-        starting.merge(hash, 1, Int::plus)
+        // Under the lock, so a cache trim that's mid-removal finishes first and then sees the claim.
+        synchronized(streamLock) { starting.merge(hash, 1, Int::plus) }
         try {
             addMagnet(magnet, TorrentMode.STREAM)
             return prepareStream(hash, fileIdx, filenameHint)
@@ -336,6 +337,10 @@ class TorrentEngine(private val context: Context) {
     fun streamInfo(hash: String): StreamInfo? = streams[hash]?.info
 
     fun isStreaming(hash: String): Boolean = streams.containsKey(hash)
+
+    /** Is any player (ours or an external one) reading [owner]'s stream right now? */
+    fun hasReaders(hash: String, owner: StreamInfo?): Boolean =
+        streams[hash]?.takeIf { owner == null || it.info === owner }?.readers?.isNotEmpty() == true
 
     /**
      * Called when a player is done with [owner] (the stream it prepared). If another player has

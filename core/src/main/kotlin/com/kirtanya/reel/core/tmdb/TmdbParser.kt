@@ -61,13 +61,27 @@ object TmdbParser {
             seasons = seasons,
             imdbId = (o.obj("external_ids")?.str("imdb_id") ?: o.str("imdb_id"))?.takeIf { it.startsWith("tt") },
             providers = providers(o.obj("watch/providers"), region),
-            lastAired = o.obj("last_episode_to_air")?.let { e ->
-                val s = e.int("season_number")
-                val n = e.int("episode_number")
-                // Specials (season 0) are ignored: they don't tell us what has aired in regular seasons.
-                if (s != null && n != null && s > 0) s to n else null
-            },
+            lastAired = lastAiredRegular(o),
         )
+    }
+
+    /**
+     * The latest aired regular episode (season, episode). A special (season 0) says nothing about
+     * regular seasons, so then the episode before `next_episode_to_air` is used; null if unknown.
+     */
+    private fun lastAiredRegular(o: JsonObject): Pair<Int, Int>? {
+        fun JsonObject.num(): Pair<Int, Int>? {
+            val s = int("season_number") ?: return null
+            val n = int("episode_number") ?: return null
+            return s to n
+        }
+        o.obj("last_episode_to_air")?.num()?.takeIf { it.first > 0 }?.let { return it }
+        val (s, n) = o.obj("next_episode_to_air")?.num()?.takeIf { it.first > 0 } ?: return null
+        return when {
+            n > 1 -> s to n - 1
+            s > 1 -> s - 1 to Int.MAX_VALUE // everything in the previous season has aired
+            else -> null
+        }
     }
 
     fun parseSeason(body: String): List<Episode> {

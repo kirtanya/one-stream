@@ -585,8 +585,10 @@ class PlayerActivity : ComponentActivity() {
         player?.release()
         player = null
         hash?.let {
-            // Handed to VLC/MX: keep serving while it reads; the engine stops it once it goes quiet.
-            if (externalHandoff) app.engine.stopWhenIdle(it, preparedStream) else app.engine.stopStream(it, preparedStream)
+            // Handed to VLC/MX and it's still reading: keep serving; the engine stops it once it goes
+            // quiet. Otherwise (no external player connected) stop now.
+            if (externalHandoff && app.engine.hasReaders(it, preparedStream)) app.engine.stopWhenIdle(it, preparedStream)
+            else app.engine.stopStream(it, preparedStream)
         }
         super.onDestroy()
     }
