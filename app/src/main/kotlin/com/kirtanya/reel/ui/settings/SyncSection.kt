@@ -155,7 +155,11 @@ private fun PhoneSyncContent() {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (tv.lastError == null && tv.lastSyncAt > 0) Pill("In sync", accent = true)
                 if (tv.needsPairing) {
                     ReelButton("Pair again", { findTvs() }, kind = ButtonKind.Primary, icon = Icons.Rounded.Search)
