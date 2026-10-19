@@ -304,7 +304,7 @@ iOS, desktop, Play Store release, user accounts or cloud sync, debrid services, 
 | M5 Player polish | ✅ Built (0.4.0, installed on phone + TV): resume with “Start over”, progress saved every 10 s, Continue watching (phone + TV home; Up next after a finished episode; hold/long-press to remove), next-episode prefetch + 10 s countdown (same binge group/provider; never unaired episodes), subtitles from sources + subtitle addons (OpenSubtitles v3 one tap in Settings), language/size settings, TV ←/→ skip. Reviewed by a 10-agent find + adversarial-verify workflow: 17 bugs confirmed and fixed (incl. season-pack stream kill, network on main thread). Main-thread self-test passes on the phone. Playback itself not yet re-watched on a device after M5. |
 | `core` tests | ✅ 30/30 passing (magnets, ranges, piece planning, file picking) |
 
-Next: look at the Sources/Settings screens and the TV layout → M5 (player polish: resume, continue watching, next episode, subtitles).
+Next: once the UI redesign (separate session) lands, install and try M5 on the devices (play → back → Continue watching → resume; an episode to its end → Up next) → M6 (downloads + file search).
 
 
 ### Legal note from M4 testing
