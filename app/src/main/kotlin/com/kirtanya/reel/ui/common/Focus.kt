@@ -1,0 +1,55 @@
+package com.kirtanya.reel.ui.common
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
+import com.kirtanya.reel.ui.theme.Tokens
+
+/**
+ * Clickable for touch, focusable for the TV remote: focused = scale up + white outline.
+ * [onFocus] lets TV screens react (e.g. swap the backdrop).
+ */
+fun Modifier.focusCard(
+    shape: Shape = RoundedCornerShape(Tokens.Radius.m),
+    scale: Float = Tokens.Motion.focusScale,
+    onFocus: (() -> Unit)? = null,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val s by animateFloatAsState(if (focused) scale else 1f, tween(Tokens.Motion.focusMs), label = "cardFocus")
+    if (onFocus != null) androidx.compose.runtime.LaunchedEffect(focused) { if (focused) onFocus() }
+    this
+        .graphicsLayer { scaleX = s; scaleY = s }
+        .border(Tokens.Size.focusBorder, if (focused) Tokens.Colors.focus else Color.Transparent, shape)
+        .clip(shape)
+        .clickable(interactionSource = interaction, indication = ripple(), onClick = onClick)
+}
+
+fun Modifier.roundedClip(radius: Dp) = clip(RoundedCornerShape(radius))
+
+/** Puts the remote's focus on [requester] once it's laid out (retries a few frames). */
+@Composable
+fun RequestFocusOnce(requester: androidx.compose.ui.focus.FocusRequester, key: Any? = Unit) {
+    androidx.compose.runtime.LaunchedEffect(key) {
+        repeat(10) {
+            androidx.compose.runtime.withFrameNanos { }
+            if (runCatching { requester.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
+    }
+}

@@ -59,7 +59,7 @@ import kotlinx.coroutines.launch
  * Works with touch (phone) and the D-pad (TV). Replaced by the real Home in M3.
  */
 @Composable
-fun EngineScreen(isTv: Boolean, incomingMagnet: String?, onIncomingHandled: () -> Unit) {
+fun EngineScreen(isTv: Boolean, incomingMagnet: String?, onIncomingHandled: () -> Unit, dialogOnly: Boolean = false) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val torrents by engine.torrents.collectAsState()
@@ -95,6 +95,8 @@ fun EngineScreen(isTv: Boolean, incomingMagnet: String?, onIncomingHandled: () -
         IncomingDialog(link, onStream = { stream(link); onIncomingHandled() }, onDownload = { download(link); onIncomingHandled() }, onDismiss = onIncomingHandled)
     }
 
+    if (dialogOnly) return
+
     val pad = if (isTv) PaddingValues(horizontal = Tokens.Space.tvSafeH, vertical = Tokens.Space.tvSafeV)
     else PaddingValues(horizontal = Tokens.Space.phoneGutter, vertical = Tokens.Space.xl)
 
@@ -105,9 +107,9 @@ fun EngineScreen(isTv: Boolean, incomingMagnet: String?, onIncomingHandled: () -
     ) {
         item {
             Column {
-                Text("Reel", style = Tokens.Type.display, color = Tokens.Colors.text)
+                Text("Downloads", style = Tokens.Type.display, color = Tokens.Colors.text)
                 Text(
-                    "Engine test · stream cache ${formatBytes(cacheBytes)} · saving to ${engine.downloadsDir().path.substringAfterLast("/0/")}",
+                    "Stream cache ${formatBytes(cacheBytes)} · saving to ${engine.downloadsDir().path.substringAfterLast("/0/")}",
                     style = Tokens.Type.caption,
                     color = Tokens.Colors.textMuted,
                 )

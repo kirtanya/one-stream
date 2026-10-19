@@ -299,6 +299,7 @@ iOS, desktop, Play Store release, user accounts or cloud sync, debrid services, 
 | M0 Scaffold | ✅ Built: one app, phone + TV launcher entries, tokens, per-ABI APKs (~10 MB release) |
 | M1 Engine | ✅ **Verified on Pixel 8** (2026-10-19): downloads work, torrents survive app update/restart. Keep / pause / delete not explicitly tested. |
 | M2 Stream | ✅ **Verified on Pixel 8** (2026-10-19): Big Buck Bunny streams (~20 s to start, 2.9 MB/s, 30 peers) and seeking anywhere on the timeline works. **TV (32-bit) not tested yet.** |
+| M3 Title browsing | ✅ Built (0.2.x): TMDB home rows, search, title page (details, seasons/episodes, cast), where to watch (India) → opens the provider's app. **Phone verified** (opened JioHotstar from a title). TV layout (cinematic home, D-pad) installed on the TV, **not yet looked at**. Play button waits for M4 sources. |
 | `core` tests | ✅ 30/30 passing (magnets, ranges, piece planning, file picking) |
 
-Next: test on the TV (prime use case, 32-bit build) when it's reachable → M3 (TMDB home, search, title page, where to watch).
+Next: look at Reel on the TV (streaming test + M3 TV layout) when it's free → M4 (sources: Stremio addons + Nuvio-format plugins, Play button).

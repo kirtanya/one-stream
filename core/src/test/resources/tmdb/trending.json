@@ -1,0 +1,33 @@
+{
+ "results": [
+  {
+   "id": 123542,
+   "media_type": "tv",
+   "title": null,
+   "name": "LINK CLICK",
+   "release_date": null,
+   "first_air_date": "2021-04-30",
+   "poster_path": "/wo9jwu5qMvXzhW2cyy5E6hOVs92.jpg",
+   "backdrop_path": "/w3agwUSMpJ4X9t1jGrDtqqRPjDQ.jpg",
+   "vote_average": 8.042,
+   "overview": "Using superpowers to enter their clientele\u2019s photos one by o"
+  },
+  {
+   "id": 1058424,
+   "media_type": "movie",
+   "title": "Hope",
+   "name": null,
+   "release_date": "2026-07-15",
+   "first_air_date": null,
+   "poster_path": "/1n37BJchWHLiSYQkuFxe5KjB951.jpg",
+   "backdrop_path": "/qqHFLg90IUSoTmSMpKOOW5RyqN3.jpg",
+   "vote_average": 6.869,
+   "overview": "In the remote South Korean village of Hope Harbor, police ch"
+  },
+  {
+   "id": 1,
+   "media_type": "person",
+   "name": "Someone"
+  }
+ ]
+}

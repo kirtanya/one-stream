@@ -1,0 +1,166 @@
+{
+ "id": 550,
+ "title": "Fight Club",
+ "release_date": "1999-10-15",
+ "poster_path": "/jSziioSwPVrOy9Yow3XhWIBDjq1.jpg",
+ "backdrop_path": "/c6OLXfKAk5BKeR6broC8pYiCquX.jpg",
+ "vote_average": 8.438,
+ "runtime": 139,
+ "tagline": "Mischief. Mayhem. Soap.",
+ "genres": [
+  {
+   "id": 18,
+   "name": "Drama"
+  },
+  {
+   "id": 53,
+   "name": "Thriller"
+  }
+ ],
+ "imdb_id": "tt0137523",
+ "overview": "A ticking-time-bomb insomniac and a slippery soap salesman c",
+ "credits": {
+  "cast": [
+   {
+    "adult": false,
+    "gender": 2,
+    "id": 819,
+    "known_for_department": "Acting",
+    "name": "Edward Norton",
+    "original_name": "Edward Norton",
+    "popularity": 8.1924,
+    "profile_path": "/8nytsqL59SFJTVYVrN72k6qkGgJ.jpg",
+    "cast_id": 4,
+    "character": "Narrator",
+    "credit_id": "52fe4250c3a36847f80149f3",
+    "order": 0
+   },
+   {
+    "adult": false,
+    "gender": 2,
+    "id": 287,
+    "known_for_department": "Acting",
+    "name": "Brad Pitt",
+    "original_name": "Brad Pitt",
+    "popularity": 12.0003,
+    "profile_path": "/ajNaPmXVVMJFg9GWmu6MJzTaXdV.jpg",
+    "cast_id": 5,
+    "character": "Tyler Durden",
+    "credit_id": "52fe4250c3a36847f80149f7",
+    "order": 1
+   }
+  ]
+ },
+ "external_ids": {
+  "imdb_id": "tt0137523"
+ },
+ "watch/providers": {
+  "results": {
+   "IN": {
+    "link": "https://www.themoviedb.org/movie/550-fight-club/watch?locale=IN",
+    "flatrate": [
+     {
+      "logo_path": "/rK1KljqmbvO9HQa1PBFLILWah72.png",
+      "provider_id": 8,
+      "provider_name": "Netflix",
+      "display_priority": 0
+     }
+    ],
+    "buy": [
+     {
+      "logo_path": "/5Maob4o5w8oZnNeYpCDyVFD3M7X.png",
+      "provider_id": 192,
+      "provider_name": "YouTube",
+      "display_priority": 10
+     }
+    ]
+   }
+  }
+ },
+ "release_dates": {
+  "results": [
+   {
+    "iso_3166_1": "IN",
+    "release_dates": [
+     {
+      "certification": "A",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "",
+      "release_date": "1999-10-15T00:00:00.000Z",
+      "type": 3
+     }
+    ]
+   },
+   {
+    "iso_3166_1": "US",
+    "release_dates": [
+     {
+      "certification": "",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "CMJ Film Festival",
+      "release_date": "1999-09-21T00:00:00.000Z",
+      "type": 1
+     },
+     {
+      "certification": "",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "Westwood, California",
+      "release_date": "1999-10-06T00:00:00.000Z",
+      "type": 1
+     },
+     {
+      "certification": "R",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "4K Remaster",
+      "release_date": "2026-04-22T00:00:00.000Z",
+      "type": 2
+     },
+     {
+      "certification": "R",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "",
+      "release_date": "1999-10-15T00:00:00.000Z",
+      "type": 3
+     },
+     {
+      "certification": "R",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "4K Digital",
+      "release_date": "2026-05-12T00:00:00.000Z",
+      "type": 4
+     },
+     {
+      "certification": "R",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "VHS",
+      "release_date": "2000-04-25T00:00:00.000Z",
+      "type": 5
+     },
+     {
+      "certification": "R",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "4K Ultra HD SteelBook",
+      "release_date": "2026-05-12T00:00:00.000Z",
+      "type": 5
+     },
+     {
+      "certification": "",
+      "descriptors": [],
+      "iso_639_1": "",
+      "note": "",
+      "release_date": "2026-09-08T00:00:00.000Z",
+      "type": 5
+     }
+    ]
+   }
+  ]
+ }
+}

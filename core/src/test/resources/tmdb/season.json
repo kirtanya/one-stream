@@ -1,0 +1,23 @@
+{
+ "season_number": 1,
+ "episodes": [
+  {
+   "episode_number": 1,
+   "season_number": 1,
+   "name": "Winter Is Coming",
+   "air_date": "2011-04-17",
+   "runtime": 62,
+   "still_path": "/o4IX9Mm0kpLITVANJMx7inyEUaY.jpg",
+   "overview": "Jon Arryn, the Hand of the King, is dead. King Robert Barath"
+  },
+  {
+   "episode_number": 2,
+   "season_number": 1,
+   "name": "The Kingsroad",
+   "air_date": "2011-04-24",
+   "runtime": 56,
+   "still_path": "/l0GJx3IR8YasbztTJi5uK0XqkEo.jpg",
+   "overview": "While Bran recovers from his fall, Ned takes only his daught"
+  }
+ ]
+}

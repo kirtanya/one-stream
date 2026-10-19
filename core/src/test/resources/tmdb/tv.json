@@ -1,0 +1,127 @@
+{
+ "id": 1399,
+ "name": "Game of Thrones",
+ "first_air_date": "2011-04-17",
+ "poster_path": "/1XS1oqL89opfnbLl8WnZY1O1uJx.jpg",
+ "backdrop_path": "/zZqpAXxVSBtxV9qPBcscfXBcL2w.jpg",
+ "vote_average": 8.474,
+ "episode_run_time": [],
+ "genres": [
+  {
+   "id": 10765,
+   "name": "Sci-Fi & Fantasy"
+  },
+  {
+   "id": 18,
+   "name": "Drama"
+  },
+  {
+   "id": 10759,
+   "name": "Action & Adventure"
+  }
+ ],
+ "seasons": [
+  {
+   "air_date": "2010-12-05",
+   "episode_count": 300,
+   "id": 3627,
+   "name": "Specials",
+   "overview": "",
+   "poster_path": "/aos6lC1JGYt6ZRL85lgstNsfSeY.jpg",
+   "season_number": 0,
+   "vote_average": 0.0
+  },
+  {
+   "air_date": "2011-04-17",
+   "episode_count": 10,
+   "id": 3624,
+   "name": "Season 1",
+   "overview": "Trouble is brewing in the Seven Kingdoms of Westeros. For the driven inhabitants of this visionary world, control of Westeros' Iron Throne holds the lure of great power. But in a land where the seasons can last a lifetime, winter is coming...and beyond the Great Wall that protects them, an ancient evil has returned. In Season One, the story centers on three primary areas: the Stark and the Lannister families, whose designs on controlling the throne threaten a tenuous peace; the dragon princess Daenerys, heir to the former dynasty, who waits just over the Narrow Sea with her malevolent brother Viserys; and the Great Wall--a massive barrier of ice where a forgotten danger is stirring.",
+   "poster_path": "/wgfKiqzuMrFIkU1M68DDDY8kGC1.jpg",
+   "season_number": 1,
+   "vote_average": 8.4
+  },
+  {
+   "air_date": "2012-04-01",
+   "episode_count": 10,
+   "id": 3625,
+   "name": "Season 2",
+   "overview": "The cold winds of winter are rising in Westeros...war is coming...and five kings continue their savage quest for control of the all-powerful Iron Throne. With winter fast approaching, the coveted Iron Throne is occupied by the cruel Joffrey, counseled by his conniving mother Cersei and uncle Tyrion. But the Lannister hold on the Throne is under assault on many fronts. Meanwhile, a new leader is rising among the wildings outside the Great Wall, adding new perils for Jon Snow and the order of the Night's Watch.",
+   "poster_path": "/9xfNkPwDOqyeUvfNhs1XlWA0esP.jpg",
+   "season_number": 2,
+   "vote_average": 8.3
+  }
+ ],
+ "overview": "Seven noble families fight for control of the mythical land ",
+ "last_episode_to_air": {
+  "runtime": 80
+ },
+ "credits": {
+  "cast": [
+   {
+    "adult": false,
+    "gender": 2,
+    "id": 22970,
+    "known_for_department": "Acting",
+    "name": "Peter Dinklage",
+    "original_name": "Peter Dinklage",
+    "popularity": 5.9051,
+    "profile_path": "/9CAd7wr8QZyIN0E7nm8v1B6WkGn.jpg",
+    "character": "Tyrion 'The Halfman' Lannister",
+    "credit_id": "5256c8b219c2956ff6047cd8",
+    "order": 0
+   },
+   {
+    "adult": false,
+    "gender": 2,
+    "id": 239019,
+    "known_for_department": "Acting",
+    "name": "Kit Harington",
+    "original_name": "Kit Harington",
+    "popularity": 4.5498,
+    "profile_path": "/iGXlJbExWwZmo9sUDsYuzf4Sv4y.jpg",
+    "character": "Jon Snow",
+    "credit_id": "5256c8af19c2956ff6047af6",
+    "order": 1
+   }
+  ]
+ },
+ "external_ids": {
+  "imdb_id": "tt0944947"
+ },
+ "watch/providers": {
+  "results": {
+   "IN": {
+    "link": "https://www.themoviedb.org/tv/1399-game-of-thrones/watch?locale=IN",
+    "flatrate": [
+     {
+      "logo_path": "/ledoS6EgdjTNq8F1e6wubUQer18.png",
+      "provider_id": 2336,
+      "provider_name": "JioHotstar",
+      "display_priority": 3
+     },
+     {
+      "logo_path": "/9SVVjJ89csOM0xoeVVK8BryUf9a.png",
+      "provider_id": 614,
+      "provider_name": "VI movies and tv",
+      "display_priority": 35
+     }
+    ]
+   }
+  }
+ },
+ "content_ratings": {
+  "results": [
+   {
+    "descriptors": [],
+    "iso_3166_1": "US",
+    "rating": "TV-MA"
+   },
+   {
+    "descriptors": [],
+    "iso_3166_1": "IN",
+    "rating": "A"
+   }
+  ]
+ }
+}
