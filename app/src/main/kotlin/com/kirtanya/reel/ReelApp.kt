@@ -38,9 +38,15 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val history by lazy { WatchHistoryStore(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
 
+    /** TVs receive sources from the phone; phones send them. */
+    val isTv by lazy { packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) }
+    val tvSync by lazy { com.kirtanya.reel.data.sync.TvSync(this, sources) }
+    val phoneSync by lazy { com.kirtanya.reel.data.sync.PhoneSync(this, sources, fetcher, appScope) }
+
     override fun onCreate() {
         super.onCreate()
         appScope.launch { sources.ensureReady() }
+        if (isTv) tvSync.start() else phoneSync.start()
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

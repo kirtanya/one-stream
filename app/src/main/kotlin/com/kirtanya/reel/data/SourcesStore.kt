@@ -11,6 +11,12 @@ import com.kirtanya.reel.core.sources.PluginProvider
 import com.kirtanya.reel.core.sources.PluginRuntime
 import com.kirtanya.reel.core.sources.SourceProvider
 import com.kirtanya.reel.core.sources.StremioAddon
+import com.kirtanya.reel.core.sync.BundleAddon
+import com.kirtanya.reel.core.sync.BundleRepo
+import com.kirtanya.reel.core.sync.LinkKind
+import com.kirtanya.reel.core.sync.SourceLinks
+import com.kirtanya.reel.core.sync.SourcesBundle
+import com.kirtanya.reel.core.sync.SyncPlan
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
@@ -102,6 +108,69 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
         _state.value.addons.filter { it.enabled }.mapNotNull { a ->
             runCatching { a.manifest }.getOrNull()?.takeIf { it.hasSubtitles }?.let { a.url to it }
         }
+
+    // ---- links (Install buttons, stremio:// links, pasted URLs)
+
+    /** What a link points at, for the "Add this?" dialog. */
+    data class LinkPreview(val url: String, val kind: LinkKind, val name: String, val detail: String?)
+
+    suspend fun preview(link: String): LinkPreview {
+        val url = SourceLinks.extract(link) ?: throw SourceSetupException("That isn't an addon or plugin link")
+        val body = get(url)
+        return when (SourceLinks.detectKind(body)) {
+            LinkKind.ADDON -> StremioAddon.parseManifest(body).let { m ->
+                val what = listOfNotNull(if (m.hasStreams) "streams" else null, if (m.hasSubtitles) "subtitles" else null).joinToString(" + ")
+                LinkPreview(url, LinkKind.ADDON, m.name, listOfNotNull("Stremio addon · $what", m.description).joinToString("\n"))
+            }
+            LinkKind.PLUGIN_REPO -> NuvioPlugins.parseManifest(body).let { r ->
+                LinkPreview(url, LinkKind.PLUGIN_REPO, r.name, listOfNotNull("Plugin repository · ${r.scrapers.size} plugins", r.description).joinToString("\n"))
+            }
+            LinkKind.UNKNOWN -> throw SourceSetupException("That link isn't a Stremio addon or a plugin repository")
+        }
+    }
+
+    /** Adds whatever the link is (addon or plugin repo). Returns a message for the user. */
+    suspend fun addFromLink(link: String): String {
+        val url = SourceLinks.extract(link) ?: throw SourceSetupException("That isn't an addon or plugin link")
+        return when (SourceLinks.detectKind(get(url))) {
+            LinkKind.ADDON -> "Added ${addAddon(url).manifest.name}"
+            LinkKind.PLUGIN_REPO -> "Added ${addRepo(url).name}"
+            LinkKind.UNKNOWN -> throw SourceSetupException("That link isn't a Stremio addon or a plugin repository")
+        }
+    }
+
+    // ---- phone → TV sync
+
+    /** This device's sources, as sent to a TV. */
+    fun exportBundle(from: String = ""): SourcesBundle {
+        val s = _state.value
+        return SourcesBundle(
+            addons = s.addons.map { BundleAddon(it.url, it.enabled) },
+            repos = s.repos.map { r -> BundleRepo(r.url, s.plugins.filter { it.repoUrl == r.url }.associate { it.id to it.enabled }) },
+            from = from,
+        )
+    }
+
+    /**
+     * Makes this device match [bundle] (sent by the phone). Links that can't be fetched are
+     * skipped and reported; the built-in repo is never removed.
+     */
+    suspend fun applyBundle(bundle: SourcesBundle): String {
+        ensureReady()
+        val builtIn = _state.value.repos.filter { it.builtIn }.map { it.url }.toSet()
+        val plan = SyncPlan.between(exportBundle(), bundle, builtIn)
+        val failed = mutableListOf<String>()
+        plan.removeAddons.forEach { removeAddon(it) }
+        plan.removeRepos.forEach { removeRepo(it) }
+        plan.addAddons.forEach { a ->
+            runCatching { addAddon(a.url) }.onSuccess { if (!a.enabled) setAddonEnabled(a.url, false) }.onFailure { failed += a.url }
+        }
+        plan.toggleAddons.forEach { (url, on) -> setAddonEnabled(url, on) }
+        plan.addRepos.forEach { r -> runCatching { addRepo(r.url) }.onFailure { failed += r.url } }
+        // Plugin switches for every repo now present (new ones included), as the phone has them.
+        bundle.repos.forEach { r -> r.plugins.forEach { (id, on) -> setPluginEnabled(r.url, id, on) } }
+        return plan.describe() + if (failed.isEmpty()) "" else " (${failed.size} couldn't be reached)"
+    }
 
     // ---- addons
 

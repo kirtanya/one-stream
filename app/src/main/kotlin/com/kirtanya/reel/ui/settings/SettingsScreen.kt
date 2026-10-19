@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
@@ -146,7 +147,13 @@ fun SettingsScreen(isTv: Boolean) {
             }
 
             item {
-                Group(Icons.Rounded.Hub, "Addons", cardWidth, "Stremio addons answer “where can I play this?”. Paste the link that ends in manifest.json.") {
+                Group(Icons.Rounded.Devices, "Phone & TV", cardWidth) {
+                    SyncContent(isTv) { message = it }
+                }
+            }
+
+            item {
+                Group(Icons.Rounded.Hub, "Addons", cardWidth, "Stremio addons answer “where can I play this?”. Tap Install on an addon's website, or paste its link (manifest.json or stremio://).") {
                     if (state.addons.isEmpty()) Text("No addons yet.", style = Tokens.Type.body, color = Tokens.Colors.textTertiary)
                     state.addons.forEach { addon ->
                         val m = runCatching { addon.manifest }.getOrNull()
@@ -157,8 +164,8 @@ fun SettingsScreen(isTv: Boolean) {
                             onRemove = { app.sources.removeAddon(addon.url); message = "Removed ${m?.name ?: "addon"}" },
                         ) { app.sources.setAddonEnabled(addon.url, !addon.enabled) }
                     }
-                    AddField(addonUrl, { addonUrl = it }, "Add addon", busy) {
-                        run { app.sources.addAddon(addonUrl).let { addonUrl = ""; "Added ${it.manifest.name}" } }
+                    AddField(addonUrl, { addonUrl = it }, "Add", busy) {
+                        run { app.sources.addFromLink(addonUrl).also { addonUrl = "" } }
                     }
                 }
             }
@@ -182,8 +189,8 @@ fun SettingsScreen(isTv: Boolean) {
                             ) { app.sources.setPluginEnabled(p.repoUrl, p.id, !p.enabled) }
                         }
                     }
-                    AddField(repoUrl, { repoUrl = it }, "Add repository", busy) {
-                        run { app.sources.addRepo(repoUrl).let { repoUrl = ""; "Added ${it.name}" } }
+                    AddField(repoUrl, { repoUrl = it }, "Add", busy) {
+                        run { app.sources.addFromLink(repoUrl).also { repoUrl = "" } }
                     }
                 }
             }
@@ -236,7 +243,7 @@ private fun Group(icon: ImageVector, title: String, modifier: Modifier, subtitle
 
 /** Whole row is one tap / focus target; the switch shows the state. */
 @Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemove: (() -> Unit)? = null, onToggle: () -> Unit) {
+internal fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemove: (() -> Unit)? = null, onToggle: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         Row(
             Modifier.weight(1f).focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1.02f, onClick = onToggle).background(Tokens.Colors.surface2).padding(Tokens.Space.m),
@@ -264,17 +271,17 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemov
 }
 
 @Composable
-private fun AddField(value: String, onChange: (String) -> Unit, button: String, busy: Boolean, onAdd: () -> Unit) {
+internal fun AddField(value: String, onChange: (String) -> Unit, button: String, busy: Boolean, placeholder: String = "https://…/manifest.json", onAdd: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         OutlinedTextField(
             value, onChange, Modifier.weight(1f), singleLine = true,
             shape = RoundedCornerShape(Tokens.Radius.pill),
-            placeholder = { Text("https://…/manifest.json") },
+            placeholder = { Text(placeholder) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Tokens.Colors.surface2, unfocusedContainerColor = Tokens.Colors.surface2,
                 focusedBorderColor = Tokens.Colors.accentBright, unfocusedBorderColor = Tokens.Colors.hairlineStrong,
             ),
         )
-        ReelButton(if (busy) "Adding…" else button, onAdd, kind = ButtonKind.Primary, icon = Icons.Rounded.Add, enabled = value.isNotBlank() && !busy)
+        ReelButton(if (busy) "…" else button, onAdd, kind = ButtonKind.Primary, icon = Icons.Rounded.Add, enabled = value.isNotBlank() && !busy)
     }
 }

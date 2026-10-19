@@ -15,6 +15,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.21.2")
     implementation("io.github.dokar3:quickjs-kt:1.0.15")
+    // Phone → TV sync server (the stream server uses it in :app too).
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation(kotlin("test"))
 }

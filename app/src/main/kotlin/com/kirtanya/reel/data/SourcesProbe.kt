@@ -35,6 +35,10 @@ class SourcesProbe : BroadcastReceiver() {
             Log.i(TAG, "history done")
             return
         }
+        if (intent.hasExtra("sync")) {
+            syncProbe(app, intent, goAsync())
+            return
+        }
         intent.getStringExtra("removeTitle")?.let {
             app.history.removeTitle(it)
             Log.i(TAG, "removed $it from history")
@@ -76,6 +80,51 @@ class SourcesProbe : BroadcastReceiver() {
                 Log.e(TAG, "probe failed: " + generateSequence(t) { it.cause }.joinToString(" ← ") { it.toString() })
             } finally {
                 intent.getStringExtra("removeAddon")?.let { app.sources.removeAddon(it); Log.i(TAG, "removed addon $it") }
+                pending.finish()
+            }
+        }
+    }
+
+    /**
+     * Phone ↔ TV sync checks, all in the background:
+     * `--es sync info` (TV: code, port, paired phones; any device: its sources),
+     * `--es sync pair --es code 1234` (phone: find the first TV, pair, push),
+     * `--es sync push` (phone: push to paired TVs now),
+     * `--es sync add --es link <url>` / `--es sync remove --es link <url>` (add / remove an addon or repo by link).
+     */
+    private fun syncProbe(app: ReelApp, intent: Intent, pending: PendingResult) {
+        app.appScope.launch {
+            try {
+                withTimeout(60_000) {
+                    app.sources.ensureReady()
+                    when (intent.getStringExtra("sync")) {
+                        "pair" -> {
+                            val tvs = app.phoneSync.discover()
+                            Log.i(TAG, "sync found ${tvs.map { "${it.name} ${it.host}:${it.port}" }}")
+                            val tv = tvs.firstOrNull() ?: error("no TV found")
+                            Log.i(TAG, "sync pair: ${app.phoneSync.pair(tv, intent.getStringExtra("code").orEmpty())}")
+                        }
+                        "push" -> {
+                            app.phoneSync.pushAll(force = true)
+                            app.phoneSync.state.value.tvs.forEach { Log.i(TAG, "sync ${it.name}: ${it.lastSummary} err=${it.lastError}") }
+                        }
+                        "add" -> Log.i(TAG, "sync add: ${app.sources.addFromLink(intent.getStringExtra("link").orEmpty())}")
+                        "remove" -> {
+                            val url = com.kirtanya.reel.core.sync.SourceLinks.extract(intent.getStringExtra("link").orEmpty())
+                            app.sources.removeAddon(url.orEmpty())
+                            app.sources.removeRepo(url.orEmpty())
+                            Log.i(TAG, "sync removed $url")
+                        }
+                    }
+                    if (app.isTv) app.tvSync.state.value.let { Log.i(TAG, "sync tv code=${it.code} port=${app.tvSync.port()} paired=${it.pairedPhones.map { p -> p.second }} last=${it.lastUpdate}") }
+                    else app.phoneSync.state.value.tvs.forEach { Log.i(TAG, "sync paired ${it.name} ${it.host}:${it.port} last=${it.lastSummary} err=${it.lastError}") }
+                    val b = app.sources.exportBundle()
+                    Log.i(TAG, "sync sources addons=${b.addons.map { "${it.url}${if (it.enabled) "" else " (off)"}" }} repos=${b.repos.map { "${it.url} ${it.plugins}" }}")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "sync probe failed: " + generateSequence(t) { it.cause }.joinToString(" ← ") { it.toString() })
+            } finally {
+                Log.i(TAG, "sync probe done")
                 pending.finish()
             }
         }

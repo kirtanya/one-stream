@@ -1,0 +1,72 @@
+package com.kirtanya.reel.core.sync
+
+import kotlinx.serialization.Serializable
+
+/** Addons and plugin repositories as one device has them: what the phone sends the TV. */
+@Serializable
+data class SourcesBundle(
+    val version: Int = 1,
+    val addons: List<BundleAddon> = emptyList(),
+    val repos: List<BundleRepo> = emptyList(),
+    /** Who sent it, for "Last update from Pixel 8". */
+    val from: String = "",
+)
+
+@Serializable
+data class BundleAddon(val url: String, val enabled: Boolean = true)
+
+@Serializable
+data class BundleRepo(
+    val url: String,
+    /** Plugin id → on/off, for plugins the sender has. */
+    val plugins: Map<String, Boolean> = emptyMap(),
+)
+
+/** What to change so the receiver matches the sender. Built-in repos are never removed. */
+data class SyncPlan(
+    val addAddons: List<BundleAddon>,
+    val removeAddons: List<String>,
+    val toggleAddons: Map<String, Boolean>,
+    val addRepos: List<BundleRepo>,
+    val removeRepos: List<String>,
+    /** repo URL → (plugin id → on/off) for repos both have. */
+    val togglePlugins: Map<String, Map<String, Boolean>>,
+) {
+    val isEmpty: Boolean
+        get() = addAddons.isEmpty() && removeAddons.isEmpty() && toggleAddons.isEmpty() &&
+            addRepos.isEmpty() && removeRepos.isEmpty() && togglePlugins.isEmpty()
+
+    fun describe(): String = listOfNotNull(
+        addAddons.size.takeIf { it > 0 }?.let { "+$it addon${if (it > 1) "s" else ""}" },
+        removeAddons.size.takeIf { it > 0 }?.let { "−$it addon${if (it > 1) "s" else ""}" },
+        addRepos.size.takeIf { it > 0 }?.let { "+$it plugin repo${if (it > 1) "s" else ""}" },
+        removeRepos.size.takeIf { it > 0 }?.let { "−$it plugin repo${if (it > 1) "s" else ""}" },
+        (toggleAddons.size + togglePlugins.values.sumOf { it.size }).takeIf { it > 0 }?.let { "$it switched" },
+    ).joinToString(", ").ifEmpty { "already up to date" }
+
+    companion object {
+        /**
+         * Makes [local] match [incoming] (the phone is the source of truth). Repos in [builtIn]
+         * are kept; their plugin switches still follow the sender.
+         */
+        fun between(local: SourcesBundle, incoming: SourcesBundle, builtIn: Set<String> = emptySet()): SyncPlan {
+            val localAddons = local.addons.associateBy { it.url }
+            val incomingAddons = incoming.addons.associateBy { it.url }
+            val localRepos = local.repos.associateBy { it.url }
+            val incomingRepos = incoming.repos.associateBy { it.url }
+            return SyncPlan(
+                addAddons = incoming.addons.filter { it.url !in localAddons },
+                removeAddons = local.addons.map { it.url }.filter { it !in incomingAddons },
+                toggleAddons = incoming.addons.filter { a -> localAddons[a.url]?.let { it.enabled != a.enabled } == true }
+                    .associate { it.url to it.enabled },
+                addRepos = incoming.repos.filter { it.url !in localRepos && it.url !in builtIn },
+                removeRepos = local.repos.map { it.url }.filter { it !in incomingRepos && it !in builtIn },
+                togglePlugins = incoming.repos.mapNotNull { r ->
+                    val mine = localRepos[r.url] ?: return@mapNotNull null
+                    val changed = r.plugins.filter { (id, on) -> mine.plugins[id]?.let { it != on } == true }
+                    if (changed.isEmpty()) null else r.url to changed
+                }.toMap(),
+            )
+        }
+    }
+}

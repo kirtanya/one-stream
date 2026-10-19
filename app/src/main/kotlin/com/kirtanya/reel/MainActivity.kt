@@ -22,6 +22,8 @@ import com.kirtanya.reel.core.magnet.Magnet
 import com.kirtanya.reel.engine.EngineService
 import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
+import com.kirtanya.reel.core.sync.SourceLinks
+import com.kirtanya.reel.ui.common.AddSourceLinkDialog
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.phone.PhoneApp
 import com.kirtanya.reel.ui.tv.TvApp
@@ -31,6 +33,8 @@ import com.kirtanya.reel.ui.theme.Tokens
 class MainActivity : ComponentActivity() {
     private var incomingMagnet by mutableStateOf<String?>(null)
     private var openDest by mutableStateOf<Dest?>(null)
+    /** An addon / plugin-repo link opened from a website or shared in: asks before adding. */
+    private var incomingSourceLink by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +62,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         PhoneApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null })
                     }
+                    incomingSourceLink?.let { link -> AddSourceLinkDialog(link, isTv = isTv, onDone = { incomingSourceLink = null }) }
                 }
             }
         }
@@ -68,7 +73,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
-    /** magnet: links from a browser, or magnet text shared from another app. */
+    /** magnet: links from a browser, addon Install links (stremio://), or text shared from another app. */
     private fun handleIntent(intent: Intent?) {
         intent?.getIntExtra(EXTRA_OPEN_ID, -1)?.takeIf { it > 0 }?.let { id ->
             val type = if (intent.getStringExtra(EXTRA_OPEN_TYPE) == "tv") MediaType.TV else MediaType.MOVIE
@@ -82,6 +87,12 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
             else -> null
         } ?: return
+        if (Magnet.parse(text.trim()) == null) {
+            SourceLinks.extract(text)?.let {
+                incomingSourceLink = it
+                return
+            }
+        }
         val link = Regex("""magnet:\?[^\s"'<>]+""", RegexOption.IGNORE_CASE).find(text)?.value ?: return
         if (Magnet.parse(link) != null) incomingMagnet = link
     }
