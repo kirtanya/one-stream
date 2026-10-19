@@ -65,6 +65,6 @@ fun ReelButton(
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s),
     ) {
         if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
-        Text(text, style = Tokens.Type.label, color = fg)
+        if (text.isNotEmpty()) Text(text, style = Tokens.Type.label, color = fg)
     }
 }

@@ -8,10 +8,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.kirtanya.reel.core.tmdb.TitleRef
 
-enum class Tab(val label: String) { Home("Home"), Search("Search"), Downloads("Downloads") }
+enum class Tab(val label: String) { Home("Home"), Search("Search"), Downloads("Downloads"), Settings("Settings") }
 
 sealed interface Dest {
     data class Title(val ref: TitleRef) : Dest
+
+    /** Where to play a film, or one episode of a show. */
+    data class Sources(val ref: TitleRef, val season: Int? = null, val episode: Int? = null) : Dest
 }
 
 /** Tabs at the root; title pages stack on top. Back pops the stack, then returns to Home. */

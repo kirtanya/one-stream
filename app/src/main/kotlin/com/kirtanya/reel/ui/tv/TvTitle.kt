@@ -44,7 +44,6 @@ import com.kirtanya.reel.ui.common.RemoteImage
 import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.title.EpisodeCard
 import com.kirtanya.reel.ui.title.ProviderChip
-import com.kirtanya.reel.ui.title.SOURCES_SOON
 import com.kirtanya.reel.ui.title.detailsMeta
 import com.kirtanya.reel.ui.title.rememberProviderOpener
 import com.kirtanya.reel.ui.title.rememberSeason
@@ -52,19 +51,19 @@ import com.kirtanya.reel.ui.title.rememberTitle
 import com.kirtanya.reel.ui.theme.Tokens
 
 @Composable
-fun TvTitle(ref: TitleRef) {
+fun TvTitle(ref: TitleRef, onPlay: (season: Int?, episode: Int?) -> Unit) {
     val (load, retry) = rememberTitle(ref)
-    LoadView(load, retry) { d -> TvTitleBody(d) }
+    LoadView(load, retry) { d -> TvTitleBody(d, onPlay) }
 }
 
 @Composable
-private fun TvTitleBody(d: TitleDetails) {
+private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
     var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull()?.number) }
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
     val openProvider = rememberProviderOpener(d.providers.link)
     val firstAction = remember { FocusRequester() }
-    val hasFocusTarget = !d.providers.isEmpty || d.seasons.isNotEmpty()
-    if (hasFocusTarget) RequestFocusOnce(firstAction)
+    RequestFocusOnce(firstAction)
+    val firstSeason = d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number
 
     Box(Modifier.fillMaxSize()) {
         RemoteImage(TmdbImages.backdrop(d.summary.backdropPath), Modifier.fillMaxSize())
@@ -87,10 +86,13 @@ private fun TvTitleBody(d: TitleDetails) {
             }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
-                        ReelButton("Play", {}, kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, enabled = false)
-                        Text(SOURCES_SOON, style = Tokens.Type.caption, color = Tokens.Colors.textMuted)
-                    }
+                    ReelButton(
+                        if (d.seasons.isEmpty()) "Play" else "Play S${firstSeason} E1",
+                        { if (d.seasons.isEmpty()) onPlay(null, null) else onPlay(firstSeason, 1) },
+                        kind = ButtonKind.Primary,
+                        icon = Icons.Rounded.PlayArrow,
+                        modifier = Modifier.focusRequester(firstAction),
+                    )
                     val all = d.providers.groups.flatMap { (label, list) -> list.map { label to it } }
                     if (all.isEmpty()) {
                         Text("Not on any streaming service in India right now.", style = Tokens.Type.body, color = Tokens.Colors.textMuted)
@@ -100,8 +102,7 @@ private fun TvTitleBody(d: TitleDetails) {
                             contentPadding = PaddingValues(vertical = Tokens.Space.s),
                         ) {
                             itemsIndexed(all) { i, (label, p) ->
-                                val m = if (i == 0) Modifier.focusRequester(firstAction) else Modifier
-                                ProviderChip(p, label = if (label == "Stream") p.name else "$label · ${p.name}", onClick = { openProvider(p) }, modifier = m)
+                                ProviderChip(p, label = if (label == "Stream") p.name else "$label · ${p.name}", onClick = { openProvider(p) })
                             }
                         }
                         Text("Where to watch in India · data by JustWatch", style = Tokens.Type.caption, color = Tokens.Colors.textMuted)
@@ -112,8 +113,7 @@ private fun TvTitleBody(d: TitleDetails) {
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), contentPadding = PaddingValues(vertical = Tokens.Space.s)) {
                         itemsIndexed(d.seasons, key = { _, s -> s.number }) { i, s ->
-                            val m = if (i == 0 && d.providers.isEmpty) Modifier.focusRequester(firstAction) else Modifier
-                            ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost, modifier = m)
+                            ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost)
                         }
                     }
                 }
@@ -126,7 +126,7 @@ private fun TvTitleBody(d: TitleDetails) {
                             contentPadding = PaddingValues(vertical = Tokens.Space.s),
                         ) {
                             items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
-                                EpisodeCard(e, width = 240.dp, onClick = {})
+                                EpisodeCard(e, width = 240.dp, onClick = { onPlay(e.season, e.number) })
                             }
                         }
                     }

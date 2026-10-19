@@ -1,0 +1,28 @@
+{
+  "name": "Reel built-in (legal sources)",
+  "version": "1.0.0",
+  "author": "Reel",
+  "description": "Public-domain and openly licensed films only.",
+  "scrapers": [
+    {
+      "id": "reel-open-movies",
+      "name": "Open movies",
+      "description": "Blender Foundation open movies (CC-BY) as torrents with web seeds.",
+      "version": "1.0.0",
+      "filename": "open-movies.js",
+      "supportedTypes": ["movie"],
+      "enabled": true,
+      "formats": ["mp4"]
+    },
+    {
+      "id": "reel-internet-archive",
+      "name": "Internet Archive",
+      "description": "Public-domain feature films from archive.org's curated Feature Films collection.",
+      "version": "1.0.0",
+      "filename": "internet-archive.js",
+      "supportedTypes": ["movie"],
+      "enabled": true,
+      "formats": ["mp4", "mkv"]
+    }
+  ]
+}

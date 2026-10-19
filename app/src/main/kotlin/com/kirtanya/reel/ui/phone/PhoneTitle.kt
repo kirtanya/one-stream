@@ -50,8 +50,8 @@ import com.kirtanya.reel.ui.common.LoadView
 import com.kirtanya.reel.ui.common.LoadingBox
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RemoteImage
+import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.title.ProviderChip
-import com.kirtanya.reel.ui.title.SOURCES_SOON
 import com.kirtanya.reel.ui.title.detailsMeta
 import com.kirtanya.reel.ui.title.rememberProviderOpener
 import com.kirtanya.reel.ui.title.rememberSeason
@@ -59,10 +59,10 @@ import com.kirtanya.reel.ui.title.rememberTitle
 import com.kirtanya.reel.ui.theme.Tokens
 
 @Composable
-fun PhoneTitle(ref: TitleRef, onBack: () -> Unit) {
+fun PhoneTitle(ref: TitleRef, onBack: () -> Unit, onPlay: (season: Int?, episode: Int?) -> Unit) {
     val (load, retry) = rememberTitle(ref)
     Box(Modifier.fillMaxSize().background(Tokens.Colors.bg)) {
-        LoadView(load, retry) { d -> TitleBody(d) }
+        LoadView(load, retry) { d -> TitleBody(d, onPlay) }
         IconButton(
             onClick = onBack,
             modifier = Modifier.padding(Tokens.Space.s),
@@ -72,7 +72,7 @@ fun PhoneTitle(ref: TitleRef, onBack: () -> Unit) {
 }
 
 @Composable
-private fun TitleBody(d: TitleDetails) {
+private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
     val gutter = Tokens.Space.phoneGutter
     var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull()?.number) }
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
@@ -103,9 +103,14 @@ private fun TitleBody(d: TitleDetails) {
             Column(Modifier.padding(horizontal = gutter).offset(y = (-24).dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                 d.tagline?.let { Text(it, style = Tokens.Type.label, color = Tokens.Colors.accent) }
                 if (d.summary.overview.isNotBlank()) Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.text)
-                // Sources (plugins + addons) arrive in M4; the button is here so the layout is final.
-                ReelButton("Play", {}, kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, enabled = false, modifier = Modifier.fillMaxWidth())
-                Text(SOURCES_SOON, style = Tokens.Type.caption, color = Tokens.Colors.textMuted)
+                val firstSeason = d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number
+                ReelButton(
+                    if (d.seasons.isEmpty()) "Play" else "Play S${firstSeason} E1",
+                    { if (d.seasons.isEmpty()) onPlay(null, null) else onPlay(firstSeason, 1) },
+                    kind = ButtonKind.Primary,
+                    icon = Icons.Rounded.PlayArrow,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
         item { WhereToWatch(d, openProvider) }
@@ -122,7 +127,7 @@ private fun TitleBody(d: TitleDetails) {
             when (episodes) {
                 Load.Loading -> item { LoadingBox(Modifier.height(160.dp)) }
                 is Load.Failed -> item { ReelButton("Couldn't load episodes. Try again", { retryEpisodes() }, kind = ButtonKind.Ghost, modifier = Modifier.padding(horizontal = gutter)) }
-                is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { EpisodeRow(it) }
+                is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { e -> EpisodeRow(e) { onPlay(e.season, e.number) } }
             }
         }
         if (d.cast.isNotEmpty()) {
@@ -159,9 +164,12 @@ private fun WhereToWatch(d: TitleDetails, openProvider: (com.kirtanya.reel.core.
 }
 
 @Composable
-private fun EpisodeRow(e: Episode) {
+private fun EpisodeRow(e: Episode, onClick: () -> Unit) {
     Row(
-        Modifier.padding(horizontal = Tokens.Space.phoneGutter, vertical = Tokens.Space.s),
+        Modifier
+            .padding(horizontal = Tokens.Space.phoneGutter, vertical = Tokens.Space.xs)
+            .focusCard(onClick = onClick)
+            .padding(vertical = Tokens.Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
     ) {
         RemoteImage(TmdbImages.still(e.stillPath), Modifier.width(132.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(Tokens.Radius.s)))

@@ -7,3 +7,6 @@
 -keepattributes *Annotation*, InnerClasses
 -keepclassmembers class com.kirtanya.reel.** { *** Companion; }
 -keepclasseswithmembers class com.kirtanya.reel.** { kotlinx.serialization.KSerializer serializer(...); }
+# QuickJS (plugin sandbox): native code calls back into these classes by name.
+-keep class com.dokar.quickjs.** { *; }
+-dontwarn com.dokar.quickjs.**

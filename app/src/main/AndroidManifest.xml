@@ -66,6 +66,12 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.Reel.Player" />
 
+        <!-- Developer check: only the shell (adb) holds DUMP, so no other app can trigger it. -->
+        <receiver
+            android:name=".data.SourcesProbe"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+
         <service
             android:name=".engine.EngineService"
             android:exported="false"

@@ -1,0 +1,52 @@
+package com.kirtanya.reel.core.sources
+
+/** What this device prefers. TVs set [maxBytes] from free storage. */
+data class RankPrefs(
+    val preferredResolution: Int = 1080,
+    /** Torrents bigger than this can't be streamed here (TV storage). Null = no limit. */
+    val maxBytes: Long? = null,
+    val avoidDolbyVision: Boolean = false,
+    val avoidAv1: Boolean = false,
+)
+
+/**
+ * Orders sources best-first: playable here → right quality → healthy torrent → sensible size.
+ * Direct links don't depend on peers, so they get a steady health score.
+ */
+object SourceRanker {
+    fun rank(sources: List<Source>, prefs: RankPrefs = RankPrefs()): List<Source> =
+        sources.sortedWith(compareByDescending<Source> { score(it, prefs) }.thenBy { it.title })
+
+    fun fits(source: Source, prefs: RankPrefs): Boolean =
+        source.kind != SourceKind.TORRENT || prefs.maxBytes == null || (source.sizeBytes ?: 0) <= prefs.maxBytes
+
+    fun score(s: Source, prefs: RankPrefs): Double {
+        if (s.kind == SourceKind.EXTERNAL) return -1000.0
+        var score = 0.0
+        if (!fits(s, prefs)) score -= 500
+        if (s.quality.lowQualityRip) score -= 300
+        if (prefs.avoidDolbyVision && s.quality.dolbyVision && !s.quality.hdr) score -= 200
+        if (prefs.avoidDolbyVision && s.quality.dolbyVision) score -= 80
+        if (prefs.avoidAv1 && s.quality.av1) score -= 200
+
+        // Resolution: exact match best, one step either side next, unknown in the middle.
+        val r = s.quality.resolution
+        score += when {
+            r == null -> 40.0
+            r == prefs.preferredResolution -> 100.0
+            r > prefs.preferredResolution -> 70.0 - (r - prefs.preferredResolution) / 100.0
+            else -> 60.0 - (prefs.preferredResolution - r) / 20.0
+        }
+
+        // Health: torrents by seeders (log scale), direct links steady.
+        score += when (s.kind) {
+            SourceKind.TORRENT -> when (val seeds = s.seeders) {
+                null -> 20.0
+                0 -> -150.0
+                else -> 20.0 * kotlin.math.ln(1.0 + seeds)
+            }
+            else -> 60.0
+        }
+        return score
+    }
+}

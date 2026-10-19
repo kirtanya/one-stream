@@ -135,19 +135,29 @@ class TorrentEngine(private val context: Context) {
 
     // ---------------------------------------------------------------- adding
 
-    /** Adds a magnet link (or returns the existing torrent). Returns the info-hash. */
-    suspend fun addMagnet(uri: String, mode: TorrentMode): String = withContext(Dispatchers.IO) {
+    /**
+     * Adds a magnet link (or returns the existing torrent). Returns the info-hash.
+     * For downloads, [onlyFileIndex] / [onlyFileHint] limit it to one file (e.g. one episode of a season pack).
+     */
+    suspend fun addMagnet(uri: String, mode: TorrentMode, onlyFileIndex: Int? = null, onlyFileHint: String? = null): String = withContext(Dispatchers.IO) {
         start()
         val magnet = Magnet.parse(uri) ?: throw EngineException("That isn't a valid magnet link")
         val hash = magnet.infoHash
-        find(hash)?.let { return@withContext hash }
+        find(hash)?.let { existing ->
+            if (mode == TorrentMode.DOWNLOAD && metas[hash]?.mode == TorrentMode.STREAM) keep(hash)
+            if (onlyFileIndex != null || onlyFileHint != null) {
+                metas[hash]?.let { saveMeta(it.copy(onlyFileIndex = onlyFileIndex, onlyFileHint = onlyFileHint)) }
+                applyFileChoice(existing)
+            }
+            return@withContext hash
+        }
         val params = try {
             AddTorrentParams.parseMagnetUri(uri.trim())
         } catch (t: Throwable) {
             throw EngineException("Couldn't read the magnet link")
         }
         params.setTrackers((params.getTrackers() + DEFAULT_TRACKERS).distinct())
-        add(hash, params, mode)
+        add(hash, params, mode, onlyFileIndex, onlyFileHint)
         hash
     }
 
@@ -167,14 +177,29 @@ class TorrentEngine(private val context: Context) {
         hash
     }
 
-    private fun add(hash: String, params: AddTorrentParams, mode: TorrentMode) {
+    private fun add(hash: String, params: AddTorrentParams, mode: TorrentMode, onlyFileIndex: Int? = null, onlyFileHint: String? = null) {
         params.setSavePath(saveDirFor(hash, mode).absolutePath)
         params.setFlags(flagsFor(mode, params.getFlags()))
+        saveMeta(TorrentMeta(hash, mode, onlyFileIndex = onlyFileIndex, onlyFileHint = onlyFileHint))
         val ec = ErrorCode(error_code())
         val handle = handles.addTorrent(params, ec)
-        if (ec.isError || !handle.isValid) throw EngineException(ec.message.ifBlank { "Couldn't add the torrent" })
-        saveMeta(TorrentMeta(hash, mode))
+        if (ec.isError || !handle.isValid) {
+            metas.remove(hash)
+            throw EngineException(ec.message.ifBlank { "Couldn't add the torrent" })
+        }
+        applyFileChoice(handle)
         handle.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+    }
+
+    /** For downloads limited to one file: once metadata is known, ignore every other file. */
+    private fun applyFileChoice(handle: TorrentHandle) {
+        val meta = metas[handle.hex()] ?: return
+        if (meta.mode != TorrentMode.DOWNLOAD || (meta.onlyFileIndex == null && meta.onlyFileHint == null)) return
+        val info = handle.torrentFile() ?: return // no metadata yet; METADATA_RECEIVED calls again
+        val file = pickStreamFile(files(handle.hex()), meta.onlyFileIndex, meta.onlyFileHint) ?: return
+        val priorities = Priority.array(Priority.IGNORE, info.numFiles())
+        priorities[file.index] = Priority.DEFAULT
+        handle.prioritizeFiles(priorities)
     }
 
     private fun saveDirFor(hash: String, mode: TorrentMode): File = when (mode) {
@@ -411,6 +436,7 @@ class TorrentEngine(private val context: Context) {
             AlertType.METADATA_RECEIVED -> {
                 val h = (alert as TorrentAlert<*>).handle()
                 metadataWaiters[h.hex()]?.complete(Unit)
+                applyFileChoice(h)
                 h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
             }
             AlertType.SAVE_RESUME_DATA -> {

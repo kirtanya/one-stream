@@ -21,6 +21,8 @@ import com.kirtanya.reel.ui.EngineScreen
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.nav.Dest
+import com.kirtanya.reel.ui.settings.SettingsScreen
+import com.kirtanya.reel.ui.sources.SourcesScreen
 import com.kirtanya.reel.ui.nav.Navigator
 import com.kirtanya.reel.ui.nav.Tab
 import com.kirtanya.reel.ui.nav.rememberNavigator
@@ -38,7 +40,8 @@ fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.bg)) {
         when (val top = nav.top) {
-            is Dest.Title -> TvTitle(top.ref)
+            is Dest.Title -> TvTitle(top.ref, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) })
+            is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = true, onBack = { nav.back() })
             null -> {
                 when (nav.tab) {
                     Tab.Home -> TvHome(onOpen = { nav.open(Dest.Title(it.ref)) })
@@ -46,6 +49,7 @@ fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit) {
                     Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) {
                         EngineScreen(isTv = true, incomingMagnet = incomingMagnet, onIncomingHandled = onIncomingHandled)
                     }
+                    Tab.Settings -> Box(Modifier.padding(top = TvTopBarHeight)) { SettingsScreen(isTv = true) }
                 }
                 TvTopBar(nav)
             }

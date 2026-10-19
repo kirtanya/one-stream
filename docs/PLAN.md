@@ -300,6 +300,11 @@ iOS, desktop, Play Store release, user accounts or cloud sync, debrid services, 
 | M1 Engine | ✅ **Verified on Pixel 8** (2026-10-19): downloads work, torrents survive app update/restart. Keep / pause / delete not explicitly tested. |
 | M2 Stream | ✅ **Verified on Pixel 8** (2026-10-19): Big Buck Bunny streams (~20 s to start, 2.9 MB/s, 30 peers) and seeking anywhere on the timeline works. **TV (32-bit) not tested yet.** |
 | M3 Title browsing | ✅ Built (0.2.x): TMDB home rows, search, title page (details, seasons/episodes, cast), where to watch (India) → opens the provider's app. **Phone verified** (opened JioHotstar from a title). TV layout (cinematic home, D-pad) installed on the TV, **not yet looked at**. Play button waits for M4 sources. |
+| M4 Sources | ✅ Built (0.3.0): Stremio addon client + Nuvio-format plugin host (QuickJS sandbox: fetch, URL, cheerio→jsoup, crypto-js hashes, axios, timers; TMDB calls signed with Reel's token), parallel search with live progress, ranking (quality, seeders, TV storage fit), Sources screen (phone + TV), Play best / Download one file, service deep links (WatchHub-style), Settings tab to add/remove addons + plugin repos. Built-ins: Open movies (Blender torrents) + Internet Archive (curated public-domain `feature_films` only). **Verified on phone via adb probe** (plugins + WatchHub addon). Sources/Settings screens not yet looked at on a device. |
 | `core` tests | ✅ 30/30 passing (magnets, ranges, piece planning, file picking) |
 
-Next: look at Reel on the TV (streaming test + M3 TV layout) when it's free → M4 (sources: Stremio addons + Nuvio-format plugins, Play button).
+Next: install the final 0.3.0 on phone + TV (devices dropped off adb at the end of M4) → look at the Sources/Settings screens and the TV layout → M5 (player polish: resume, continue watching, next episode, subtitles).
+
+
+### Legal note from M4 testing
+archive.org uploads can't be trusted by their licence field: copies of copyrighted films (e.g. Fight Club, The Dark Knight) are uploaded tagged "public domain" or CC0. The built-in Internet Archive plugin therefore searches **only** the curated `feature_films` collection (checked live: excludes those, keeps Night of the Living Dead, His Girl Friday, Nosferatu, The General).

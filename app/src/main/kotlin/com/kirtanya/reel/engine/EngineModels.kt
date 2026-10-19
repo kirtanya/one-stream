@@ -38,6 +38,9 @@ data class TorrentMeta(
     val infoHash: String,
     val mode: TorrentMode,
     val streamFileIndex: Int? = null,
+    /** Download only this file (index, or a filename hint when the index is unknown). */
+    val onlyFileIndex: Int? = null,
+    val onlyFileHint: String? = null,
     val addedAt: Long = System.currentTimeMillis(),
     val lastUsedAt: Long = System.currentTimeMillis(),
 )

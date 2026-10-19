@@ -28,6 +28,9 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.engine.EngineException
@@ -85,7 +88,7 @@ class PlayerActivity : ComponentActivity() {
                 hash = h
                 startStats(h)
                 val fileIdx = intent.getIntExtra(EXTRA_FILE_INDEX, -1).takeIf { it >= 0 }
-                val info = engine.prepareStream(h, fileIdx)
+                val info = engine.prepareStream(h, fileIdx, intent.getStringExtra(EXTRA_FILENAME))
                 play(app.streamServer.urlFor(info), title.ifBlank { info.file.name })
             } catch (e: EngineException) {
                 showError(e.message ?: "Couldn't start this stream")
@@ -101,7 +104,17 @@ class PlayerActivity : ComponentActivity() {
             // Torrent streams start slower than HTTP; keep a healthy buffer once rolling.
             .setBufferDurationsMs(15_000, 60_000, 2_500, 5_000)
             .build()
-        val exo = ExoPlayer.Builder(this).setLoadControl(loadControl).build()
+        // Some direct sources need headers (Referer, User-Agent…) on every request.
+        @Suppress("UNCHECKED_CAST")
+        val headers = (intent.getSerializableExtra(EXTRA_HEADERS) as? HashMap<String, String>).orEmpty()
+        val http = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setDefaultRequestProperties(headers)
+            .apply { headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.let { setUserAgent(it.value) } }
+        val exo = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
+            .build()
         player = exo
         playerView.player = exo
         exo.addListener(object : Player.Listener {
@@ -229,12 +242,15 @@ class PlayerActivity : ComponentActivity() {
         private const val EXTRA_FILE_INDEX = "fileIndex"
         private const val EXTRA_URL = "url"
         private const val EXTRA_TITLE = "title"
+        private const val EXTRA_FILENAME = "filename"
+        private const val EXTRA_HEADERS = "headers"
 
-        fun forMagnet(context: Context, magnet: String, title: String? = null, fileIndex: Int? = null) =
+        fun forMagnet(context: Context, magnet: String, title: String? = null, fileIndex: Int? = null, filename: String? = null) =
             Intent(context, PlayerActivity::class.java)
                 .putExtra(EXTRA_MAGNET, magnet)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_FILE_INDEX, fileIndex ?: -1)
+                .putExtra(EXTRA_FILENAME, filename)
 
         fun forTorrent(context: Context, infoHash: String, title: String? = null, fileIndex: Int? = null) =
             Intent(context, PlayerActivity::class.java)
@@ -242,7 +258,10 @@ class PlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_FILE_INDEX, fileIndex ?: -1)
 
-        fun forUrl(context: Context, url: String, title: String? = null) =
-            Intent(context, PlayerActivity::class.java).putExtra(EXTRA_URL, url).putExtra(EXTRA_TITLE, title)
+        fun forUrl(context: Context, url: String, title: String? = null, headers: Map<String, String> = emptyMap()) =
+            Intent(context, PlayerActivity::class.java)
+                .putExtra(EXTRA_URL, url)
+                .putExtra(EXTRA_TITLE, title)
+                .putExtra(EXTRA_HEADERS, HashMap(headers))
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -19,6 +20,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import com.kirtanya.reel.ui.EngineScreen
 import com.kirtanya.reel.ui.nav.Dest
+import com.kirtanya.reel.ui.settings.SettingsScreen
+import com.kirtanya.reel.ui.sources.SourcesScreen
 import com.kirtanya.reel.ui.nav.Tab
 import com.kirtanya.reel.ui.nav.rememberNavigator
 import com.kirtanya.reel.ui.theme.Tokens
@@ -34,19 +37,21 @@ fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit) {
         Box(Modifier.weight(1f)) {
             when (val top = nav.top) {
                 is Dest.Title -> saveable.SaveableStateProvider(top.ref.toString()) {
-                    PhoneTitle(top.ref, onBack = { nav.back() })
+                    PhoneTitle(top.ref, onBack = { nav.back() }, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) })
                 }
+                is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = false, onBack = { nav.back() })
                 null -> saveable.SaveableStateProvider(nav.tab.name) {
                     when (nav.tab) {
                         Tab.Home -> PhoneHome(onOpen = { nav.open(Dest.Title(it.ref)) })
                         Tab.Search -> PhoneSearch(onOpen = { nav.open(Dest.Title(it.ref)) })
                         Tab.Downloads -> EngineScreen(isTv = false, incomingMagnet = null, onIncomingHandled = {})
+                        Tab.Settings -> SettingsScreen(isTv = false)
                     }
                 }
             }
         }
         NavigationBar(containerColor = Tokens.Colors.surface) {
-            listOf(Tab.Home to Icons.Rounded.Home, Tab.Search to Icons.Rounded.Search, Tab.Downloads to Icons.Rounded.Download)
+            listOf(Tab.Home to Icons.Rounded.Home, Tab.Search to Icons.Rounded.Search, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings)
                 .forEach { (tab, icon) ->
                     NavigationBarItem(
                         selected = nav.tab == tab && nav.stack.isEmpty(),

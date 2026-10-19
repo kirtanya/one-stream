@@ -96,5 +96,3 @@ fun EpisodeCard(episode: Episode, width: Dp, onClick: () -> Unit, modifier: Modi
         episode.runtimeMin?.let { Text("${it}m", style = Tokens.Type.caption, color = Tokens.Colors.textMuted) }
     }
 }
-
-const val SOURCES_SOON = "Play from sources arrives in the next update."
