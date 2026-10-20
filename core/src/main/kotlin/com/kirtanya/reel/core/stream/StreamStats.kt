@@ -24,47 +24,47 @@ class StreamStats(val tapMs: Long) {
 
     fun t(at: Long) = at - tapMs
 
-    fun meta(at: Long) { if (metaAt == null) metaAt = at }
-    fun firstPeer(at: Long) { if (firstPeerAt == null) firstPeerAt = at }
-    fun firstPiece(at: Long) { if (firstPieceAt == null) firstPieceAt = at }
-    fun firstByte(at: Long) { if (firstByteAt == null) firstByteAt = at }
-    fun ready(at: Long) { if (readyAt == null) readyAt = at }
-    fun firstFrame(at: Long) { if (firstFrameAt == null) firstFrameAt = at }
+    @Synchronized fun meta(at: Long) { if (metaAt == null) metaAt = at }
+    @Synchronized fun firstPeer(at: Long) { if (firstPeerAt == null) firstPeerAt = at }
+    @Synchronized fun firstPiece(at: Long) { if (firstPieceAt == null) firstPieceAt = at }
+    @Synchronized fun firstByte(at: Long) { if (firstByteAt == null) firstByteAt = at }
+    @Synchronized fun ready(at: Long) { if (readyAt == null) readyAt = at }
+    @Synchronized fun firstFrame(at: Long) { if (firstFrameAt == null) firstFrameAt = at }
 
     /** Buffering began. Buffering right after a seek counts as seek time, not a rebuffer. */
-    fun bufferingStart(at: Long) {
+    @Synchronized fun bufferingStart(at: Long) {
         if (firstFrameAt == null || rebufStart != null) return
         rebufStart = at
         rebufIsSeek = seekStart != null
     }
 
-    fun bufferingEnd(at: Long) {
+    @Synchronized fun bufferingEnd(at: Long) {
         val s = rebufStart ?: return
         if (!rebufIsSeek) rebufMs += at - s
         rebufStart = null
         rebufIsSeek = false
     }
 
-    fun seek(at: Long) { seekStart = at }
+    @Synchronized fun seek(at: Long) { seekStart = at }
 
     /** The player is ready after a seek: one seek-latency sample. */
-    fun readyAfterSeek(at: Long): Long? {
+    @Synchronized fun readyAfterSeek(at: Long): Long? {
         val s = seekStart ?: return null
         seekStart = null
         return (at - s).also { seekMs += it }
     }
 
-    fun readerWait(ms: Long) { waitMs += ms }
-    fun fatalSlowError() { fatalSlow++ }
+    @Synchronized fun readerWait(ms: Long) { waitMs += ms }
+    @Synchronized fun fatalSlowError() { fatalSlow++ }
 
     val rebufferCount get() = rebufMs.size
     val rebufferTotalMs get() = rebufMs.sum()
     val rebufferMaxMs get() = rebufMs.maxOrNull() ?: 0
     val seekCount get() = seekMs.size
-    fun seekP(p: Int): Long = percentile(seekMs, p)
+    @Synchronized fun seekP(p: Int): Long = percentile(seekMs, p)
 
     /** The `ev=end` summary line. */
-    fun endLine(extra: Map<String, Any?> = emptyMap()): String = line(
+    @Synchronized fun endLine(extra: Map<String, Any?> = emptyMap()): String = line(
         "end",
         linkedMapOf<String, Any?>(
             "ttm" to metaAt?.let(::t),

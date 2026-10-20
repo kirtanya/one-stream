@@ -61,6 +61,8 @@ data class TorrentMeta(
     val pausedForSpace: Boolean = false,
     val seedingDone: Boolean = false,
     val wasAutoManaged: Boolean? = null,
+    /** Keep was asked while a player was reading: move to Downloads when the stream stops. */
+    val keepPending: Boolean = false,
     /** user | stream: a stream-created torrent with nothing downloaded can be deleted on abandon. */
     val createdBy: String = "user",
     val lastStoppedAt: Long = 0,

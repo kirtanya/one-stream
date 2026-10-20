@@ -47,6 +47,9 @@ object PlayerBuffers {
             qualityLabel?.contains("1080") == true -> 8
             else -> 3
         }
-        return mbps * 1_000_000L / 8
+        val byLabel = mbps * 1_000_000L / 8
+        // No duration yet: be pessimistic, a big file is assumed to run no longer than 40 minutes.
+        val bySize = if (sizeBytes != null && sizeBytes > 0) sizeBytes / (40 * 60) else 0L
+        return maxOf(byLabel, bySize)
     }
 }

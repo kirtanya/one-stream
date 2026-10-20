@@ -133,7 +133,6 @@ class TorrentEngine(private val context: Context) {
     private val gates = ConcurrentHashMap<String, PieceGate>()
     /** PIECE_FINISHED for a torrent whose gate doesn't exist yet (magnet before metadata). */
     private val preGate = ConcurrentHashMap<String, java.util.concurrent.ConcurrentLinkedQueue<Int>>()
-    private val filePrioIssued = ConcurrentHashMap<String, Int>()
     private val tokens = AtomicLong()
     /** Plans deadlines, polls flushes and runs safety checks, off the reader threads. */
     private val engineExec = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "reel-engine").apply { isDaemon = true; priority = Thread.NORM_PRIORITY + 1 } }
@@ -319,8 +318,15 @@ class TorrentEngine(private val context: Context) {
             flags = flags.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
             params.filePriorities(Array(streamFileIdx + 1) { if (it == streamFileIdx) Priority.DEFAULT else Priority.IGNORE })
         }
-        params.setFlags(flags)
         val intent = FileChoice.merge(com.kirtanya.reel.core.stream.FileIntent(), onlyFileIndex, onlyFileHint)
+        if (mode == TorrentMode.DOWNLOAD && !intent.fullTorrent) {
+            // One episode of a pack: every file starts unwanted, then the intent raises the chosen one.
+            flags = flags.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
+            if (onlyFileIndex != null && onlyFileIndex >= 0) {
+                params.filePriorities(Array(onlyFileIndex + 1) { if (it == onlyFileIndex) Priority.DEFAULT else Priority.IGNORE })
+            }
+        }
+        params.setFlags(flags)
         val meta = TorrentMeta(hash, mode, schema = 2, savePath = save.absolutePath, createdBy = if (mode == TorrentMode.STREAM) "stream" else "user")
             .let { if (mode == TorrentMode.DOWNLOAD) it.withIntent(intent) else it }
             .copy(pendingFileIntent = mode == TorrentMode.DOWNLOAD && !intent.fullTorrent)
@@ -416,7 +422,7 @@ class TorrentEngine(private val context: Context) {
         streams.remove(hash)?.let { release(it, StreamGoneException("This stream was removed")) }
         gates.remove(hash)?.close(StreamGoneException("This stream was removed"))
         preGate.remove(hash)
-        metadataWaiters.remove(hash)?.cancel()
+        metadataWaiters.remove(hash)?.completeExceptionally(EngineException("This stream was removed"))
         errors.remove(hash)
         metas.remove(hash)
         // libtorrent deletes the files itself (DELETE_FILES); the stream folder is swept when empty.
@@ -441,12 +447,20 @@ class TorrentEngine(private val context: Context) {
     }
 
     private fun keepInternal(h: TorrentHandle, meta: TorrentMeta, intent: com.kirtanya.reel.core.stream.FileIntent) {
-        h.moveStorage(downloadsDir().absolutePath)
+        val key = meta.infoHash
+        // Moving the files while a player reads them breaks the player: do it when the stream ends.
+        if (streams.containsKey(key) || starting.containsKey(key)) {
+            val wanted = if (intent.fullTorrent || (intent.wantedFiles.isEmpty() && intent.wantedHints.isEmpty())) intent.copy(fullTorrent = true) else intent
+            saveMeta(meta.copy(keepPending = true).withIntent(wanted))
+            return
+        }
+        // Never overwrite a file of the same name already in Downloads.
+        h.moveStorage(downloadsDir().absolutePath, org.libtorrent4j.MoveFlags.FAIL_IF_EXIST)
         h.setFlags(TorrentFlags.AUTO_MANAGED)
         h.resume()
         // A stream added for one file downloads nothing else: say explicitly what Keep wants.
         val keepIntent = if (intent.fullTorrent || (intent.wantedFiles.isEmpty() && intent.wantedHints.isEmpty())) intent.copy(fullTorrent = true) else intent
-        saveMeta(meta.copy(mode = TorrentMode.DOWNLOAD, savePath = downloadsDir().absolutePath, pendingFileIntent = true).withIntent(keepIntent))
+        saveMeta(meta.copy(mode = TorrentMode.DOWNLOAD, savePath = downloadsDir().absolutePath, pendingFileIntent = true, keepPending = false).withIntent(keepIntent))
         applyFileIntent(h)
     }
 
@@ -466,7 +480,7 @@ class TorrentEngine(private val context: Context) {
      * Waits for metadata, picks the file, focuses the torrent on it and queues the startup pieces.
      * Readers can open [StreamInfo.uri] (in-app) or [httpUrlFor] (external players) once this returns.
      */
-    suspend fun prepareStream(hash: String, fileIdx: Int? = null, filenameHint: String? = null): StreamInfo =
+    suspend fun prepareStream(hash: String, fileIdx: Int? = null, filenameHint: String? = null, registered: ((StreamInfo) -> Unit)? = null): StreamInfo =
         withContext(Dispatchers.IO) {
             val handle = find(hash) ?: throw EngineException("Torrent not found")
             awaitMetadata(hash, handle, METADATA_TIMEOUT_MS)
@@ -487,10 +501,7 @@ class TorrentEngine(private val context: Context) {
             val intended = if (mode == TorrentMode.STREAM) List(fs.numFiles()) { if (it == file.index) 4 else 0 }
                 else current.mapIndexed { i, v -> if (i == file.index && v == 0) 4 else v }
             val changed = intended != current
-            if (changed) {
-                filePrioIssued.merge(hash, 1, Int::plus)
-                handle.prioritizeFiles(Array(intended.size) { Priority.fromSwig(intended[it]) })
-            }
+            if (changed) handle.prioritizeFiles(Array(intended.size) { Priority.fromSwig(intended[it]) })
             val gate = ensureGate(hash, handle, info.numPieces())
             val span = FileSpan(fs.fileOffset(file.index), fs.fileSize(file.index), info.pieceLength(), info.numPieces())
             val token = tokens.incrementAndGet()
@@ -509,6 +520,8 @@ class TorrentEngine(private val context: Context) {
             val active = ActiveStream(stream, handle, gate, profile, info.numPieces(), baseline, download = mode == TorrentMode.DOWNLOAD)
             active.startupSet = StartupPlanner.initial(span, file.extension, startMs = 0, durationMs = null, rate = MediaRate.of(file.size, null, null), profile = profile)
             active.fileReady = !changed
+            active.intendedPrios = intended
+            if (mode == TorrentMode.DOWNLOAD && current.getOrElse(file.index) { 4 } == 0) active.raisedFile = file.index
             synchronized(streamLock) {
                 // A previous stream on this torrent (the last episode of a season pack): its readers
                 // fail fast; the torrent and its gate carry on for the new one.
@@ -516,8 +529,10 @@ class TorrentEngine(private val context: Context) {
                 // Register and resume together: a player stopping at the same moment can't pause us after.
                 streams[hash] = active
                 handle.resume()
+                registered?.invoke(stream)
             }
-            if (changed) engineExec.schedule({ releaseFileBarrier(active, timedOut = true) }, 1_500, TimeUnit.MILLISECONDS)
+            // Readers go once libtorrent reports the new file priorities in force (checked, not assumed).
+            if (changed) engineExec.schedule({ releaseFileBarrier(active, timedOut = false) }, 50, TimeUnit.MILLISECONDS)
             EngineStats.event(hash, "prepared", mapOf("size" to file.size, "pl" to info.pieceLength(), "pieces" to info.numPieces(), "have" to gate.pieces.count()))
             kick(active, immediate = true)
             stream
@@ -535,20 +550,27 @@ class TorrentEngine(private val context: Context) {
         synchronized(streamLock) { starting.merge(hash, 1, Int::plus) }
         var created = false
         var prepared = false
+        var registeredInfo: StreamInfo? = null
         try {
             val cached = find(hash) != null
             EngineStats.begin(hash, tapMs, mapOf("dev" to formFactor.name.lowercase(), "disk" to disk.name.lowercase(), "warm" to if (cached) "cached" else "cold", "build" to "p2", "flags" to EngineFlags.summary()))
             created = addMagnetInternal(magnet, TorrentMode.STREAM, null, null, streamFileIdx = fileIdx).second
             find(hash)?.let { h ->
+                // A paused torrent (cached stream, or a download) must run to fetch metadata at all.
+                synchronized(streamLock) { wakeForStream(hash, h) }
                 runCatching { h.forceDHTAnnounce() }
                 // A cached stream that was paused: peers are long gone, ask everyone again now.
                 if (cached) runCatching { h.forceReannounce(0, -1, TorrentHandle.IGNORE_MIN_INTERVAL) }
             }
-            return prepareStream(hash, fileIdx, filenameHint).also { prepared = true }
+            return prepareStream(hash, fileIdx, filenameHint) { registeredInfo = it }.also { prepared = true }
         } finally {
             withContext(NonCancellable) {
                 starting.computeIfPresent(hash) { _, n -> (n - 1).takeIf { it > 0 } }
-                if (!prepared) abandon(hash, created)
+                if (!prepared) {
+                    // Registered, then cancelled before the caller got it: nobody else can stop it.
+                    registeredInfo?.let { stopStream(hash, it) }
+                    abandon(hash, created)
+                }
             }
         }
     }
@@ -556,11 +578,14 @@ class TorrentEngine(private val context: Context) {
     /** A start that didn't complete: drop what it added, or park it, unless someone else uses it. */
     private fun abandon(hash: String, created: Boolean) = synchronized(streamLock) {
         if (starting.containsKey(hash) || streams.containsKey(hash)) return@synchronized
-        val meta = metas[hash] ?: return@synchronized
-        if (meta.mode != TorrentMode.STREAM) return@synchronized
-        val h = find(hash) ?: return@synchronized
-        val done = runCatching { h.status().totalDone() }.getOrDefault(0L)
         EngineStats.end(hash, mapOf("abandoned" to 1))
+        val meta = metas[hash] ?: return@synchronized
+        val h = find(hash) ?: return@synchronized
+        if (meta.mode != TorrentMode.STREAM) {
+            restoreDownloadFlags(h, meta, raisedFile = null)
+            return@synchronized
+        }
+        val done = runCatching { h.status().totalDone() }.getOrDefault(0L)
         if (created && done == 0L) {
             Log.i(TAG, "start abandoned; removing ${hash.take(8)}")
             remove(hash, deleteFiles = true)
@@ -592,16 +617,29 @@ class TorrentEngine(private val context: Context) {
      * eat bandwidth (e.g. while another app plays). Downloads and other players' streams are untouched.
      */
     fun suspendStream(hash: String, owner: StreamInfo?) {
-        streams[hash]?.takeIf { owner == null || it.info === owner }?.let { it.background = true }
-        streamHandleIfOwned(hash, owner)?.pause()
+        if (owner == null) return
+        synchronized(streamLock) {
+            streams[hash]?.takeIf { it.info === owner }?.let { it.background = true }
+            streamHandleIfOwned(hash, owner)?.pause()
+        }
     }
 
     /** The player is visible again: carry on fetching. */
     fun resumeStream(hash: String, owner: StreamInfo?) {
-        val s = streams[hash]?.takeIf { owner == null || it.info === owner }
-        s?.background = false
-        streamHandleIfOwned(hash, owner)?.resume()
+        if (owner == null) return
+        val s = synchronized(streamLock) {
+            streams[hash]?.takeIf { it.info === owner }?.also { st ->
+                st.background = false
+                streamHandleIfOwned(hash, owner)?.resume()
+            }
+        }
         s?.let { kick(it, immediate = true) }
+    }
+
+    /** Has an external player read [owner]'s stream recently (a request open now, or within [windowMs])? */
+    fun hasRecentActivity(hash: String, owner: StreamInfo?, windowMs: Long = 30_000): Boolean {
+        val s = streams[hash]?.takeIf { owner == null || it.info === owner } ?: return false
+        return s.readers.values.any { it.kind == ReaderKind.HTTP } || System.currentTimeMillis() - s.lastHttpActivityAt < windowMs
     }
 
     /** The player's live state (position, buffer, playing), read by the scheduler. */
@@ -638,28 +676,61 @@ class TorrentEngine(private val context: Context) {
             if (!streams.remove(hash, stream)) return
             release(stream, StreamGoneException("This stream stopped"))
             metas[hash]?.let { saveMeta(it.copy(lastStoppedAt = System.currentTimeMillis())) }
-            val h = find(hash) ?: return
             // Another player is starting this torrent (next episode of a season pack): leave it running.
             if (starting.containsKey(hash) || streams.containsKey(hash)) return
-            if (metas[hash]?.mode == TorrentMode.STREAM) {
+            EngineStats.end(hash)
+            val h = find(hash) ?: return
+            val meta = metas[hash]
+            if (meta?.mode == TorrentMode.STREAM) {
                 h.pause()
                 h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+                if (meta.keepPending) keepInternal(h, meta, meta.intent)
+            } else if (meta != null) {
+                restoreDownloadFlags(h, meta, stream.raisedFile)
             }
         }
         Log.i(TAG, "stream stopped ${stream.info.file.name}")
-        EngineStats.end(hash)
         // The first stop after a while also refreshes the saved DHT table.
         if (System.currentTimeMillis() - lastStateSaveAt > 60_000) saveSessionState()
         scope.launch(Dispatchers.IO) { runCatching { trimCache(DEFAULT_CACHE_BUDGET) } }
     }
 
     /** Readers of [old] fail fast; its deadlines are cleared (the torrent and gate carry on). */
-    private fun supersede(old: ActiveStream) = release(old, StreamGoneException("superseded"))
+    private fun supersede(old: ActiveStream) = release(old, StreamGoneException("superseded"), restorePriorities = false)
 
-    private fun release(s: ActiveStream, reason: java.io.IOException) {
+    private fun release(s: ActiveStream, reason: java.io.IOException, restorePriorities: Boolean = true) {
         s.closedReason = reason
         s.gate.signalAll()
-        engineExec.execute { clearPlan(s) }
+        runCatching { engineExec.execute { clearPlan(s, restorePriorities) } }
+    }
+
+    /**
+     * Before a stream starts on a paused torrent: a stream torrent just resumes; a download remembers
+     * whether the queue managed it, leaves the queue (it would pause it again) and resumes.
+     */
+    private fun wakeForStream(hash: String, h: TorrentHandle) {
+        val meta = metas[hash] ?: return
+        val flags = h.getFlags()
+        if (meta.mode == TorrentMode.DOWNLOAD) {
+            if (meta.wasAutoManaged == null) saveMeta(meta.copy(wasAutoManaged = flags.and_(TorrentFlags.AUTO_MANAGED).non_zero()))
+            h.unsetFlags(TorrentFlags.AUTO_MANAGED)
+        }
+        if (flags.and_(TorrentFlags.PAUSED).non_zero()) h.resume()
+    }
+
+    /** A download that was played: give it back to the queue (or keep the user's pause), lower a raised file. */
+    private fun restoreDownloadFlags(h: TorrentHandle, meta: TorrentMeta, raisedFile: Int?) {
+        runCatching { h.clearPieceDeadlines() }
+        runCatching { h.unsetFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD) }
+        if (raisedFile != null) {
+            val stillWanted = meta.intent.fullTorrent || raisedFile in meta.intent.wantedFiles
+            if (!stillWanted) runCatching { h.filePriority(raisedFile, Priority.IGNORE) }
+        }
+        when {
+            meta.userPaused -> { h.unsetFlags(TorrentFlags.AUTO_MANAGED); h.pause() }
+            meta.wasAutoManaged == true -> h.setFlags(TorrentFlags.AUTO_MANAGED)
+        }
+        saveMeta(meta.copy(wasAutoManaged = null))
     }
 
     /**
@@ -672,7 +743,7 @@ class TorrentEngine(private val context: Context) {
                 delay(60_000)
                 val s = streams[hash] ?: return@launch
                 if (owner != null && s.info !== owner) return@launch
-                if (s.readers.values.none { it.kind == ReaderKind.HTTP } && System.currentTimeMillis() - s.lastActivityAt > idleMs) {
+                if (s.readers.values.none { it.kind == ReaderKind.HTTP } && System.currentTimeMillis() - maxOf(s.lastHttpActivityAt, s.lastActivityAt) > idleMs) {
                     Log.i(TAG, "external player idle; stopping ${s.info.file.name}")
                     stopStream(hash, owner)
                     return@launch
@@ -707,12 +778,14 @@ class TorrentEngine(private val context: Context) {
         core.position = position
         s.readers[id] = core
         s.lastActivityAt = System.currentTimeMillis()
+        if (kind == ReaderKind.HTTP) s.lastHttpActivityAt = s.lastActivityAt
         s.lastClosedAt = 0
         kick(s, immediate = true)
         return StreamReader(core, s.info.file.size) {
             core.close()
             if (s.readers.remove(id) != null) {
                 s.lastActivityAt = System.currentTimeMillis()
+                if (kind == ReaderKind.HTTP) s.lastHttpActivityAt = s.lastActivityAt
                 s.lastClosedPos = core.position
                 s.lastClosedAt = EngineStats.now()
                 // Keep the closed reader's window briefly: ExoPlayer closes and reopens on every
@@ -759,7 +832,7 @@ class TorrentEngine(private val context: Context) {
 
         override fun onUnblocked(piece: Int, waitedMs: Long) {
             if (waitedMs >= 200) {
-                EngineStats.of(s.info.infoHash)?.readerWait(waitedMs)
+                runCatching { EngineStats.of(s.info.infoHash)?.readerWait(waitedMs) }
                 EngineStats.event(s.info.infoHash, "wait", mapOf("p" to piece, "ms" to waitedMs, "fileReady" to if (s.fileReady) 1 else 0))
             }
         }
@@ -796,14 +869,23 @@ class TorrentEngine(private val context: Context) {
         engineExec.schedule({ pollFlush(s, piece, attempt + 1) }, delayMs, TimeUnit.MILLISECONDS)
     }
 
-    /** FILE_PRIO arrived (or 1.5 s passed): the stream's file priorities are in force, readers may go. */
-    private fun releaseFileBarrier(s: ActiveStream, timedOut: Boolean) {
-        if (s.fileReady) return
-        if (timedOut) {
-            val intended = s.info.file.index
-            val ok = runCatching { s.handle.filePriority(intended) != Priority.IGNORE }.getOrDefault(true)
-            if (!ok) { engineExec.schedule({ releaseFileBarrier(s, true) }, 500, TimeUnit.MILLISECONDS); return }
+    /**
+     * Readers wait until libtorrent reports exactly the file priorities we asked for (FILE_PRIO is
+     * only a hint: checked here, polled every 50–100 ms, given up after ~5 s).
+     */
+    private fun releaseFileBarrier(s: ActiveStream, timedOut: Boolean, attempt: Int = 0) {
+        if (s.fileReady || s.closedReason != null || streams[s.info.infoHash] !== s) return
+        val intended = s.intendedPrios
+        val inForce = intended == null || runCatching {
+            s.handle.filePriorities().map { it.swig().toInt() } == intended
+        }.getOrDefault(false)
+        if (!inForce && !timedOut && attempt < 60) {
+            if (attempt == 0 || s.barrierPolling.compareAndSet(false, true)) {
+                engineExec.schedule({ s.barrierPolling.set(false); releaseFileBarrier(s, false, attempt + 1) }, if (attempt < 4) 50 else 100, TimeUnit.MILLISECONDS)
+            }
+            return
         }
+        if (!inForce) EngineStats.event(s.info.infoHash, "barrierGiveUp", mapOf("tries" to attempt))
         s.fileReady = true
         s.forceFull = true
         s.gate.signalAll()
@@ -943,11 +1025,14 @@ class TorrentEngine(private val context: Context) {
         }
     }
 
-    /** Stream over: drop its deadlines, put every piece back at its file's priority, stop sequential mode. */
-    private fun clearPlan(s: ActiveStream) {
+    /**
+     * Stream over: drop its deadlines, stop sequential mode and (unless a new stream on the same
+     * torrent is taking over, whose file priorities decide) put every piece back at its file's priority.
+     */
+    private fun clearPlan(s: ActiveStream, restorePriorities: Boolean = true) {
         val h = s.handle
         runCatching { h.clearPieceDeadlines() }
-        runCatching { h.prioritizePieces(Array(s.baseline.size) { Priority.fromSwig(s.baseline[it].toInt()) }) }
+        if (restorePriorities) runCatching { h.prioritizePieces(Array(s.baseline.size) { Priority.fromSwig(s.baseline[it].toInt()) }) }
         runCatching { h.unsetFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD) }
         s.seqFlagSet = false
         s.applied = null
@@ -1031,8 +1116,8 @@ class TorrentEngine(private val context: Context) {
     /** Bytes held by stream-mode torrents (downloaded pieces, not sparse file lengths). */
     fun cacheBytes(): Long = metas.values.filter { it.mode == TorrentMode.STREAM }.sumOf { streamBytes(it.infoHash) }
 
-    private fun streamBytes(hash: String): Long =
-        snapshot(hash)?.doneBytes?.takeIf { it > 0 } ?: (find(hash)?.status()?.totalDone() ?: 0L)
+    /** Everything on disk counts against the cache, including pieces of files no longer wanted. */
+    private fun streamBytes(hash: String): Long = find(hash)?.status()?.totalDone() ?: 0L
 
     // ---------------------------------------------------------------- alerts + polling
 
@@ -1049,6 +1134,8 @@ class TorrentEngine(private val context: Context) {
             AlertType.PERFORMANCE.swig(),
             AlertType.TORRENT_CHECKED.swig(),
             AlertType.FILE_PRIO.swig(),
+            AlertType.STORAGE_MOVED.swig(),
+            AlertType.STORAGE_MOVED_FAILED.swig(),
         )
 
         override fun alert(alert: Alert<*>) {
@@ -1101,6 +1188,18 @@ class TorrentEngine(private val context: Context) {
             AlertType.FILE_PRIO -> {
                 val key = (alert as TorrentAlert<*>).handle().key()
                 streams[key]?.let { st -> engineExec.execute { releaseFileBarrier(st, timedOut = false) } }
+            }
+            AlertType.STORAGE_MOVED -> {
+                val h = (alert as TorrentAlert<*>).handle()
+                metas[h.key()]?.let { saveMeta(it.copy(savePath = h.savePath())) }
+                h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+            }
+            AlertType.STORAGE_MOVED_FAILED -> {
+                // A file of that name is already in Downloads: keep downloading where the pieces are.
+                val h = (alert as TorrentAlert<*>).handle()
+                val key = h.key()
+                errors[key] = "Couldn't move to Downloads (a file with that name is already there)"
+                metas[key]?.let { saveMeta(it.copy(savePath = h.savePath())) }
             }
             AlertType.TORRENT_ERROR -> {
                 val a = alert as TorrentErrorAlert
@@ -1256,7 +1355,7 @@ class TorrentEngine(private val context: Context) {
                 var flags = saved.without(TorrentFlags.AUTO_MANAGED).without(TorrentFlags.PAUSED).without(TorrentFlags.SEQUENTIAL_DOWNLOAD)
                 if (decided.autoManaged) flags = flags.or_(TorrentFlags.AUTO_MANAGED)
                 if (decided.paused) flags = flags.or_(TorrentFlags.PAUSED)
-                if (raw == null && meta.mode == TorrentMode.STREAM) flags = flags.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
+                if (raw == null && (meta.mode == TorrentMode.STREAM || !meta.intent.fullTorrent)) flags = flags.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
                 params.setFlags(flags)
                 // libtorrent saves these in resume data: never let an old throttle or cap come back.
                 params.setDownloadLimit(0)
@@ -1296,6 +1395,13 @@ class TorrentEngine(private val context: Context) {
         /** Open readers (in-app player, external players, bench). */
         val readers = ConcurrentHashMap<Long, StreamReaderCore>()
         @Volatile var lastActivityAt: Long = System.currentTimeMillis()
+        /** Last time an external player opened or closed a request (0 = never). */
+        @Volatile var lastHttpActivityAt: Long = 0
+        /** File priorities this stream asked for; readers wait until libtorrent reports them. */
+        @Volatile var intendedPrios: List<Int>? = null
+        val barrierPolling = java.util.concurrent.atomic.AtomicBoolean(false)
+        /** A download's file this stream raised from IGNORE (lowered again when the stream stops). */
+        @Volatile var raisedFile: Int? = null
         /** Set when the stream stops or is superseded: every reader fails with it. */
         @Volatile var closedReason: java.io.IOException? = null
         /** False while new file priorities are being applied (pieces may still be in the part file). */

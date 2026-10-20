@@ -39,10 +39,13 @@ const val TMDB_KEY_PLACEHOLDER = "reel-tmdb-key"
  * OkHttp-backed fetcher. TMDB requests made with [TMDB_KEY_PLACEHOLDER] get the
  * `api_key` removed and Reel's read token added as a Bearer header.
  */
+/** The browser user agent sent to sources and direct links (some CDNs refuse Java/okhttp agents). */
+const val CHROME_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36"
+
 class OkHttpFetcher(
     private val client: OkHttpClient,
     private val tmdbBearer: String? = null,
-    private val userAgent: String = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36",
+    private val userAgent: String = CHROME_UA,
 ) : HttpFetcher {
     private val noRedirects by lazy { client.newBuilder().followRedirects(false).followSslRedirects(false).build() }
 

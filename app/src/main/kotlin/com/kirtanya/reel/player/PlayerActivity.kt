@@ -26,6 +26,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.withStarted
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -107,6 +108,8 @@ class PlayerActivity : ComponentActivity() {
     /** The Up next card was up when we went to the background; show it again on return. */
     private var nextCardPending = false
     private var leavingForNext = false
+    private var firstFrameShown = false
+    private var reconnectJob: kotlinx.coroutines.Job? = null
     private var externalHandoff = false
     /** We were stopped after handing off: an external player really took over (not a cancelled chooser). */
     private var stoppedSinceHandoff = false
@@ -165,11 +168,31 @@ class PlayerActivity : ComponentActivity() {
                 val wantSubs = prefs.subtitleLanguage != null ||
                     (getSystemService(CAPTIONING_SERVICE) as? android.view.accessibility.CaptioningManager)?.isEnabled == true
                 val tracks = if (wantSubs) withTimeoutOrNull(400L) { subtitles.await() } else null
-                if (tracks == null) subtitles.cancel()
+                // Started in the background (the user left while peers were found): don't play
+                // there; hold the torrent until we're visible again.
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                    preparedStream?.let { app.engine.suspendStream(it.infoHash, it) }
+                    lifecycle.withStarted { }
+                }
                 val fromSource = source.subtitles.map {
                     it.copy(language = Subtitles.normalizeLanguage(it.language), format = it.format ?: Subtitles.formatOf(it.url))
                 }
                 play(url, (fromSource + tracks.orEmpty()).distinctBy { it.url }, resumeAt)
+                if (tracks == null && wantSubs) {
+                    // Slow subtitle addons: add their tracks if they arrive before the picture does.
+                    val late = runCatching { subtitles.await() }.getOrNull().orEmpty()
+                    val exo = player
+                    val item = exo?.currentMediaItem
+                    if (late.isNotEmpty() && exo != null && item != null && !firstFrameShown && errorPanel.visibility != View.VISIBLE) {
+                        val have = item.localConfiguration?.subtitleConfigurations.orEmpty()
+                        val haveUris = have.map { it.uri.toString() }.toSet()
+                        val extra = late.filter { it.url !in haveUris }.map(::subtitleConfig)
+                        if (extra.isNotEmpty()) {
+                            exo.setMediaItem(item.buildUpon().setSubtitleConfigurations(have + extra).build(), exo.currentPosition.coerceAtLeast(resumeAt))
+                            exo.prepare()
+                        }
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: EngineException) {
@@ -243,7 +266,7 @@ class PlayerActivity : ComponentActivity() {
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .retryOnConnectionFailure(false)
                 .build(),
-        )
+        ).setUserAgent(com.kirtanya.reel.core.sources.CHROME_UA)
         val http = ResolvingDataSource.Factory(okhttp) { spec ->
             if (headers.isNotEmpty() && spec.uri.toString() !in subtitleUrls) spec.withAdditionalHeaders(headers) else spec
         }
@@ -310,6 +333,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onRenderedFirstFrame() {
+            firstFrameShown = true
             preparedStream?.let { app.engine.onPlayerEvent(it, "firstFrame") }
             stats { s ->
                 if (s.firstFrameAt == null) {
@@ -617,13 +641,13 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun showError(text: String) {
+    private fun showError(text: String, allowExternal: Boolean = true) {
         status.visibility = View.GONE
         nextCancelled = true
         hideNextCard()
         errorText.text = text
         errorPanel.visibility = View.VISIBLE
-        errorExternal.visibility = if (preparedStream != null || (playback.source.kind == SourceKind.DIRECT && streamUrl != null)) View.VISIBLE else View.GONE
+        errorExternal.visibility = if (allowExternal && (preparedStream != null || (playback.source.kind == SourceKind.DIRECT && streamUrl != null))) View.VISIBLE else View.GONE
         errorSources.visibility = if (playback.tmdbId != null) View.VISIBLE else View.GONE
         (if (errorSources.visibility == View.VISIBLE) errorSources else errorPanel.getChildAt(errorPanel.childCount - 1)).requestFocus()
     }
@@ -656,7 +680,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        hash?.let { app.engine.resumeStream(it, preparedStream) }
+        preparedStream?.let { app.engine.resumeStream(it.infoHash, it) }
         // We stopped the player in onStop: reload from the same position (from disk, quickly).
         // After a real hand-off to another player, stay idle; its play button prepares again.
         val exo = player
@@ -682,9 +706,10 @@ class PlayerActivity : ComponentActivity() {
         saveProgress()
         // Stop (not just pause): ends the loader and closes our reader, keeping the item and position.
         player?.stop()
+        reconnectJob?.cancel()
         if (externalHandoff) stoppedSinceHandoff = true
         // In the background: stop fetching the torrent (an external player keeps it running).
-        else if (!isFinishing && !leavingForNext) hash?.let { app.engine.suspendStream(it, preparedStream) }
+        else if (!isFinishing && !leavingForNext) preparedStream?.let { app.engine.suspendStream(it.infoHash, it) }
         if (nextCard.visibility == View.VISIBLE) {
             nextCardPending = true
             hideNextCard()
@@ -697,11 +722,15 @@ class PlayerActivity : ComponentActivity() {
         player?.removeListener(listener)
         player?.release()
         player = null
-        hash?.let {
-            // Handed to VLC/MX and it's still reading: keep serving; the engine stops it once it goes
-            // quiet. Otherwise (no external player connected) stop now.
-            if (externalHandoff && app.engine.hasReaders(it, preparedStream)) app.engine.stopWhenIdle(it, preparedStream)
-            else app.engine.stopStream(it, preparedStream)
+        preparedStream?.let { info ->
+            val h = info.infoHash
+            // Handed to VLC/MX: keep serving while it reads (or read in the last 30 s, between
+            // its requests); the engine stops it once it goes quiet. Otherwise stop now.
+            when {
+                externalHandoff && app.engine.hasReaders(h, info) -> app.engine.stopWhenIdle(h, info)
+                externalHandoff && app.engine.hasRecentActivity(h, info) -> app.engine.stopWhenIdle(h, info, idleMs = 2 * 60_000L)
+                else -> app.engine.stopStream(h, info)
+            }
         }
         super.onDestroy()
     }
@@ -751,8 +780,12 @@ class PlayerActivity : ComponentActivity() {
             return
         }
         when {
-            engineError != null -> showError(engineError.message ?: "This stream stopped")
-            gone != null -> if (!isFinishing && !leavingForNext) showError("This stream stopped.")
+            engineError != null -> showError(engineError.message ?: "This stream stopped", allowExternal = false)
+            gone != null -> if (!isFinishing && !leavingForNext) showError("This stream stopped.", allowExternal = false)
+            playback.source.kind == SourceKind.TORRENT && error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> {
+                stats { it.fatalSlowError() }
+                showError("Waiting for peers that have this part of the video. Try again in a moment, or pick another source.")
+            }
             playback.source.kind == SourceKind.DIRECT && error.errorCode in 2000..2999 -> {
                 if (httpCode == 403 || httpCode == 410) {
                     showError("This link has expired. Try another source.")
@@ -760,7 +793,11 @@ class PlayerActivity : ComponentActivity() {
                     // A network blip: reconnect from the same position with a growing backoff.
                     val wait = 1_000L shl directRetries++
                     showStatus("Reconnecting…")
-                    lifecycleScope.launch { delay(wait); player?.prepare() }
+                    reconnectJob?.cancel()
+                    reconnectJob = lifecycleScope.launch {
+                        delay(wait)
+                        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) player?.prepare()
+                    }
                 } else {
                     showError("Couldn't reach this link. Check your connection or try another source.")
                 }
