@@ -64,11 +64,12 @@ import org.robolectric.annotation.GraphicsMode
  *   JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew :app:recordRoborazziDebug --tests 'com.kirtanya.reel.ScreenRenders'
  * PNGs land in app/build/screens: phone/<state>-<dark|light>-<font %>.png (360 × 800 dp, font scale 1.0 and 1.3)
  * and tv/<state>.png (960 × 540 dp). Artwork is painted by [FakeArt]; TMDB answers come from [FakeCatalog].
+ * The design rules (design/DesignRules.kt) reuse every screen here: they override [onScreenReady].
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = ScreenRenders.PHONE)
-class ScreenRenders(private val variant: Variant) {
+open class ScreenRenders(protected val variant: Variant) {
     @get:Rule val compose = createComposeRule()
 
     data class Variant(val dark: Boolean, val fontScale: Float) {
@@ -76,6 +77,12 @@ class ScreenRenders(private val variant: Variant) {
     }
 
     private val app get() = RuntimeEnvironment.getApplication() as ReelApp
+
+    /** The screen's focus manager (the design rules move TV focus around with it). */
+    protected var focusManager: androidx.compose.ui.focus.FocusManager? = null
+
+    /** False in subclasses that check screens instead of saving PNGs (the brand art isn't a screen). */
+    protected open val rendersBrand get() = true
 
     @OptIn(ExperimentalRoborazziApi::class)
     private fun render(
@@ -104,6 +111,7 @@ class ScreenRenders(private val variant: Variant) {
                 inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard)
             }
             val density = LocalDensity.current
+            focusManager = androidx.compose.ui.platform.LocalFocusManager.current
             CompositionLocalProvider(
                 LocalDensity provides Density(density.density, if (tv) 1f else variant.fontScale),
                 LocalCatalog provides catalog,
@@ -113,13 +121,19 @@ class ScreenRenders(private val variant: Variant) {
             }
         }
         settle(waitMs)
+        onScreenReady(name, tv, windows)
+    }
+
+    /** The screen has settled: save it as a PNG. */
+    @OptIn(ExperimentalRoborazziApi::class)
+    protected open fun onScreenReady(name: String, tv: Boolean, windows: Boolean) {
         val path = if (tv) "build/screens/tv/$name.png" else "build/screens/phone/$name-$variant.png"
         val options = RoborazziOptions(recordOptions = RoborazziOptions.RecordOptions(resizeScale = if (tv) 0.75 else 0.5))
         if (windows) captureScreenRoboImage(path, options) else compose.onRoot().captureRoboImage(path, options)
     }
 
     /** Lets loads finish while advancing Compose's clock (animations, the colour cross-fade). */
-    private fun settle(ms: Long) {
+    protected fun settle(ms: Long) {
         val end = System.currentTimeMillis() + ms
         while (System.currentTimeMillis() < end) {
             Thread.sleep(80)
@@ -274,7 +288,7 @@ class ScreenRenders(private val variant: Variant) {
     /** Google TV launcher banner (320 × 180 dp): mark + name. Copied to res/drawable-xhdpi/banner.png. */
     @Test @Config(qualifiers = "w320dp-h180dp-land-night-xhdpi")
     fun brandBanner() {
-        assumeTrue(variant == DEFAULT)
+        assumeTrue(variant == DEFAULT && rendersBrand)
         compose.setContent {
             ReelTheme {
                 Box(Modifier.fillMaxSize()) {
@@ -293,7 +307,7 @@ class ScreenRenders(private val variant: Variant) {
     /** The logo at 512 px, for docs. */
     @Test @Config(qualifiers = "w256dp-h256dp-night-xhdpi")
     fun brandLogo() {
-        assumeTrue(variant == DEFAULT)
+        assumeTrue(variant == DEFAULT && rendersBrand)
         compose.setContent { com.kirtanya.reel.ui.common.BrandMark(256.dp) }
         compose.onRoot().captureRoboImage("build/screens/brand-logo.png")
     }

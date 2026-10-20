@@ -1,0 +1,5 @@
+# Design-rule baseline: touch-areas (CLAUDE.md "Design rules").
+# Violations that existed when the rule arrived (2026-10-20), all in ui/** (owned by other work).
+# Format: where | what | measured (measured is not matched). Only shrink this file: fix, then
+# run tool/check_design.sh --prune. Never add a line to silence a new violation without the user's OK.
+phone/home-first-run-dark-100 | Clickable "See all" | touch area 59.7 × 39 dp (drawn 59.7 × 25.3 dp)

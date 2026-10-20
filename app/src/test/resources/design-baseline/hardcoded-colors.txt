@@ -1,0 +1,7 @@
+# Design-rule baseline: hardcoded-colors (CLAUDE.md "Design rules").
+# Violations that existed when the rule arrived (2026-10-20), all in ui/** (owned by other work).
+# Format: where | what | measured (measured is not matched). Only shrink this file: fix, then
+# run tool/check_design.sh --prune. Never add a line to silence a new violation without the user's OK.
+com/kirtanya/reel/ui/common/ContinueRow.kt | GradientProgress(item.entry.progress, Modifier.align(Alignment.BottomCenter).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs), height = 3.dp, track = Color.White.copy(alpha = 0.18f)) | Color.White
+com/kirtanya/reel/ui/phone/PhoneTitle.kt | watched != null -> GradientProgress(watched.progress, Modifier.align(Alignment.BottomCenter).padding(Tokens.Space.s), height = 3.dp, track = Color.White.copy(alpha = 0.2f)) | Color.White
+com/kirtanya/reel/ui/tv/TvTitle.kt | watched != null -> GradientProgress(watched.progress, Modifier.align(Alignment.BottomCenter).padding(Tokens.Space.s), height = 3.dp, track = Color.White.copy(alpha = 0.2f)) | Color.White

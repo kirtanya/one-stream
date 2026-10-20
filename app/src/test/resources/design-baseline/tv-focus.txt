@@ -1,0 +1,8 @@
+# Design-rule baseline: tv-focus (CLAUDE.md "Design rules").
+# Violations that existed when the rule arrived (2026-10-20), all in ui/** (owned by other work).
+# Format: where | what | measured (measured is not matched). Only shrink this file: fix, then
+# run tool/check_design.sh --prune. Never add a line to silence a new violation without the user's OK.
+tv/search-none | Image "Clear" | focus looks the same as on Text field "zzqx the film nobody made" (0.0% differs)
+tv/search-none | Text field "zzqx the film nobody made" | focus looks the same as on Image "Clear" (0.6% differs)
+tv/search-results | Image "Clear" | focus looks the same as on Text field "dune" (0.0% differs)
+tv/search-results | Text field "dune" | focus looks the same as on Image "Clear" (0.6% differs)

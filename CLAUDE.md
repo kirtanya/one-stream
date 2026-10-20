@@ -47,17 +47,43 @@
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 ./gradlew :core:test                          # pure JVM unit tests (fast; run after every change)
 ./gradlew :app:compileDebugKotlin             # compile check
-tool/build_release.sh                         # core tests + release → ~/Desktop/APKs/OneStream-<ver>-phone.apk / -tv.apk
+bash tool/check_design.sh                     # design rules on every screen (see "Design rules")
+tool/build_release.sh                         # design rules + core tests + release → ~/Desktop/APKs/OneStream-<ver>-phone.apk / -tv.apk
 ./gradlew :app:recordRoborazziDebug --tests 'com.kirtanya.reel.ScreenRenders'   # screen renders → app/build/screens/
 ```
 - Version: `versionCode` / `versionName` in `app/build.gradle.kts` (bump both for every release).
 - One APK per ABI: phone = arm64-v8a, TV = armeabi-v7a. Release is signed with the debug key (sideload).
 - Screen renders: Robolectric SDK 34 (`app/src/test/resources/robolectric.properties`) + Roborazzi;
   `ScreenRenders.kt` (phone + TV screens, light/dark, font scales), `player/PhoneControlsRender.kt`,
-  `player/TvControlsRender.kt`. Look at the PNGs before claiming a layout is fine.
+  `player/TvControlsRender.kt` (scenes in `player/PlayerScenes.kt`). Look at the PNGs before claiming a
+  layout is fine.
 - adb: `~/Library/Android/sdk/platform-tools/adb`. TV: `adb connect 192.168.1.128:5555`.
   Phone: wireless adb; find its address with `adb mdns services`. Use `-s <serial>` when both are on.
 - Install: `adb -s <serial> install -r ~/Desktop/APKs/OneStream-<ver>-<phone|tv>.apk`.
+
+## Design rules (automatic checks)
+`bash tool/check_design.sh` (≈ 6 min, Mac only) checks the user's design rules on every screen render and
+prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it first and stops on a new violation.
+- **Rules** (suite: `app/src/test/kotlin/com/kirtanya/reel/design/`, pure logic: `core/.../core/design/`):
+  1. 48 dp touch areas on the phone (the area that really takes the touch: Compose grows small targets to
+     48 dp unless a neighbour is in the way; Views get only their bounds). TV is exempt.
+  2. No clipping at 360 dp (phone, font 100 % and 130 %): text cut off, a short label (≤ 24 chars on a
+     button / chip / tab / row) ending in "…", text cut by a non-scrolling parent, anything past the screen
+     edge outside a sideways scroller. Long names may end in "…" (DESIGN_STYLE §4.7).
+  3. Text contrast from the rendered pixels (ring 1–2.5 dp around the glyphs, worst 10 %): 4.5:1 under
+     18 sp, 3:1 from 18 sp. Text covered by something else (under the nav bar) and disabled text are skipped.
+  4. Tokens only: no hard-coded colours in `ui/**`, `player/**`, `MainActivity.kt` outside `ui/theme/` and
+     `player/PlayerColors.kt` (`Color.Transparent` / `TRANSPARENT` and bit masks are fine).
+  5. TV focus always visible: each focusable element (≤ 3 per row) focused vs not must change pixels
+     worth ≥ 2 % of its area within 16 dp of it (ring / lift / glow), and must not look the same as a
+     focusable neighbour having focus; includes the player strip and settings panel.
+- **Baselines** `app/src/test/resources/design-baseline/<rule>.txt`: violations that existed when the rule
+  arrived (`screen | element | measured`; the measured value is ignored when matching). Only violations
+  beyond the baseline fail. When you fix one, `bash tool/check_design.sh --prune` drops it (prune never adds).
+- **Never grow a baseline to silence a new violation without the user's OK.** Fix the screen instead.
+  New screens / states go into `ScreenRenders.kt`; the design rules pick them up automatically.
+- Run one class quickly: `./gradlew :app:testDebugUnitTest --tests 'com.kirtanya.reel.design.PlayerDesignRules' --rerun`;
+  findings land in `app/build/design-rules/<rule>/`.
 
 ## Device tools
 - **SourcesProbe** (adb-only broadcast, results in logcat tag `ReelProbe`):

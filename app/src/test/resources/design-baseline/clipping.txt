@@ -1,0 +1,6 @@
+# Design-rule baseline: clipping (CLAUDE.md "Design rules").
+# Violations that existed when the rule arrived (2026-10-20), all in ui/** (owned by other work).
+# Format: where | what | measured (measured is not matched). Only shrink this file: fix, then
+# run tool/check_design.sh --prune. Never add a line to silence a new violation without the user's OK.
+phone/add-source-dark-100 | text "https://mediafusion.elfhosted.com/eyJlb…" | text cut off after 2 line(s)
+phone/add-source-dark-130 | text "https://mediafusion.elfhosted.com/eyJlb…" | text cut off after 2 line(s)

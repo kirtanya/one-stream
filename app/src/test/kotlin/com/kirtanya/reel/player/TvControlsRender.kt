@@ -1,10 +1,7 @@
 package com.kirtanya.reel.player
 
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
@@ -43,35 +40,20 @@ class TvControlsRender {
         assertEquals(Color.WHITE, c.target)
     }
 
-    @Test fun renderBright() = render("tv_controls_bright", intArrayOf(0xFFBFD9F2.toInt(), 0xFFF4EBD9.toInt()), TvControls.DARK)
+    @Test fun renderBright() = render("tv_controls_bright", PlayerScenes.BRIGHT, TvControls.DARK)
 
-    @Test fun renderDark() = render("tv_controls_dark", intArrayOf(0xFF1B2433.toInt(), 0xFF0B0B10.toInt()), Color.WHITE)
+    @Test fun renderDark() = render("tv_controls_dark", PlayerScenes.DARK, Color.WHITE)
 
-    @Test fun renderSettings() = render("tv_controls_settings", intArrayOf(0xFF3C5A7A.toInt(), 0xFF11161F.toInt()), Color.WHITE, panel = true)
+    @Test fun renderSettings() = render("tv_controls_settings", PlayerScenes.MID, Color.WHITE, panel = true)
 
     private fun controls(): TvControls {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        return TvControls(PlayerView(activity), "Spider-Man: Into the Spider-Verse", { null }) { emptyList() }
+        return TvControls(PlayerView(activity), PlayerScenes.TITLE, { null }) { emptyList() }
     }
 
     private fun render(name: String, picture: IntArray, color: Int, panel: Boolean = false) {
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        val root = FrameLayout(activity)
-        root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, picture)
-        val playerView = PlayerView(activity).apply { useController = false; setShutterBackgroundColor(Color.TRANSPARENT); setBackgroundColor(Color.TRANSPARENT) }
-        root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        val c = TvControls(playerView, "Spider-Man: Into the Spider-Verse", { null }) { listOf("Open in another player" to {}) }
-        root.addView(c.view, FrameLayout.LayoutParams(-1, -1))
-        activity.setContentView(root)
-        val exo = ExoPlayer.Builder(activity).build()
-        c.attach(exo)
-        c.show()
-        if (panel) c.openPanel()
-        org.robolectric.shadows.ShadowLooper.idleMainLooper()
-        // No video surface here: set the colour the sampler would pick for this picture.
-        c.applyColor(color)
-        c.preview(2_712_000, 7_020_000, 3_300_000, playing = true)
-        root.captureRoboImage("build/outputs/roborazzi/$name.png")
-        exo.release()
+        val scene = PlayerScenes.tv(picture, color, panel)
+        scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
+        scene.release()
     }
 }

@@ -38,6 +38,20 @@ stall reports) and `stack.txt` (crashes, freezes, player errors, ANRs).
 - **Testing over adb**: `adb shell am broadcast -n com.kirtanya.reel/.data.SourcesProbe --ez report true`
   (manual), `--es reportTest crash` / `--es reportTest freeze` (automatic ones).
 
+## Step 3 in use: design rules
+
+Every screen render (phone 360 × 800 dp light / dark at font 100 % and 130 %, TV, player controls) is
+checked against your rules: 48 dp touch areas on the phone, no clipped text or cut-off short labels at
+360 dp, text contrast (4.5:1, 3:1 for big text), colours only from the theme tokens, and TV focus always
+visible.
+
+- **Run it**: `bash tool/check_design.sh` prints one line per rule: pass, how many old problems are
+  on the waiting list (baseline), and how many are new. Releases (`tool/build_release.sh`) run it first
+  and stop when something new breaks a rule.
+- **Waiting list**: problems that existed before the checks are listed in
+  `app/src/test/resources/design-baseline/` (one line per screen + element + measurement). They are
+  fixed over time and the list only shrinks; nothing new is added to it without your OK.
+
 Parked separately: home disk (`docs/HOME_DISK_PLAN.md`) — fits after step 7.
 
 ## Rules for every step

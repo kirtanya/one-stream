@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Builds release APKs and copies them to ~/Desktop/APKs (never loose on the Desktop).
+# Checks the design rules, then builds release APKs and copies them to ~/Desktop/APKs (never loose on the Desktop).
 #   phone = arm64-v8a, tv = armeabi-v7a (the user's TV is 32-bit ARM)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
+
+# The user's design rules first (CLAUDE.md "Design rules"): a new violation stops the release.
+if ! tool/check_design.sh; then
+    echo "Release stopped: design rules failed (see above)." >&2
+    exit 1
+fi
 
 ./gradlew :core:test :app:assembleRelease --console=plain -q
 

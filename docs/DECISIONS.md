@@ -5,6 +5,20 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-20 · Design rules as automatic checks (machine-first step 3)**
+Decision: the user's five design rules (48 dp touch areas on the phone, no clipping at 360 dp, text
+contrast 4.5:1 / 3:1 from 18 sp, tokens only, TV focus always visible) run on every screen render
+(`tool/check_design.sh`, ~6 min on the Mac) and before every release (`tool/build_release.sh` stops on a
+new violation). Violations that already existed in screens owned by other work live in baselines
+(`app/src/test/resources/design-baseline/`) so only new ones fail; baselines only shrink without the
+user's OK. Measurement choices: touch = the area that really takes the touch (Compose's own 48 dp
+growth counts); contrast from rendered pixels against the worst 10 % of a 1–2.5 dp ring around the
+glyphs (DESIGN_STYLE has no exception for big display text, so none is made); ellipsis only fails on
+short labels you press; `Color.Transparent` is not a colour; player colours moved to
+`player/PlayerColors.kt` (its token file); player touch areas now 48 dp with unchanged drawings.
+Why: design quality is enforced on every build without the user checking screens.
+Evidence: `docs/MACHINE_FIRST_PLAN.md` step 3; CLAUDE.md "Design rules".
+
 **2026-10-20 · Session rules + decision log (machine-first step 2)**
 Decision: `CLAUDE.md` holds the rules every session follows; this file records decisions.
 Why: nobody reads the code, so sessions must behave the same way and know why things are as they are.
