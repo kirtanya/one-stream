@@ -76,9 +76,24 @@ class ZoneSchedulerTest {
     }
 
     @Test fun pausedFloorPushesUrgentOutOfTheHorizon() {
-        val paused = PlaybackView(495_000, 500_000, 7_200_000, playing = false, playWhenReady = true, fresh = true)
+        val paused = PlaybackView(495_000, 500_000, 7_200_000, playing = false, playWhenReady = false, fresh = true)
         val plan = ZoneScheduler.plan(input(span, readers = listOf(inApp(500 * MiB)), playback = paused))
         assertEquals(setOf(999), plan.deadlines.keys)
+    }
+
+    @Test fun rebufferingKeepsTheReadAheadDue() {
+        // Waiting for data (not playing, but wants to): the pieces after the blocked one stay due, so they download in parallel.
+        val buffering = PlaybackView(499_800, 500_000, 7_200_000, playing = false, playWhenReady = true, fresh = true)
+        val plan = ZoneScheduler.plan(input(span, readers = listOf(inApp(500 * MiB, blocked = 500)), playback = buffering))
+        assertTrue(plan.deadlines.keys.containsAll(listOf(500, 501, 502)), "${plan.deadlines}")
+    }
+
+    @Test fun startupPrefetchesAheadOfTheParsingReader() {
+        // Preparing an MKV (reader in the header, resume target far ahead): the next pieces are due too, not one at a time.
+        val starting = PlaybackView(264_000, 264_000, 1_400_000, playing = false, playWhenReady = true, fresh = true)
+        val plan = ZoneScheduler.plan(input(span, readers = listOf(inApp(2 * MiB, blocked = 2)), playback = starting,
+            phase = StreamPhase.STARTUP, startupDone = false))
+        assertTrue(plan.deadlines.keys.containsAll(listOf(2, 3, 4)), "${plan.deadlines}")
     }
 
     @Test fun sentinelIsTheLastMissingAndAbsentWhenComplete() {

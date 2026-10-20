@@ -95,7 +95,7 @@ internal class TvControls(
         subs.setOnClickListener { openPanel("sub") }
         settings.setOnClickListener { openPanel(null) }
         seek.onScrubStart = { touch() }
-        seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); touch() }
+        seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); remaining.text = "−" + PlayerActivity.formatTime((seek.duration - it).coerceAtLeast(0)); touch() }
         seek.onSeek = { player?.seekTo(it); touch() }
 
         view.addView(settingsPanel.panel, FrameLayout.LayoutParams(context.dp(340), -2, Gravity.BOTTOM or Gravity.END).apply {

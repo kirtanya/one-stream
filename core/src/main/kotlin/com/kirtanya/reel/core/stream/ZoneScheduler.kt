@@ -157,7 +157,9 @@ object ZoneScheduler {
                         H != null -> ((span.byteStartOf(p) - H) * 1000 / B - P.safetyMs).coerceIn(0, P.maxDeadlineMs.toLong()).toInt()
                         else -> n * P.ladderStepMs(L, B)
                     }
-                    if (pb != null && !pb.playing && p != prim.blockedPiece) d = maxOf(d, P.pausedDeadlineFloorMs)
+                    // Only a real pause (the user's) relaxes deadlines. Starting up and rebuffering are not
+                    // playing either, and that is exactly when the pieces ahead are needed soonest.
+                    if (pb != null && !pb.playWhenReady && p != prim.blockedPiece) d = maxOf(d, P.pausedDeadlineFloorMs)
                     d = maxOf(d, last)
                     if (p == prim.blockedPiece || d <= horizon) {
                         deadlines.merge(p, d, ::minOf)

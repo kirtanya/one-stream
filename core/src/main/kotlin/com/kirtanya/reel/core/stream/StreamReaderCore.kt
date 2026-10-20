@@ -61,6 +61,16 @@ class StreamReaderCore(
     private var readableEnd = 0L
     private var file: RandomAccessFile? = null
     private var lastPiece = -1
+    /** Where the file pointer is (skips a seek syscall on sequential reads), -1 unknown. */
+    private var filePos = -1L
+    /**
+     * Small reads come from memory: ExoPlayer's MKV / MP4 parsers read headers and indexes a few
+     * bytes at a time, and a seek + read syscall each took 26 s for one film's Cues on the TV.
+     * Only verified (readable) bytes are buffered; they never change.
+     */
+    private val buffer = ByteArray(BUFFER_BYTES)
+    private var bufStart = 0L
+    private var bufEnd = 0L
 
     /** Engine side: makes this reader fail at its next check (the caller then signals the gate). */
     fun markDead(reason: IOException) { deadReason = reason }
@@ -82,10 +92,32 @@ class StreamReaderCore(
             readableStart = span.byteStartOf(p)
             readableEnd = span.byteEndOf(last)
         }
-        val raf = file ?: opener.open().also { file = it }
+        val raf = file ?: opener.open().also { file = it; filePos = -1 }
         val n = minOf(len.toLong(), readableEnd - pos).toInt()
-        raf.seek(pos)
-        val r = raf.read(buf, off, n)
+        val r: Int
+        if (pos >= bufStart && pos < bufEnd) {
+            r = minOf(n.toLong(), bufEnd - pos).toInt()
+            System.arraycopy(buffer, (pos - bufStart).toInt(), buf, off, r)
+        } else if (n < BUFFER_BYTES / 2) {
+            val want = minOf(BUFFER_BYTES.toLong(), readableEnd - pos).toInt()
+            if (filePos != pos) raf.seek(pos)
+            var got = 0
+            while (got < want) {
+                val k = raf.read(buffer, got, want - got)
+                if (k < 0) break
+                got += k
+            }
+            filePos = pos + got
+            if (got <= 0) throw StreamErrorException(StreamErrorKind.FILE_ERROR, "The file is shorter than expected")
+            bufStart = pos
+            bufEnd = pos + got
+            r = minOf(n, got)
+            System.arraycopy(buffer, 0, buf, off, r)
+        } else {
+            if (filePos != pos) raf.seek(pos)
+            r = raf.read(buf, off, n)
+            filePos = if (r > 0) pos + r else -1
+        }
         check()
         if (r < 0) throw StreamErrorException(StreamErrorKind.FILE_ERROR, "The file is shorter than expected")
         position = pos + r
@@ -141,5 +173,6 @@ class StreamReaderCore(
         const val LONG_BLOCK_NANOS = 2_000_000_000L
         /** How far ahead one readable run may extend (one open file read can't run past this). */
         const val READ_RUN_LIMIT = 64 * MiB
+        const val BUFFER_BYTES = 64 * 1024
     }
 }

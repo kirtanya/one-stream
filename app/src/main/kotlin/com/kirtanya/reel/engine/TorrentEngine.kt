@@ -232,6 +232,7 @@ class TorrentEngine(private val context: Context) {
         i(settings_pack.int_types.piece_timeout, t.pieceTimeout)
         i(settings_pack.int_types.request_timeout, t.requestTimeout)
         i(settings_pack.int_types.request_queue_time, t.requestQueueTime)
+        i(settings_pack.int_types.max_out_request_queue, t.maxOutRequestQueue)
         t.maxQueuedDiskBytes?.let { sp.maxQueuedDiskBytes(it) }
         i(settings_pack.int_types.unchoke_slots_limit, t.unchokeSlotsLimit)
         sp.activeDownloads(t.activeDownloads)
@@ -828,7 +829,12 @@ class TorrentEngine(private val context: Context) {
     }
 
     private fun readerListener(s: ActiveStream) = object : ReaderListener {
-        override fun onBlocked(piece: Int) = kick(s, immediate = true)
+        override fun onBlocked(piece: Int) {
+            if (!s.startupDone || EngineFlags.verboseStats) {
+                EngineStats.event(s.info.infoHash, "block", mapOf("p" to piece, "have" to s.gate.pieces.has(piece).compareTo(false), "readers" to s.readers.size))
+            }
+            kick(s, immediate = true)
+        }
 
         override fun onUnblocked(piece: Int, waitedMs: Long) {
             if (waitedMs >= 200) {
@@ -931,6 +937,16 @@ class TorrentEngine(private val context: Context) {
             PlanInput(span, gate.pieces, P, phase, s.download, views, s.lastAnchor, s.signals.view(now), rate, s.startupSet, s.startupDone, StorageAllowance(), baselineOf),
         )
         s.lastAnchor = plan.anchor
+        if (phase == StreamPhase.STARTUP || EngineFlags.verboseStats) {
+            // What the scheduler asks for, logged when it changes: urgent pieces, sequential range, sentinel.
+            val dl = plan.deadlines.keys.sorted()
+            val sig = "${dl.take(12)}|${plan.seq}|${plan.sentinel}"
+            if (sig != s.lastPlanSig) {
+                s.lastPlanSig = sig
+                EngineStats.event(s.info.infoHash, "plan", mapOf("ph" to phase.name.lowercase(), "dl" to dl.take(12).joinToString(","), "n" to dl.size,
+                    "seq" to plan.seq?.let { "${it.first}-${it.last}" }, "sent" to plan.sentinel, "readers" to views.joinToString(",") { "${it.kind.name.take(1)}${it.pos / span.pieceLength}" }))
+            }
+        }
         val merged = PlanMerge.merge(plan, span, emptyList(), baselineOf, gate.pieces, s.numPieces, streamMode = !s.download, prevGuard = s.guard,
             pieceLength = span.pieceLength, rate = rate, nowMs = now)
         s.guard = merged.guard
@@ -1397,6 +1413,7 @@ class TorrentEngine(private val context: Context) {
         @Volatile var lastActivityAt: Long = System.currentTimeMillis()
         /** Last time an external player opened or closed a request (0 = never). */
         @Volatile var lastHttpActivityAt: Long = 0
+        @Volatile var lastPlanSig: String? = null
         /** File priorities this stream asked for; readers wait until libtorrent reports them. */
         @Volatile var intendedPrios: List<Int>? = null
         val barrierPolling = java.util.concurrent.atomic.AtomicBoolean(false)

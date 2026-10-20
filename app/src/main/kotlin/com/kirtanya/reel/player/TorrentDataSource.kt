@@ -133,6 +133,11 @@ class ReelLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
             if (e is StreamGoneException || e is StreamErrorException) return C.TIME_UNSET
             e = e.cause
         }
-        return super.getRetryDelayMsFor(loadErrorInfo)
+        val delay = super.getRetryDelayMsFor(loadErrorInfo)
+        // Every retried load error is visible in the stats (they used to stall silently).
+        val chain = generateSequence(loadErrorInfo.exception as Throwable?) { it.cause }.take(4)
+            .joinToString(" <- ") { "${it.javaClass.simpleName}:${it.message?.take(80)}" }
+        android.util.Log.w("ReelStats", "ev=loaderr n=${loadErrorInfo.errorCount} retryMs=$delay type=${loadErrorInfo.mediaLoadData.dataType} err=$chain")
+        return delay
     }
 }

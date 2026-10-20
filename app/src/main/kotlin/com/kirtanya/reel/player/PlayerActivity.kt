@@ -881,10 +881,28 @@ class PlayerActivity : ComponentActivity() {
                         signals.playWhenReady = exo.playWhenReady
                         signals.playing = exo.isPlaying
                         signals.updatedAtMs = now()
+                        stallWatch(exo)
                     }
                     delay(500)
                 }
             }
+        }
+    }
+
+    private var notReadySince = 0L
+    private var lastStallDump = 0L
+
+    /** Not ready for 5 s while wanting to play: log what ExoPlayer's threads are doing (every 5 s). */
+    private fun stallWatch(exo: ExoPlayer) {
+        val t = now()
+        if (exo.playbackState == Player.STATE_READY || !exo.playWhenReady || exo.playbackState == Player.STATE_IDLE) { notReadySince = 0; return }
+        if (notReadySince == 0L) notReadySince = t
+        if (t - notReadySince < 5_000 || t - lastStallDump < 5_000) return
+        lastStallDump = t
+        logStat("stall", mapOf("ms" to t - notReadySince, "state" to exo.playbackState, "loading" to exo.isLoading,
+            "pos" to exo.currentPosition, "buf" to exo.bufferedPosition))
+        Thread.getAllStackTraces().filterKeys { it.name.contains("ExoPlayer") || it.name.contains("Loader") }.forEach { (th, st) ->
+            Log.i("ReelStats", "ev=stack th=${th.name} state=${th.state} at=" + st.take(8).joinToString(" | ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" })
         }
     }
 

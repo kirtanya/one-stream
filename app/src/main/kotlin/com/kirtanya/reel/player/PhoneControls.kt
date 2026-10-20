@@ -166,7 +166,7 @@ internal class PhoneControls(
         pip.setOnClickListener { onPip?.invoke() }
         next.setOnClickListener { onNext() }
         seek.onScrubStart = { touch() }
-        seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); showHud(null, PlayerActivity.formatTime(it)); touch() }
+        seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); remaining.text = "−" + PlayerActivity.formatTime((seek.duration - it).coerceAtLeast(0)); showHud(null, PlayerActivity.formatTime(it)); touch() }
         seek.onSeek = { player?.seekTo(it); hideHudSoon(); touch() }
         for (b in listOf(play, rew, ffwd, back, subs, tune, lock, fit, pip, unlock)) b.tint(Color.WHITE)
         seek.tint(Color.WHITE)

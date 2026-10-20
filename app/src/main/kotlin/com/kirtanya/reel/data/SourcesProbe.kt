@@ -39,9 +39,24 @@ class SourcesProbe : BroadcastReceiver() {
             syncProbe(app, intent, goAsync())
             return
         }
+        // Put a watch position back (after tests): --es setPosition <key> --el ms <position>
+        intent.getStringExtra("setPosition")?.let { key ->
+            val e = app.history.get(key) ?: return
+            app.history.save(e.playback, intent.getLongExtra("ms", 0), e.durationMs)
+            Log.i(TAG, "set $key to ${intent.getLongExtra("ms", 0)} ms")
+            return
+        }
         intent.getStringExtra("removeTitle")?.let {
             app.history.removeTitle(it)
             Log.i(TAG, "removed $it from history")
+            return
+        }
+        // Cold-start test on a legal sample (Blender open movie): --ei playSample 0..2
+        intent.getIntExtra("playSample", -1).takeIf { it >= 0 }?.let { i ->
+            val sample = com.kirtanya.reel.ui.SAMPLE_TORRENTS.getOrNull(i) ?: return
+            context.startActivity(com.kirtanya.reel.player.PlayerActivity.forMagnet(context, sample.magnet, sample.title)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            Log.i(TAG, "playing sample ${sample.title}")
             return
         }
         if (intent.getBooleanExtra("playTest", false)) {

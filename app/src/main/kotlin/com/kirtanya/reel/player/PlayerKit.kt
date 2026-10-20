@@ -296,7 +296,7 @@ internal class SettingsPanel(
             list.addView(row(R.drawable.ic_pl_volume, "Audio", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
         }
         list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
-        for ((label, action) in extras()) list.addView(row(R.drawable.ic_pl_pip, label, null, null) { onExtra(); action() })
+        for ((label, action) in extras()) list.addView(row(R.drawable.ic_pl_external, label, null, null) { onExtra(); action() })
     }
 
     private fun showTracks(type: Int) {

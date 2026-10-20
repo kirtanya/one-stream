@@ -124,6 +124,24 @@ class StreamReaderCoreTest {
     private fun reader(f: File, span: FileSpan, gate: PieceGate, alive: () -> Unit = {}, listener: ReaderListener = object : ReaderListener {}) =
         StreamReaderCore(1, ReaderKind.IN_APP, span, gate, { RandomAccessFile(f, "r") }, { true }, alive, null, listener)
 
+    @Test fun smallReadsComeFromTheBufferAndMatchTheFile() {
+        // Parsers read a few bytes at a time, jumping around: every byte must still be the file's.
+        val (f, span) = fixture(200)
+        val gate = PieceGate(200, needsFlush = false).apply { for (p in 0 until 200) seedVerified(p) }
+        val r = reader(f, span, gate)
+        val rnd = java.util.Random(7)
+        val bytes = f.readBytes()
+        repeat(5_000) {
+            val pos = if (rnd.nextInt(4) == 0) rnd.nextInt(bytes.size).toLong() else (r.position).coerceAtMost(bytes.size - 1L)
+            val len = 1 + rnd.nextInt(if (rnd.nextInt(10) == 0) 50_000 else 16)
+            val buf = ByteArray(len)
+            val n = r.read(pos, buf, 0, len)
+            assertTrue(n > 0)
+            for (i in 0 until n) assertEquals(bytes[(pos + i).toInt()], buf[i], "byte ${pos + i}")
+        }
+        r.close()
+    }
+
     @Test fun readsExtendAcrossReadablePiecesButNotPastThem() {
         val (f, span) = fixture(4)
         val gate = PieceGate(4, needsFlush = false).apply { seedVerified(0); seedVerified(1) }

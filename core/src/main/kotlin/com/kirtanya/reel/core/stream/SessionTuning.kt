@@ -29,6 +29,11 @@ data class SessionTuning(
     val pieceTimeout: Int,
     val requestTimeout: Int,
     val requestQueueTime: Int,
+    /**
+     * Most block requests (16 KiB) outstanding to one peer. libtorrent's 500 = 8 MiB in flight; a
+     * fast, far peer needs more (logged as OUTSTANDING_REQUEST_LIMIT_REACHED on the TV).
+     */
+    val maxOutRequestQueue: Int,
     /** Null = keep libtorrent's default. */
     val maxQueuedDiskBytes: Int?,
     val unchokeSlotsLimit: Int,
@@ -64,6 +69,7 @@ data class SessionTuning(
                 pieceTimeout = 15,
                 requestTimeout = if (mmap) 30 else 40,
                 requestQueueTime = 2,
+                maxOutRequestQueue = if (tv) 1500 else 2000,
                 maxQueuedDiskBytes = if (mmap) (8 * MiB).toInt() else null,
                 unchokeSlotsLimit = if (tv) 4 else 8,
                 activeDownloads = if (tv) 2 else 3,
