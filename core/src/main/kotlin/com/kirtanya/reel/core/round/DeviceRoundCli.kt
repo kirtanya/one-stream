@@ -17,6 +17,7 @@ import kotlin.system.exitProcess
  * Command line for `tool/device_round.sh` (run on the Mac with the :core classpath):
  *
  *   gate <dumps file>              prints `idle` (exit 0) or `busy: <why>` (exit 3)
+ *   tv-screen <png>                prints `strip=up|down panel=open|closed` for a TV player screenshot
  *   report <round dir> <latest>    reads each `<round dir>/<device>/` (meta.json from the script,
  *                                  reelstats.txt, crash.txt), prints the before / now table per device,
  *                                  writes `<round dir>/summary.json` and updates `<latest>` for devices
@@ -32,6 +33,7 @@ object DeviceRoundCli {
         val code = when (args.firstOrNull()) {
             "gate" -> gate(File(args[1]))
             "report" -> report(File(args[1]), File(args[2]))
+            "tv-screen" -> tvScreen(File(args[1]))
             else -> { System.err.println("usage: gate <dumps> | report <round dir> <latest.json>"); 2 }
         }
         exitProcess(code)
@@ -54,6 +56,13 @@ object DeviceRoundCli {
             IdleGate.Result.Idle -> { println("idle"); 0 }
             is IdleGate.Result.Busy -> { println("busy: ${r.reason}"); 3 }
         }
+    }
+
+    /** Prints `strip=up|down panel=open|closed` for a TV player screenshot (`unreadable` exits 4). */
+    private fun tvScreen(png: File): Int {
+        val img = runCatching { javax.imageio.ImageIO.read(png) }.getOrNull() ?: run { println("unreadable"); return 4 }
+        println("strip=" + (if (ScreenProbe.tvStripUp(img)) "up" else "down") + " panel=" + (if (ScreenProbe.tvPanelOpen(img)) "open" else "closed"))
+        return 0
     }
 
     /** One device's part of summary.json. */

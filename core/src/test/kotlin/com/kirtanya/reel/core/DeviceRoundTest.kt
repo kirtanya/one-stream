@@ -5,6 +5,7 @@ import com.kirtanya.reel.core.round.IdleGate
 import com.kirtanya.reel.core.round.RoundCompare
 import com.kirtanya.reel.core.round.RoundLog
 import com.kirtanya.reel.core.round.RoundMetrics
+import com.kirtanya.reel.core.round.ScreenProbe
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -196,5 +197,81 @@ class RoundCompareTest {
         assertEquals("850 ms", RoundCompare.fmt(850, ms = true))
         assertEquals("12.3 s", RoundCompare.fmt(12_340, ms = true))
         assertEquals("–", RoundCompare.fmt(null, ms = true))
+    }
+}
+
+class UserActivityTest {
+    // Real `dumpsys power` lines from the R4 (someone pressing keys 2.3 s earlier).
+    private val tvBusy = """
+          mWakefulness=Awake
+          mLastWakeTime=160962561 (411998 ms ago)
+         mLastUserActivityTime(excludingAttention)=161372271
+    """.trimIndent()
+
+    @Test fun readsTimeSinceLastInput() = assertEquals(2_288, IdleGate.msSinceUserActivity(tvBusy))
+
+    @Test fun aJustWokenDeviceCountsAsUsed() =
+        assertEquals(627, IdleGate.msSinceUserActivity("mLastWakeTime=71668305 (627 ms ago)\nmLastUserActivityTime=71000000"))
+
+    @Test fun missingLinesMeanUnknown() = assertNull(IdleGate.msSinceUserActivity("mWakefulness=Awake"))
+
+    @Test fun recentInputIsBusyEvenOnTheLauncher() {
+        val d = IdleGate.Dumps("", "topResumedActivity=ActivityRecord{1 u0 com.kirtanya.reel/.MainActivity t5}", "", tvBusy, null)
+        assertEquals(IdleGate.Result.Busy("used 2 s ago; waiting for 90 s of quiet"), IdleGate.check(d))
+        val quiet = "mWakefulness=Awake\nmLastWakeTime=1000 (600000 ms ago)\nmLastUserActivityTime=2000"
+        assertEquals(IdleGate.Result.Idle, IdleGate.check(d.copy(power = quiet)))
+    }
+}
+
+class ScreenProbeTest {
+    private fun frame(fill: (java.awt.Graphics2D) -> Unit) = java.awt.image.BufferedImage(1920, 1080, java.awt.image.BufferedImage.TYPE_INT_RGB).also { img ->
+        val g = img.createGraphics()
+        g.color = java.awt.Color.BLACK; g.fillRect(0, 0, 1920, 1080)   // the R4's screencap: video plane black
+        g.color = java.awt.Color.WHITE
+        fill(g)
+        g.dispose()
+    }
+
+    @Test fun blackFrameIsHidden() {
+        val img = frame { }
+        assertEquals(false, ScreenProbe.tvStripUp(img))
+        assertEquals(false, ScreenProbe.tvPanelOpen(img))
+    }
+
+    @Test fun stripButtonsAreSeen() {
+        // Play disc (56 dp at 2×) at the bottom left, like TvControls.
+        val img = frame { it.fillOval(80, 920, 112, 112) }
+        assertTrue(ScreenProbe.tvStripUp(img))
+        assertEquals(false, ScreenProbe.tvPanelOpen(img))
+    }
+
+    @Test fun panelTextIsSeen() {
+        val img = frame { g -> for (row in 0 until 3) g.fillRect(1270, 510 + row * 96, 300, 22) }
+        assertTrue(ScreenProbe.tvPanelOpen(img))
+    }
+
+    @Test fun brightShareCounts() {
+        val img = frame { it.fillRect(0, 0, 10, 10) }
+        assertEquals(1.0, ScreenProbe.brightShare(img, 0, 0, 10, 10))
+        assertEquals(0.25, ScreenProbe.brightShare(img, 0, 0, 20, 20))
+        assertEquals(0.0, ScreenProbe.brightShare(img, -5, -5, 0, 0))
+    }
+}
+
+class RoundLogEndLineTest {
+    @Test fun endLineFillsWhatTheBufferLost() {
+        // The phone round of 2026-10-21: the log buffer had dropped ev=ttff and the first seek.
+        val lines = listOf(
+            "I/ReelStats(16183): ev=wait t=55730 key=209c8226b299 p=55 ms=1484 fileReady=1",
+            "I/ReelStats(16183): ev=seek t=78225 key=209c8226b299 ms=12867",
+            "I/ReelStats(16183): ev=end ttm=2266 ttfp=7207 ttff=15019 rebuf=5/36440/23380 seeks=2 p50=12867 p90=12867 waits=34/15337 fatalSlow=0 key=209c8226b299",
+        )
+        val m = RoundLog.parse(lines, emptyList(), "209c8226b299b308beaf2b9cd3fb49212dbd13ec")
+        assertEquals(15_019, m.ttffMs)
+        assertEquals(2, m.seeks)
+        assertEquals(12_867, m.seekP50Ms)
+        assertEquals(34, m.waits)
+        assertEquals(15_337, m.waitMaxMs)
+        assertEquals(5, m.rebuffers)
     }
 }

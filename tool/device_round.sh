@@ -1,19 +1,3 @@
-  # Settings from a known state (strip hidden, so OK brings it up with focus on play): the strip
-  # hides 5 s after playback resumes; a rebuffer keeps it up longer.
-  sleep 6
-  local i
-  for ((i = 0; i < 5; i++)); do ui_dump | grep -q 'content-desc="Settings"' || break; sleep 2; done
-  step_ok || return
-  key 23 22 22 22 22 23; sleep 1.2; shot 05-settings                # OK, 4 × right to Settings, OK
-  if panel_open; then
-    ACTIONS+=("settings")
-    step_ok || return
-    key 4; sleep 0.8; shot 06-settings-closed                     # Back closes the panel
-  else
-    # Not open: pressing Back now could leave the player instead.
-    NOTES+=("TV settings panel not seen open")
-    return
-  fi
 #!/usr/bin/env bash
 # Automated device round (docs/MACHINE_FIRST_PLAN.md step 4): on every connected device that is idle,
 # install the APK, play the legal Tears of Steel sample, drive the player like a person would (TV: D-pad;
@@ -30,7 +14,7 @@
 # rounds/<timestamp>/summary.json; rounds/latest.json (last clean round per device; the comparison point).
 # Exit 1 only for a crash, an ANR or playback that never started. Slow swarms never fail a round.
 #
-# Safety (CLAUDE.md "Never disturb playback"): a device is driven only when it is awake, unlocked,
+# Safety (CLAUDE.md "Never disturb playback"): a device is driven only when it is awake, unlocked, untouched for 90 s,
 # nothing plays, and the launcher or One Stream's home screen is on top. Re-checked before each step:
 # the moment something else is on top the round stops pressing anything on that device.
 set -uo pipefail   # no -e: one device failing must not stop the other's round or its cleanup
@@ -124,7 +108,17 @@ shot() {   # shot NN-name
   "$ADB" -s "$S" exec-out screencap -p > "$DIR/$1.png" 2> /dev/null
   [[ -s "$DIR/$1.png" ]] && say "$NAME: $1" || say "$NAME: $1 (screenshot failed)"
 }
-stats() { sh_ logcat -d -v brief -s ReelStats:I; }
+# Logs are streamed to the Mac for the whole round: the phone's shared 256 KiB log buffer
+# overwrites the start of a round within a minute or two.
+stats() { cat "$DIR/reelstats.txt" 2> /dev/null; }
+LOG_PIDS=""
+start_logs() {
+  "$ADB" -s "$S" logcat -v brief -s ReelStats:I > "$DIR/reelstats.txt" 2> /dev/null & LOG_PIDS="$!"
+  "$ADB" -s "$S" logcat -b crash -v brief > "$DIR/crash-raw.txt" 2> /dev/null & LOG_PIDS="$LOG_PIDS $!"
+  "$ADB" -s "$S" logcat -b system,events -v brief 2> /dev/null | grep --line-buffered -E "ANR in|am_anr" > "$DIR/anr-raw.txt" & LOG_PIDS="$LOG_PIDS $!"
+  "$ADB" -s "$S" logcat -v threadtime -s ReelProbe:I AndroidRuntime:E PlayerActivity:I ReelReport:I > "$DIR/logcat.txt" 2> /dev/null & LOG_PIDS="$LOG_PIDS $!"
+}
+stop_logs() { [[ -n $LOG_PIDS ]] && kill $LOG_PIDS 2> /dev/null; LOG_PIDS=""; pkill -f "adb -s $S logcat" 2> /dev/null; true; }
 seek_count() { stats | grep -c 'ev=seek ' || true; }
 wait_seek() {   # wait_seek <count before>: true once a new seek finished (player ready again)
   local before=$1 i
@@ -134,19 +128,27 @@ wait_seek() {   # wait_seek <count before>: true once a new seek finished (playe
   done
   return 1
 }
-ui_dump() { with_timeout 20 "$ADB" -s "$S" exec-out uiautomator dump /dev/tty 2> /dev/null | tr -d '\r'; }
-bounds_centre() {   # bounds_centre <content-desc>: "x y" of that view in a fresh UI dump, or nothing
-  ui_dump | grep -o "<node [^>]*content-desc=\"$1\"[^>]*>" | head -1 \
-    | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | tr -c '0-9\n' ' ' \
-    | awk '{ printf "%d %d\n", ($1 + $3) / 2, ($2 + $4) / 2 }'
+# TV: the strip refreshes twice a second, so uiautomator never sees it idle. Its screenshots show the
+# video plane black, so the strip / panel are read from the pixels instead (core ScreenProbe).
+tv_screen() {   # tv_screen [png]: "strip=up|down panel=open|closed"
+  local f=${1:-$DIR/.probe.png}
+  [[ -n ${1:-} ]] || "$ADB" -s "$S" exec-out screencap -p > "$f" 2> /dev/null
+  cli tv-screen "$f"
 }
-panel_open() { ui_dump | grep -q 'text="Speed"'; }
+wait_strip_down() {   # the strip hides itself 5 s after the last key while playing
+  local i
+  for ((i = 0; i < 10; i++)); do
+    [[ $(tv_screen) == strip=down* ]] && return 0
+    sleep 2
+  done
+  return 1
+}
 gate() {   # prints "idle" or "busy: why"
   {
     echo "### media_session"; sh_ dumpsys media_session
     echo "### top"; sh_ dumpsys activity activities | grep topResumedActivity
     echo "### window"; sh_ dumpsys window | grep -E 'isKeyguardShowing|mShowingDream'
-    echo "### power"; sh_ dumpsys power | grep -m1 'mWakefulness='
+    echo "### power"; sh_ dumpsys power | grep -E 'mWakefulness=|mLastWakeTime=|mLastUserActivityTime'
     echo "### home"; sh_ cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
   } > "$DIR/gate.txt"
   cli gate "$DIR/gate.txt"
@@ -167,7 +169,11 @@ step_ok() {   # before every input: is our player still the thing on top?
 tv_actions() {
   local n
   step_ok || return
-  key 23; sleep 0.8; shot 02-strip                                # OK: strip up, focus on play
+  # The strip comes up by itself when playback starts, focus on play: OK now would pause. Wait for
+  # it to hide, then bring it up with ↓ (shows it when hidden, does nothing when it is up).
+  wait_strip_down || NOTES+=("TV strip still up 20 s after the first frame")
+  step_ok || return
+  key 20; sleep 0.8; shot 02-strip                                # ↓: strip up, focus on play
   step_ok || return
   n=$(seek_count)
   # Play → ⏪ → ⏩ → subtitles → settings → seek bar (5 × right), then scrub 6 × right; one call
@@ -176,35 +182,34 @@ tv_actions() {
   key 23                                                          # OK: commit (no-op if it already did)
   if wait_seek "$n"; then ACTIONS+=("scrub"); else NOTES+=("TV scrub: no seek within ${SEEK_TIMEOUT}s"); fi
   shot 04-after-seek
-  # Settings from a known state (strip hidden, so OK brings it up with focus on play): the strip
-  # hides 5 s after playback resumes; a rebuffer keeps it up longer.
-  sleep 6
-  local i
-  for ((i = 0; i < 5; i++)); do ui_dump | grep -q 'content-desc="Settings"' || break; sleep 2; done
+  # Settings from a known state: strip hidden, so ↓ brings it up with focus on play. With the strip
+  # still up the focus is on the seek bar and → would scrub instead: skip rather than guess.
+  sleep 4
+  if ! wait_strip_down; then NOTES+=("TV strip didn't hide after the seek; settings skipped"); return; fi
   step_ok || return
-  key 23 22 22 22 22 23; sleep 1.2; shot 05-settings              # OK, 4 × right to Settings, OK
-  if ! panel_open; then
+  key 20 22 22 22 22 23; sleep 1.2; shot 05-settings              # ↓, 4 × right to Settings, OK
+  if [[ $(tv_screen "$DIR/05-settings.png") != *panel=open ]]; then
     NOTES+=("TV settings panel not seen open")
     return                                                        # Back now could leave the player instead
   fi
   ACTIONS+=("settings")
   step_ok || return
   key 4; sleep 0.8; shot 06-settings-closed                       # Back closes the panel
+  [[ $(tv_screen "$DIR/06-settings-closed.png") == *panel=closed ]] || { NOTES+=("TV panel still open after Back"); return; }
+  ACTIONS+=("close-settings")
   step_ok || return
   key 4; sleep 0.8; shot 07-strip-hidden                          # Back hides the strip
-  ACTIONS+=("back")
+  [[ $(tv_screen "$DIR/07-strip-hidden.png") == strip=down* ]] && ACTIONS+=("back-hides-strip") || NOTES+=("TV strip still up after Back")
 }
 
 phone_actions() {
-  local size w h n sx sy xy
+  local size w h n sx sy dp
   size=$(sh_ wm size | awk -F': ' '/Override size/ { o = $2 } /Physical size/ { p = $2 } END { print (o != "" ? o : p) }')
   w=${size%x*}; h=${size#*x}
   (( w < h )) && { local t=$w; w=$h; h=$t; }                      # the player is always landscape
   local cx=$((w / 2)) ty=$((h * 3 / 10)) my=$((h / 2))            # ty: on the picture, clear of top bar + centre buttons
   step_ok || return
   sh_ input tap $cx $ty; sleep 0.6; shot 02-controls               # tap: controls up
-  xy=$(bounds_centre Settings)                                     # where the settings button really is
-  [[ -n $xy ]] || NOTES+=("phone: UI dump failed; settings button by layout maths")
   sleep 5                                                          # controls hide 3.5 s after the last touch
   step_ok || return
   n=$(seek_count)
@@ -218,20 +223,14 @@ phone_actions() {
   shot 05-after-seek
   sleep 5
   step_ok || return
-  if [[ -n $xy ]]; then sx=${xy% *}; sy=${xy#* }
-  else # PhoneControls: Settings is the last 48 dp button of the top bar, 8 dp in (cutout side unknown).
-    local dp=$(( $(sh_ wm density | awk -F': ' '{ d = $2 } END { print d }') / 160 ))
-    sx=$((w - 32 * dp)); sy=$((32 * dp))
-  fi
+  # PhoneControls: Settings is the last 48 dp button of the top bar, 8 dp + 24 dp in from the top
+  # right (checked on the Pixel 8: 2304, 96). uiautomator would say for sure, but it never sees the
+  # player idle (the controls refresh twice a second), so the screenshot is the evidence.
+  dp=$(( $(sh_ wm density | awk -F": " "{ d = \$2 } END { print d }") / 160 ))
+  sx=$((w - 32 * dp)); sy=$((32 * dp))
   # Show + tap Settings in ONE shell call: the controls hide 3.5 s after a touch.
   sh_ "input tap $cx $ty; sleep 0.4; input tap $sx $sy"; sleep 1; shot 06-settings
-  if panel_open; then ACTIONS+=("settings")
-  else
-    # The controls may still have been up (the first tap hid them): try the button once more.
-    step_ok || return
-    sh_ input tap $sx $sy; sleep 1; shot 06b-settings-retry
-    if panel_open; then ACTIONS+=("settings"); NOTES+=("phone settings opened on the 2nd try"); else NOTES+=("phone settings sheet not seen open"); fi
-  fi
+  ACTIONS+=("settings"); NOTES+=("phone settings sheet: see 06-settings.png (not machine-checked)")
   step_ok || return
   sh_ input tap $((w / 5)) $ty; sleep 0.8; shot 07-settings-closed   # a tap on the picture closes the sheet
   ACTIONS+=("close-settings")
@@ -285,6 +284,7 @@ on_interrupt() {
   if [[ $CLEANUP_NEEDED == 1 ]]; then
     say "$NAME: interrupted — leaving the player and cleaning up"
     ours_on_top && leave_player
+    stop_logs
     restore_history
     STATUS=aborted; REASON="interrupted (Ctrl-C)"; write_meta
   fi
@@ -334,6 +334,7 @@ run_device() {
   sleep 2
   PRIOR_POS=$(sh_ logcat -d -s ReelProbe:I | grep -m1 "history $SAMPLE_KEY " | sed -E 's/.*history [^ ]+ ([0-9]+)s\/.*/\1/')
   sh_ logcat -b all -c
+  start_logs
   sh_ am start -W -n "$HOME_ACT" > /dev/null
   sleep 2
   if [[ $(top_activity) != "$HOME_ACT" ]]; then abort "One Stream didn't come to the front ($(top_activity))"
@@ -352,7 +353,7 @@ run_device() {
         [[ $top == "$PKG"/* ]] && { NOTES+=("player closed before the first frame"); break; }
         abort "something else came to the front ($top)"; break
       fi
-      sh_ logcat -d -b crash | grep -q "Process: $PKG" && { NOTES+=("crashed before the first frame"); break; }
+      grep -q "Process: $PKG" "$DIR/crash-raw.txt" 2> /dev/null && { NOTES+=("crashed before the first frame"); break; }
     done
     if [[ -n $ttff ]]; then
       say "$NAME: first frame after $((ttff / 1000)).$(((ttff % 1000) / 100)) s"
@@ -374,12 +375,8 @@ run_device() {
   fi
   sleep 3                                                          # stopStream writes the ev=end line
   # 6. Collect.
-  stats > "$DIR/reelstats.txt"
-  {
-    sh_ logcat -d -b crash | grep -E "Process: $PKG([,: ]|$)|>>> $PKG[: <]"
-    sh_ logcat -d -b system,events | grep -E "ANR in $PKG([ :(]|$)|am_anr.*$PKG"
-  } > "$DIR/crash.txt"
-  sh_ logcat -d -v threadtime -s ReelStats:I ReelProbe:I AndroidRuntime:E PlayerActivity:I > "$DIR/logcat.txt"
+  stop_logs
+  cat "$DIR/crash-raw.txt" "$DIR/anr-raw.txt" 2> /dev/null | grep -E "Process: $PKG([,: ]|$)|>>> $PKG[: <]|ANR in $PKG([ :(]|$)|am_anr.*$PKG" > "$DIR/crash.txt"
   restore_history
   CLEANUP_NEEDED=0
   local after_reports r; after_reports=$(sh_ "ls -1 $REMOTE_REPORTS 2>/dev/null")

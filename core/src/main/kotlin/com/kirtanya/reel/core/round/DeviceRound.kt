@@ -60,6 +60,7 @@ object RoundLog {
         val waits = ArrayList<Long>()
         var rebuf: Pair<Int, Long>? = null
         var outstanding = 0
+        var end: Map<String, String>? = null
         for (line in stats) {
             val f = fields(line) ?: continue
             val key = f["key"]
@@ -77,20 +78,28 @@ object RoundLog {
                     val n = parts?.getOrNull(0)?.toIntOrNull()
                     val ms = parts?.getOrNull(1)?.toLongOrNull()
                     if (n != null && ms != null) rebuf = n to ms
+                    end = f
                 }
             }
         }
+        // The ev=end summary covers the whole stream: it wins when single events were lost (a busy
+        // phone's shared log buffer can drop the start of a round).
+        val endSeeks = end?.get("seeks")?.toIntOrNull() ?: 0
+        val useEndSeeks = endSeeks > seeks.size
+        val endWaits = end?.get("waits")?.split('/')
+        val endWaitCount = endWaits?.getOrNull(0)?.toIntOrNull() ?: 0
+        val useEndWaits = endWaitCount > waits.size
         return RoundMetrics(
-            ttffMs = ttff,
+            ttffMs = ttff ?: end?.get("ttff")?.toLongOrNull(),
             warm = warm,
             haveAtStart = have,
-            seeks = seeks.size,
-            seekP50Ms = StreamStats.percentile(seeks, 50),
-            seekP90Ms = StreamStats.percentile(seeks, 90),
+            seeks = if (useEndSeeks) endSeeks else seeks.size,
+            seekP50Ms = if (useEndSeeks) end?.get("p50")?.toLongOrNull() ?: 0 else StreamStats.percentile(seeks, 50),
+            seekP90Ms = if (useEndSeeks) end?.get("p90")?.toLongOrNull() ?: 0 else StreamStats.percentile(seeks, 90),
             rebuffers = rebuf?.first,
             rebufferMs = rebuf?.second,
-            waits = waits.size,
-            waitMaxMs = waits.maxOrNull() ?: 0,
+            waits = if (useEndWaits) endWaitCount else waits.size,
+            waitMaxMs = if (useEndWaits) endWaits?.getOrNull(1)?.toLongOrNull() ?: 0 else waits.maxOrNull() ?: 0,
             outstanding = outstanding,
             crashes = crashes(crashLog),
             anrs = anrs(crashLog),
@@ -142,9 +151,25 @@ object IdleGate {
         return pkg to cls
     }
 
+    /** Quiet this long (no key / touch / wake) before a device counts as idle. */
+    const val QUIET_MS = 90_000L
+
+    /**
+     * Ms since the last key, touch or wake-up, from `dumpsys power`: `mLastWakeTime=<t> (<n> ms ago)`
+     * gives "now" on the same clock as `mLastUserActivityTime…=<t>`. Null when the lines are missing.
+     */
+    fun msSinceUserActivity(power: String): Long? {
+        val wake = Regex("""mLastWakeTime=(\d+) \((\d+) ms ago\)""").find(power) ?: return null
+        val now = wake.groupValues[1].toLong() + wake.groupValues[2].toLong()
+        val last = Regex("""mLastUserActivityTime(?:\(excludingAttention\))?=(\d+)""").find(power)?.groupValues?.get(1)?.toLong()
+        return now - maxOf(last ?: 0L, wake.groupValues[1].toLong())
+    }
+
     fun check(d: Dumps): Result {
         val wake = Regex("""mWakefulness=(\w+)""").find(d.power)?.groupValues?.get(1)
         if (wake != null && wake != "Awake") return Result.Busy("screen is off ($wake); not waking it")
+        // Someone browsing (even in our own app) or who just woke the device is using it.
+        msSinceUserActivity(d.power)?.let { if (it < QUIET_MS) return Result.Busy("used ${it / 1000} s ago; waiting for ${QUIET_MS / 1000} s of quiet") }
         if (Regex("""isKeyguardShowing=true""").containsMatchIn(d.window)) return Result.Busy("locked; never unlocking it")
         if (Regex("""mShowingDream=true""").containsMatchIn(d.window)) return Result.Busy("screensaver is on")
         if (playing.containsMatchIn(d.mediaSession)) return Result.Busy("something is playing")
@@ -249,5 +274,41 @@ object RoundCompare {
         return all.joinToString("\n") { r ->
             "  " + r.metric.padEnd(w[0]) + "  " + r.before.padStart(w[1]) + "  " + r.now.padStart(w[2]) + "  " + r.verdict
         }
+    }
+}
+
+/**
+ * Reads player state from a TV screenshot. On the R4 the video plane never shows in `screencap` (it is
+ * black), so anything bright in the strip or panel area is our UI. uiautomator can't help there: it
+ * never sees the UI as idle while the strip refreshes twice a second.
+ */
+object ScreenProbe {
+    /** Share of pixels in [x0, x1) × [y0, y1) brighter than mid-grey (0–1). Out-of-range parts are skipped. */
+    fun brightShare(img: java.awt.image.BufferedImage, x0: Int, y0: Int, x1: Int, y1: Int): Double {
+        var bright = 0
+        var total = 0
+        for (y in maxOf(0, y0) until minOf(img.height, y1)) for (x in maxOf(0, x0) until minOf(img.width, x1)) {
+            val p = img.getRGB(x, y)
+            val luma = (0.2126 * (p shr 16 and 0xFF) + 0.7152 * (p shr 8 and 0xFF) + 0.0722 * (p and 0xFF))
+            total++
+            if (luma > 128) bright++
+        }
+        return if (total == 0) 0.0 else bright.toDouble() / total
+    }
+
+    // TvControls in screenshot pixels (960 × 540 dp at 2×): the button row sits 24 dp + 40 dp in from
+    // the bottom left; the settings panel is 340 dp wide, 40 dp from the right, 150 dp from the bottom.
+    /** The strip's buttons are on screen. */
+    fun tvStripUp(img: java.awt.image.BufferedImage): Boolean {
+        val sx = img.width / 1920.0
+        val sy = img.height / 1080.0
+        return brightShare(img, (80 * sx).toInt(), (920 * sy).toInt(), (640 * sx).toInt(), (1032 * sy).toInt()) > 0.02
+    }
+
+    /** The settings panel is open. */
+    fun tvPanelOpen(img: java.awt.image.BufferedImage): Boolean {
+        val sx = img.width / 1920.0
+        val sy = img.height / 1080.0
+        return brightShare(img, (1180 * sx).toInt(), (300 * sy).toInt(), (1820 * sx).toInt(), (770 * sy).toInt()) > 0.01
     }
 }

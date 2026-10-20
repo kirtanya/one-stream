@@ -10,9 +10,18 @@ Decision: `tool/device_round.sh` verifies a build on the TV and phone the way to
 install, play the legal Tears of Steel sample, drive the player (TV: D-pad strip, scrub, settings;
 phone: tap, double-tap, swipe-scrub, settings sheet; PiP left out), screenshot each step, collect
 ReelStats + crashes / ANRs / problem reports, clean up, compare with the last clean round. Choices:
-- Safety gate is strict: awake, unlocked, nothing playing, and only the launcher or our *home* screen on
-  top (our player on top, even paused, counts as busy). Re-checked before every input; if anything else
-  comes to the front the round stops pressing keys on that device.
+- Safety gate is strict: awake, unlocked, no key / touch / wake-up for 90 s (`dumpsys power`), nothing
+  playing, and only the launcher or our *home* screen on top (our player on top, even paused, counts as
+  busy). The 90 s rule came from the first real run: the user was browsing One Stream on the TV, which
+  "our home screen on top" alone called idle. Re-checked before every input; if anything else comes to
+  the front the round stops pressing keys on that device (and force-stops only our own sample player).
+- uiautomator is not used: it never sees the player idle (controls refresh twice a second) and hung on
+  both devices. TV strip / settings panel are read from screenshot pixels (the R4's screencap shows the
+  video plane black, so bright = our UI; `core/round/ScreenProbe`). The TV strip comes up by itself at
+  playback start, so the round waits for it to hide and shows it with ↓ (OK would pause). Phone settings
+  are tapped at the measured spot (2304, 96 px) and left to the screenshot.
+- Logs stream to the Mac during the round: the phone's shared 256 KiB log buffer dropped the first
+  minute of the first phone round. The `ev=end` summary also backs up lost single events.
 - Thresholds tolerate swarm noise: worse only when ≥ 1.5× AND clearly more (ttff + 5 s, seek p50 + 2 s,
   p90 + 3 s, rebuffer time + 5 s, longest wait + 3 s; rebuffers + 2; waits / outstanding warnings 2× and
   + 5 / + 3). Cold vs cached starts aren't compared (the sample's pieces stay in the cache after a

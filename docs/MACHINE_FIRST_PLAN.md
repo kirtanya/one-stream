@@ -55,10 +55,10 @@ visible.
 ## Step 4 in use: automated device round
 
 One command replaces the hand testing of a release on the TV and the phone:
-`tool/device_round.sh` (≈ 3–4 min per device once the sample is playing).
+`tool/device_round.sh` (≈ 3–4 min per device, devices one after the other).
 
 - **Only idle devices.** Each device is checked first and skipped (with the reason printed) unless it
-  is awake, unlocked, nothing plays, and its launcher or One Stream's home screen is on top. A locked
+  is awake, unlocked, untouched for 90 s, nothing plays, and its launcher or One Stream's home screen is on top. A locked
   phone is never unlocked, a sleeping TV is never woken. Before every key press / tap the round checks
   that its own player is still in front; if someone picks the device up, it stops pressing anything.
 - **What it does per device**: installs the newest `~/Desktop/APKs/OneStream-<ver>-<phone|tv>.apk`
