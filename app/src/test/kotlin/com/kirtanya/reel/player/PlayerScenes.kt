@@ -60,7 +60,7 @@ internal object PlayerScenes {
         root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, picture)
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        val c = TvControls(playerView, TITLE, { null }) { listOf("Open in another player" to {}) }
+        val c = TvControls(playerView, TITLE, { null }, extraSettings = { listOf("Open in another player" to {}) })
         root.addView(c.view, FrameLayout.LayoutParams(-1, -1))
         activity.setContentView(root)
         val exo = ExoPlayer.Builder(activity).build()

@@ -125,6 +125,13 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     var onScrubMove: ((Long) -> Unit)? = null
     var onSeek: ((Long) -> Unit)? = null
 
+    /**
+     * TV: a hairline along the very bottom edge, end to end — no track, only the played part (like
+     * a progress border). Focused, it thickens and shows a thumb on the current spot; scrubbing
+     * moves it with the time bubble above.
+     */
+    var edge = false; set(v) { field = v; invalidate() }
+
     var scrubbing = false; private set
     private var scrubPos = 0L
     private var color = PlayerColors.FOREGROUND
@@ -156,6 +163,7 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     private fun shown() = if (scrubbing) scrubPos else position
 
     override fun onDraw(canvas: Canvas) {
+        if (edge) { drawEdge(canvas); return }
         val pad = context.dpf(9f)
         val w = width - 2 * pad
         val cy = height / 2f
@@ -181,6 +189,44 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
                 text.color = if (TvControls.luminance(color) > 0.5f) TvControls.DARK else PlayerColors.FOREGROUND
                 canvas.drawText(label, bx, rect.centerY() - (text.descent() + text.ascent()) / 2, text)
             }
+        }
+    }
+
+    private fun drawEdge(canvas: Canvas) {
+        if (duration <= 0) return
+        val h = context.dpf(3f) + context.dpf(3f) * active
+        val bottom = height.toFloat()
+        val cy = bottom - h / 2
+        fun x(ms: Long) = width * (ms.coerceIn(0, duration).toFloat() / duration)
+        // The rest of the line stays clear; while focused, a faint track and the buffered part show where it can go.
+        if (active > 0f) {
+            paint.color = withAlpha(color, (0x33 * active).toInt())
+            rect.set(0f, bottom - h, width.toFloat(), bottom); canvas.drawRect(rect, paint)
+            paint.color = withAlpha(color, (0x55 * active).toInt())
+            rect.right = x(buffered); canvas.drawRect(rect, paint)
+        }
+        paint.color = color
+        rect.set(0f, bottom - h, x(shown()), bottom)
+        canvas.drawRect(rect, paint)
+        if (active > 0f) {
+            // The current spot: a soft halo and a thumb.
+            val r = context.dpf(7f) * active
+            paint.color = withAlpha(color, (0x40 * active).toInt())
+            canvas.drawCircle(x(shown()), cy, r * 1.9f, paint)
+            paint.color = color
+            canvas.drawCircle(x(shown()), cy, r, paint)
+        }
+        if (scrubbing) {
+            val label = PlayerActivity.formatTime(scrubPos)
+            val tw = text.measureText(label) + context.dpf(20f)
+            val bh = context.dpf(26f)
+            val bx = x(scrubPos).coerceIn(tw / 2, width - tw / 2)
+            val top = cy - context.dpf(20f) - bh
+            rect.set(bx - tw / 2, top, bx + tw / 2, top + bh)
+            paint.color = color
+            canvas.drawRoundRect(rect, bh / 2, bh / 2, paint)
+            text.color = if (TvControls.luminance(color) > 0.5f) TvControls.DARK else PlayerColors.FOREGROUND
+            canvas.drawText(label, bx, rect.centerY() - (text.descent() + text.ascent()) / 2, text)
         }
     }
 
@@ -229,7 +275,7 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (duration <= 0) return false
-        val pad = context.dpf(9f)
+        val pad = if (edge) 0f else context.dpf(9f)
         fun at(x: Float) = ((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f).let { (it * duration).toLong() }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); begin(); move(at(e.x)) }

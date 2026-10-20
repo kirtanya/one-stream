@@ -24,10 +24,13 @@ import com.kirtanya.reel.R
 import kotlin.math.pow
 
 /**
- * TV player controls: one strip along the bottom, nothing in the middle of the picture and no
- * dimming. Title and "ends at" on top; a round play button, skips, subtitles and settings on the
- * left; a short seek bar with elapsed / remaining time on the right. Settings opens a panel above
- * the video. The strip has no background of its own, so its colour follows the picture behind it:
+ * TV player controls, nothing in the middle of the picture and no dimming:
+ *  - the seek bar is a hairline along the very bottom edge, end to end (only the played part
+ *    shows); elapsed time above its start, remaining time above its end;
+ *  - above that, the title and "ends at" on the left, and every control on the right — back 10 s,
+ *    play / pause, forward 10 s, next episode (when there is one), subtitles, settings — all the
+ *    same size: no button stands out.
+ * Settings opens a panel above the controls. The strip has no background of its own, so its colour follows the picture behind it:
  * the pixels under it are sampled (PixelCopy, twice a second while it shows) and it turns white or
  * near-black, whichever keeps the higher contrast against the busiest part.
  */
@@ -37,6 +40,9 @@ internal class TvControls(
     private val font: (medium: Boolean) -> Typeface?,
     /** Extra rows at the end of the Settings panel (label → action), e.g. "Open in another player". */
     extraSettings: () -> List<Pair<String, () -> Unit>>,
+    /** Whether a next episode is ready (shows the Next button) and how to play it. */
+    private val hasNext: () -> Boolean = { false },
+    private val onNext: () -> Unit = {},
 ) {
     private val context = playerView.context
     private val main = Handler(Looper.getMainLooper())
@@ -47,11 +53,13 @@ internal class TvControls(
     private val bar = LinearLayout(context)
     private val titleView = text(20f, medium = true)
     private val metaView = text(13f)
-    private val play = PlayButton(context, 56)
-    private val rew = SkipButton(context, forward = false, seconds = 10, sizeDp = 46, iconDp = 28, font = font(true))
-    private val ffwd = SkipButton(context, forward = true, seconds = 10, sizeDp = 46, iconDp = 28, font = font(true))
-    private val subs = RoundButton(context, R.drawable.ic_pl_subtitles, "Subtitles", 46, 22)
-    private val settings = RoundButton(context, R.drawable.ic_pl_tune, "Settings", 46, 22)
+    // One size for every control (no filled play button).
+    private val play = RoundButton(context, R.drawable.ic_pl_pause, "Play or pause", BUTTON, 26)
+    private val rew = SkipButton(context, forward = false, seconds = 10, sizeDp = BUTTON, iconDp = 28, font = font(true))
+    private val ffwd = SkipButton(context, forward = true, seconds = 10, sizeDp = BUTTON, iconDp = 28, font = font(true))
+    private val next = RoundButton(context, R.drawable.ic_pl_next, "Next episode", BUTTON, 24)
+    private val subs = RoundButton(context, R.drawable.ic_pl_subtitles, "Subtitles", BUTTON, 22)
+    private val settings = RoundButton(context, R.drawable.ic_pl_tune, "Settings", BUTTON, 22)
     private val elapsed = text(14f, medium = true)
     private val remaining = text(14f, medium = true)
     private val seek = SeekStrip(context, font(true))
@@ -68,30 +76,42 @@ internal class TvControls(
         view.visibility = View.GONE
         view.clipChildren = false
         bar.clipChildren = false
-        bar.orientation = LinearLayout.VERTICAL
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.gravity = Gravity.BOTTOM
+
+        // Left: title, then "ends at".
+        val info = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         titleView.text = title
         titleView.maxLines = 1
         titleView.ellipsize = android.text.TextUtils.TruncateAt.END
-        bar.addView(titleView, LinearLayout.LayoutParams(-1, -2).apply { marginStart = context.dp(4) })
-        bar.addView(metaView, LinearLayout.LayoutParams(-1, -2).apply { marginStart = context.dp(4); topMargin = context.dp(2); bottomMargin = context.dp(14) })
-        val row = LinearLayout(context).apply {
+        info.addView(titleView, LinearLayout.LayoutParams(-1, -2))
+        info.addView(metaView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.dp(2) })
+        bar.addView(info, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = context.dp(24) })
+
+        // Right: the controls, all the same size.
+        val buttons = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
         }
-        row.addView(play, LinearLayout.LayoutParams(context.dp(56), context.dp(56)).apply { marginEnd = context.dp(14) })
-        for (b in listOf(rew, ffwd, subs, settings)) row.addView(b, LinearLayout.LayoutParams(context.dp(46), context.dp(46)).apply { marginEnd = context.dp(8) })
-        row.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-        row.addView(elapsed, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
-        // Short, on the right of the same line (not the full width).
-        row.addView(seek, LinearLayout.LayoutParams(context.dp(380), context.dp(28)))
-        row.addView(remaining, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.dp(6) })
-        bar.addView(row, LinearLayout.LayoutParams(-1, -2))
-        view.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(context.dp(40), 0, context.dp(40), context.dp(24)) })
+        for ((i, b) in listOf(rew, play, ffwd, next, subs, settings).withIndex()) {
+            buttons.addView(b, LinearLayout.LayoutParams(context.dp(BUTTON), context.dp(BUTTON)).apply { if (i > 0) marginStart = context.dp(8) })
+        }
+        bar.addView(buttons, LinearLayout.LayoutParams(-2, -2))
+        view.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(context.dp(40), 0, context.dp(40), context.dp(48)) })
+
+        // Just above the bottom edge: elapsed at the start, remaining at the end.
+        view.addView(elapsed, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(context.dp(40), 0, 0, context.dp(16)) })
+        view.addView(remaining, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, context.dp(40), context.dp(16)) })
+
+        // The bottom edge itself: the seek bar, end to end.
+        seek.edge = true
+        view.addView(seek, FrameLayout.LayoutParams(-1, context.dp(28), Gravity.BOTTOM))
 
         rew.setOnClickListener { seekBy(-10_000); touch() }
         ffwd.setOnClickListener { seekBy(10_000); touch() }
         play.setOnClickListener { togglePlay(); touch() }
+        next.setOnClickListener { hide(); onNext() }
         subs.setOnClickListener { openPanel("sub") }
         settings.setOnClickListener { openPanel(null) }
         seek.onScrubStart = { touch() }
@@ -99,7 +119,7 @@ internal class TvControls(
         seek.onSeek = { player?.seekTo(it); touch() }
 
         view.addView(settingsPanel.panel, FrameLayout.LayoutParams(context.dp(340), -2, Gravity.BOTTOM or Gravity.END).apply {
-            setMargins(0, context.dp(24), context.dp(40), context.dp(150))
+            setMargins(0, context.dp(24), context.dp(40), context.dp(112))
         })
         applyColor(fg)
     }
@@ -137,9 +157,10 @@ internal class TvControls(
     fun show(focus: View? = play) {
         if (!visible) {
             view.visibility = View.VISIBLE
-            bar.alpha = 0f
+            view.alpha = 0f
+            view.animate().alpha(1f).setDuration(180).start()
             bar.translationY = context.dpf(16f)
-            bar.animate().alpha(1f).translationY(0f).setDuration(180).start()
+            bar.animate().translationY(0f).setDuration(180).start()
             refresh()
             main.removeCallbacks(tick); main.post(tick)
             main.removeCallbacks(sampler); main.post(sampler)
@@ -242,6 +263,7 @@ internal class TvControls(
         val p = player ?: return
         val playing = p.playWhenReady && p.playbackState != Player.STATE_ENDED
         play.setIcon(if (playing) R.drawable.ic_pl_pause else R.drawable.ic_pl_play)
+        next.visibility = if (hasNext()) View.VISIBLE else View.GONE
         val d = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
         seek.duration = d
         seek.buffered = p.bufferedPosition
@@ -355,7 +377,7 @@ internal class TvControls(
             t.setTextColor(if (t === metaView) withAlpha(c, 0xD9) else c)
             t.setShadowLayer(context.dpf(6f), 0f, 0f, shadow)
         }
-        for (b in listOf(play, rew, ffwd, subs, settings)) b.tint(c)
+        for (b in listOf(play, rew, ffwd, next, subs, settings)) b.tint(c)
         seek.tint(c)
     }
 
@@ -369,6 +391,9 @@ internal class TvControls(
     }
 
     companion object {
+        /** Every control's size (dp). */
+        const val BUTTON = 48
+
         /** Near-black: within 5 % of black's contrast, a little softer on the eye. */
         const val DARK = PlayerColors.STRIP_DARK
 

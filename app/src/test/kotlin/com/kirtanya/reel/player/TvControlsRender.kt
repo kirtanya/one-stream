@@ -48,7 +48,7 @@ class TvControlsRender {
 
     private fun controls(): TvControls {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        return TvControls(PlayerView(activity), PlayerScenes.TITLE, { null }) { emptyList() }
+        return TvControls(PlayerView(activity), PlayerScenes.TITLE, { null }, extraSettings = { emptyList() })
     }
 
     private fun render(name: String, picture: IntArray, color: Int, panel: Boolean = false) {

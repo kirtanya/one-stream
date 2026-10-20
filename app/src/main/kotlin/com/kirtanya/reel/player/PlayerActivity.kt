@@ -1011,10 +1011,17 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         }
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         if (tv) {
-            tvControls = TvControls(playerView, playback.displayTitle, ::font) {
-                (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
-                else emptyList()) + (REPORT_ROW to { reportFromSettings() })
-            }.also { root.addView(it.view, FrameLayout.LayoutParams(-1, -1)) }
+            tvControls = TvControls(
+                playerView,
+                playback.displayTitle,
+                ::font,
+                extraSettings = {
+                    (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
+                    else emptyList()) + (REPORT_ROW to { reportFromSettings() })
+                },
+                hasNext = { nextReady != null },
+                onNext = { playNext() },
+            ).also { root.addView(it.view, FrameLayout.LayoutParams(-1, -1)) }
             buildTvChips(root)
             buildErrorPanel(root)
             return root
