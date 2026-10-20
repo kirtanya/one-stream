@@ -37,13 +37,18 @@ import java.util.Locale
 
 internal fun Context.dpf(v: Float) = v * resources.displayMetrics.density
 internal fun Context.dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-internal fun withAlpha(c: Int, a: Int) = (c and 0x00FFFFFF) or (a shl 24)
+internal fun withAlpha(c: Int, a: Int) = PlayerColors.withAlpha(c, a)
 
-/** A round icon button: transparent, a soft disc + ring when focused, grows a little on focus. */
+/**
+ * A round icon button: transparent, a soft disc + ring when focused, grows a little on focus.
+ * [sizeDp] is the drawn disc; [touchDp] the view the caller lays out (48 dp on the phone, CLAUDE.md
+ * "Design rules"): a larger touch area keeps the disc at [sizeDp] in its centre.
+ */
 @SuppressLint("ViewConstructor")
-internal open class RoundButton(context: Context, icon: Int, label: String, private val sizeDp: Int, iconDp: Int) : FrameLayout(context) {
+internal open class RoundButton(context: Context, icon: Int, label: String, private val sizeDp: Int, iconDp: Int, touchDp: Int = sizeDp) : FrameLayout(context) {
     val image = ImageView(context).apply { setImageResource(icon) }
-    private var color = Color.WHITE
+    private var color = PlayerColors.FOREGROUND
+    private val inset = context.dp((touchDp - sizeDp).coerceAtLeast(0)) / 2
 
     init {
         contentDescription = label
@@ -51,18 +56,19 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
         isClickable = true
         addView(image, LayoutParams(context.dp(iconDp), context.dp(iconDp), Gravity.CENTER))
         setOnFocusChangeListener { _, f -> animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(140).start() }
-        tint(Color.WHITE)
+        tint(PlayerColors.FOREGROUND)
     }
 
     open fun tint(c: Int) {
         color = c
         image.imageTintList = ColorStateList.valueOf(c)
-        background = StateListDrawable().apply {
+        val states = StateListDrawable().apply {
             val on = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(withAlpha(c, 0x2E)); setStroke(context.dp(2), c) }
             addState(intArrayOf(android.R.attr.state_focused), on)
             addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(withAlpha(c, 0x24)) })
             addState(intArrayOf(), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.TRANSPARENT) })
         }
+        background = if (inset > 0) android.graphics.drawable.InsetDrawable(states, inset) else states
     }
 
     fun setIcon(res: Int) = image.setImageResource(res)
@@ -72,7 +78,7 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
 @SuppressLint("ViewConstructor")
 internal class PlayButton(context: Context, sizeDp: Int) : RoundButton(context, R.drawable.ic_pl_pause, "Play or pause", sizeDp, (sizeDp * 0.46f).toInt()) {
     override fun tint(c: Int) {
-        val inverse = if (TvControls.luminance(c) > 0.5f) TvControls.DARK else Color.WHITE
+        val inverse = if (TvControls.luminance(c) > 0.5f) TvControls.DARK else PlayerColors.FOREGROUND
         image.imageTintList = ColorStateList.valueOf(inverse)
         background = StateListDrawable().apply {
             val on = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c); setStroke(context.dp(3), withAlpha(inverse, 0x99)) }
@@ -96,7 +102,7 @@ internal class SkipButton(context: Context, forward: Boolean, seconds: Int, size
 
     init {
         addView(number, LayoutParams(-2, -2, Gravity.CENTER).apply { topMargin = context.dp((iconDp * 0.1f).toInt()) })
-        tint(Color.WHITE)
+        tint(PlayerColors.FOREGROUND)
     }
 
     override fun tint(c: Int) {
@@ -121,7 +127,7 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
 
     var scrubbing = false; private set
     private var scrubPos = 0L
-    private var color = Color.WHITE
+    private var color = PlayerColors.FOREGROUND
     private var active = 0f
     private var activeAnim: ValueAnimator? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -172,7 +178,7 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
                 val bx = x(scrubPos).coerceIn(tw / 2, width - tw / 2)
                 rect.set(bx - tw / 2, cy - r - context.dpf(10f) - bh, bx + tw / 2, cy - r - context.dpf(10f))
                 canvas.drawRoundRect(rect, bh / 2, bh / 2, paint)
-                text.color = if (TvControls.luminance(color) > 0.5f) TvControls.DARK else Color.WHITE
+                text.color = if (TvControls.luminance(color) > 0.5f) TvControls.DARK else PlayerColors.FOREGROUND
                 canvas.drawText(label, bx, rect.centerY() - (text.descent() + text.ascent()) / 2, text)
             }
         }
@@ -249,6 +255,8 @@ internal class SettingsPanel(
     private val extras: () -> List<Pair<String, () -> Unit>>,
     /** An extra row was chosen (the caller closes the panel). */
     private val onExtra: () -> Unit,
+    /** Shortest row: 48 dp on the phone (touch areas), 44 on the TV (remote only). */
+    private val minRowDp: Int = 48,
 ) {
     private val list = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -258,9 +266,9 @@ internal class SettingsPanel(
         addView(list)
         isVerticalScrollBarEnabled = false
         background = GradientDrawable().apply {
-            setColor(0xEB141418.toInt())
+            setColor(PlayerColors.PANEL)
             cornerRadius = context.dpf(20f)
-            setStroke(context.dp(1), 0x26FFFFFF)
+            setStroke(context.dp(1), PlayerColors.GLASS_STROKE)
         }
         visibility = View.GONE
     }
@@ -382,19 +390,19 @@ internal class SettingsPanel(
     private fun text(sp: Float, medium: Boolean = false) = TextView(context).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
         typeface = font(medium)
-        setTextColor(Color.WHITE)
+        setTextColor(PlayerColors.FOREGROUND)
     }
 
     private fun header(label: String) = text(12f, medium = true).apply {
         text = label.uppercase()
         letterSpacing = 0.1f
-        setTextColor(0x8CFFFFFF.toInt())
+        setTextColor(PlayerColors.PANEL_HEADER)
         setPadding(context.dp(14), context.dp(6), context.dp(14), context.dp(8))
     }
 
     private fun note(label: String) = text(13f).apply {
         text = label
-        setTextColor(0x99FFFFFF.toInt())
+        setTextColor(PlayerColors.PANEL_NOTE)
         setPadding(context.dp(14), context.dp(8), context.dp(14), context.dp(8))
     }
 
@@ -409,12 +417,12 @@ internal class SettingsPanel(
         background = rowBackground()
         if (icon != null) addView(ImageView(context).apply {
             setImageResource(icon)
-            imageTintList = ColorStateList.valueOf(0xCCFFFFFF.toInt())
+            imageTintList = ColorStateList.valueOf(PlayerColors.SECONDARY)
         }, LinearLayout.LayoutParams(context.dp(20), context.dp(20)).apply { marginEnd = context.dp(14) })
         addView(text(15f, medium = true).apply { text = label }, LinearLayout.LayoutParams(0, -2, 1f))
         if (value != null) addView(text(14f).apply {
             text = "$value  ›"
-            setTextColor(0xA6FFFFFF.toInt())
+            setTextColor(PlayerColors.PANEL_VALUE)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             maxWidth = context.dp(150)
@@ -425,7 +433,7 @@ internal class SettingsPanel(
     private fun choice(label: String, selected: Boolean, onClick: () -> Unit) = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = context.dp(44)
+        minimumHeight = context.dp(minRowDp)
         setPadding(context.dp(14), context.dp(6), context.dp(14), context.dp(6))
         isFocusable = true
         isClickable = true
@@ -434,14 +442,14 @@ internal class SettingsPanel(
         addView(text(15f, medium = selected).apply { text = label; alpha = if (selected) 1f else 0.85f }, LinearLayout.LayoutParams(0, -2, 1f))
         // A dot marks the current choice (quieter than a tick, readable from the sofa).
         addView(View(context).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) }
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(PlayerColors.FOREGROUND) }
             visibility = if (selected) View.VISIBLE else View.INVISIBLE
         }, LinearLayout.LayoutParams(context.dp(8), context.dp(8)))
         setOnClickListener { onClick() }
     }
 
     private fun rowBackground() = StateListDrawable().apply {
-        val on = GradientDrawable().apply { setColor(0x29FFFFFF); cornerRadius = context.dpf(12f) }
+        val on = GradientDrawable().apply { setColor(PlayerColors.ROW_HIGHLIGHT); cornerRadius = context.dpf(12f) }
         addState(intArrayOf(android.R.attr.state_focused), on)
         addState(intArrayOf(android.R.attr.state_pressed), on)
         addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })

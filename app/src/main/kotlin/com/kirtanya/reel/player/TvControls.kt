@@ -55,9 +55,9 @@ internal class TvControls(
     private val elapsed = text(14f, medium = true)
     private val remaining = text(14f, medium = true)
     private val seek = SeekStrip(context, font(true))
-    private val settingsPanel = SettingsPanel(context, font, { player }, extraSettings) { hide() }
+    private val settingsPanel = SettingsPanel(context, font, { player }, extraSettings, onExtra = { hide() }, minRowDp = 44)
 
-    private var fg = Color.WHITE
+    private var fg = PlayerColors.FOREGROUND
     private var colorAnim: ValueAnimator? = null
     private var swallowUp: Int? = null
 
@@ -319,17 +319,17 @@ internal class TvControls(
         }
         val white = worst(1f)
         val dark = worst(luminance(DARK))
-        val currentIsWhite = target == Color.WHITE
+        val currentIsWhite = target == PlayerColors.FOREGROUND
         val next = when {
             currentIsWhite && dark > white * 1.3f -> DARK
-            !currentIsWhite && white > dark * 1.3f -> Color.WHITE
+            !currentIsWhite && white > dark * 1.3f -> PlayerColors.FOREGROUND
             else -> target
         }
         if (next != target) animateTo(next)
     }
 
     /** The colour the strip is (or is animating to). */
-    internal var target = Color.WHITE
+    internal var target = PlayerColors.FOREGROUND
         private set
 
     private fun animateTo(color: Int) {
@@ -350,7 +350,7 @@ internal class TvControls(
 
     private fun paint(c: Int) {
         fg = c
-        val shadow = if (luminance(c) > 0.5f) 0x80000000.toInt() else 0x59FFFFFF
+        val shadow = if (luminance(c) > 0.5f) PlayerColors.STRIP_GLOW_UNDER_LIGHT else PlayerColors.STRIP_GLOW_UNDER_DARK
         for (t in listOf(titleView, metaView, elapsed, remaining)) {
             t.setTextColor(if (t === metaView) withAlpha(c, 0xD9) else c)
             t.setShadowLayer(context.dpf(6f), 0f, 0f, shadow)
@@ -364,13 +364,13 @@ internal class TvControls(
     private fun text(sp: Float, medium: Boolean = false) = TextView(context).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
         typeface = font(medium)
-        setTextColor(Color.WHITE)
+        setTextColor(PlayerColors.FOREGROUND)
         fontFeatureSettings = "tnum"
     }
 
     companion object {
         /** Near-black: within 5 % of black's contrast, a little softer on the eye. */
-        val DARK = 0xFF0B0B0C.toInt()
+        const val DARK = PlayerColors.STRIP_DARK
 
         /** WCAG relative luminance of an sRGB colour. */
         fun luminance(argb: Int): Float {

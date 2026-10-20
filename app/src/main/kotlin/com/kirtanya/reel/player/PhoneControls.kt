@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
@@ -70,16 +69,17 @@ internal class PhoneControls(
     private val elapsed = text(13f, medium = true)
     private val remaining = text(13f, medium = true)
     private val seek = SeekStrip(ctx, font(true))
-    private val lock = RoundButton(ctx, R.drawable.ic_pl_lock_open, "Lock controls", 44, 20)
-    private val speedChip = chip("1×", null)
-    private val fit = RoundButton(ctx, R.drawable.ic_pl_fit, "Zoom to fill", 44, 20)
-    private val pip = RoundButton(ctx, R.drawable.ic_pl_pip, "Picture in picture", 44, 20)
-    private val next = chip("Next episode", R.drawable.ic_pl_next)
+    // The action row draws 44 dp buttons and 34–36 dp chips, each in a 48 dp touch area (CLAUDE.md "Design rules").
+    private val lock = RoundButton(ctx, R.drawable.ic_pl_lock_open, "Lock controls", 44, 20, touchDp = TOUCH_DP)
+    private val speedChip = chip("1×", null, pillDp = 34, touch = true)
+    private val fit = RoundButton(ctx, R.drawable.ic_pl_fit, "Zoom to fill", 44, 20, touchDp = TOUCH_DP)
+    private val pip = RoundButton(ctx, R.drawable.ic_pl_pip, "Picture in picture", 44, 20, touchDp = TOUCH_DP)
+    private val next = chip("Next episode", R.drawable.ic_pl_next, pillDp = 36, touch = true)
     private val unlock = RoundButton(ctx, R.drawable.ic_pl_lock, "Unlock controls", 52, 24)
-    private val hud = chip("", null).apply { visibility = GONE }
+    private val hud = chip("", null, pillDp = 40, touch = false).apply { visibility = GONE }
     private val leftBubble = bubble()
     private val rightBubble = bubble()
-    private val settingsPanel = SettingsPanel(ctx, font, { player }, extraSettings) { closePanel() }
+    private val settingsPanel = SettingsPanel(ctx, font, { player }, extraSettings, onExtra = { closePanel() })
 
     private val centre = LinearLayout(ctx)
     private var locked = false
@@ -92,8 +92,8 @@ internal class PhoneControls(
         clipChildren = false
         controls.clipChildren = false
         // Shades only behind the top and bottom rows (the middle of the picture stays clear).
-        topShade.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x99000000.toInt(), 0))
-        bottomShade.background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xB3000000.toInt(), 0))
+        topShade.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(PlayerColors.SHADE_TOP, PlayerColors.SHADE_CLEAR))
+        bottomShade.background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(PlayerColors.SHADE_BOTTOM, PlayerColors.SHADE_CLEAR))
         controls.addView(topShade, LayoutParams(-1, ctx.dp(120), Gravity.TOP))
         controls.addView(bottomShade, LayoutParams(-1, ctx.dp(150), Gravity.BOTTOM))
 
@@ -107,7 +107,7 @@ internal class PhoneControls(
         titleView.text = title
         titleView.maxLines = 1
         titleView.ellipsize = android.text.TextUtils.TruncateAt.END
-        metaView.setTextColor(0xCCFFFFFF.toInt())
+        metaView.setTextColor(PlayerColors.SECONDARY)
         titles.addView(titleView)
         titles.addView(metaView)
         top.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
@@ -126,19 +126,24 @@ internal class PhoneControls(
         // Bottom: seek row, then actions
         val bottom = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         val seekRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; clipChildren = false }
-        seekRow.addView(elapsed, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ctx.dp(8) })
-        seekRow.addView(seek, LinearLayout.LayoutParams(0, ctx.dp(36), 1f).apply { marginStart = ctx.dp(4); marginEnd = ctx.dp(4) })
-        seekRow.addView(remaining, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ctx.dp(8) })
+        // Touch areas are 48 dp while the drawing keeps its size and place: the block sits 2 dp further
+        // out, the seek bar is 48 dp tall with its track centred where it was, and the action row
+        // (48 dp) tucks 6 dp under the seek row (its buttons take touches there first; the gaps
+        // between them still reach the seek bar).
+        seekRow.addView(elapsed, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ctx.dp(10) })
+        seekRow.addView(seek, LinearLayout.LayoutParams(0, ctx.dp(TOUCH_DP), 1f).apply { marginStart = ctx.dp(4); marginEnd = ctx.dp(4) })
+        seekRow.addView(remaining, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = ctx.dp(10) })
         bottom.addView(seekRow, LinearLayout.LayoutParams(-1, -2))
         val actions = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        actions.addView(lock, LinearLayout.LayoutParams(ctx.dp(44), ctx.dp(44)))
-        actions.addView(speedChip, LinearLayout.LayoutParams(-2, ctx.dp(34)).apply { marginStart = ctx.dp(4) })
-        actions.addView(fit, LinearLayout.LayoutParams(ctx.dp(44), ctx.dp(44)).apply { marginStart = ctx.dp(4) })
-        if (onPip != null) actions.addView(pip, LinearLayout.LayoutParams(ctx.dp(44), ctx.dp(44)).apply { marginStart = ctx.dp(4) })
+        actions.addView(lock, LinearLayout.LayoutParams(ctx.dp(TOUCH_DP), ctx.dp(TOUCH_DP)))
+        // "1×" is narrower than 48 dp: its pill sits centred in the touch area, the neighbours ~1–2 dp further right.
+        actions.addView(speedChip, LinearLayout.LayoutParams(-2, ctx.dp(TOUCH_DP)))
+        actions.addView(fit, LinearLayout.LayoutParams(ctx.dp(TOUCH_DP), ctx.dp(TOUCH_DP)))
+        if (onPip != null) actions.addView(pip, LinearLayout.LayoutParams(ctx.dp(TOUCH_DP), ctx.dp(TOUCH_DP)))
         actions.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f))
-        actions.addView(next, LinearLayout.LayoutParams(-2, ctx.dp(36)))
-        bottom.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(2) })
-        safe.addView(bottom, LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(ctx.dp(8), 0, ctx.dp(8), ctx.dp(8)) })
+        actions.addView(next, LinearLayout.LayoutParams(-2, ctx.dp(TOUCH_DP)).apply { marginEnd = ctx.dp(2) })
+        bottom.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = -ctx.dp(6) })
+        safe.addView(bottom, LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(ctx.dp(6), 0, ctx.dp(6), ctx.dp(6)) })
 
         addView(leftBubble, LayoutParams(-2, -2, Gravity.CENTER_VERTICAL or Gravity.START).apply { marginStart = ctx.dp(56) })
         addView(rightBubble, LayoutParams(-2, -2, Gravity.CENTER_VERTICAL or Gravity.END).apply { marginEnd = ctx.dp(56) })
@@ -170,10 +175,10 @@ internal class PhoneControls(
         seek.onScrubStart = { touch() }
         seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); remaining.text = "−" + PlayerActivity.formatTime((seek.duration - it).coerceAtLeast(0)); showHud(null, PlayerActivity.formatTime(it)); touch() }
         seek.onSeek = { player?.seekTo(it); hideHudSoon(); touch() }
-        for (b in listOf(play, rew, ffwd, back, subs, tune, lock, fit, pip, unlock)) b.tint(Color.WHITE)
+        for (b in listOf(play, rew, ffwd, back, subs, tune, lock, fit, pip, unlock)) b.tint(PlayerColors.FOREGROUND)
         // Alone on the picture: a dark disc keeps the unlock button readable on bright scenes.
-        unlock.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x66000000) }
-        seek.tint(Color.WHITE)
+        unlock.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(PlayerColors.SHADOW) }
+        seek.tint(PlayerColors.FOREGROUND)
         controls.visibility = GONE
     }
 
@@ -512,48 +517,77 @@ internal class PhoneControls(
     private fun text(sp: Float, medium: Boolean = false) = TextView(ctx).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
         typeface = font(medium)
-        setTextColor(Color.WHITE)
+        setTextColor(PlayerColors.FOREGROUND)
         fontFeatureSettings = "tnum"
-        setShadowLayer(ctx.dpf(4f), 0f, 0f, 0x66000000)
+        setShadowLayer(ctx.dpf(4f), 0f, 0f, PlayerColors.SHADOW)
     }
 
-    /** A glass pill: optional icon + label. */
-    private fun chip(label: String, icon: Int?) = LinearLayout(ctx).apply {
+    /**
+     * A glass pill [pillDp] tall: optional icon + label. A [touch] chip is a button whose touch area
+     * is at least 48 × 48 dp; the pill is drawn at its own size in the middle.
+     */
+    private fun chip(label: String, icon: Int?, pillDp: Int, touch: Boolean) = Chip(ctx, pillDp, if (touch) TOUCH_DP else 0).apply {
         orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        gravity = Gravity.CENTER
         setPadding(ctx.dp(14), 0, ctx.dp(14), 0)
-        isClickable = true
-        isFocusable = true
-        background = GradientDrawable().apply {
-            setColor(0x33FFFFFF)
-            cornerRadius = ctx.dpf(999f)
-            setStroke(ctx.dp(1), 0x26FFFFFF)
-        }
+        isClickable = touch
+        isFocusable = touch
         addView(ImageView(ctx).apply {
             if (icon != null) setImageResource(icon)
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
+            imageTintList = ColorStateList.valueOf(PlayerColors.FOREGROUND)
             visibility = if (icon != null) VISIBLE else GONE
         }, LinearLayout.LayoutParams(ctx.dp(18), ctx.dp(18)).apply { marginEnd = ctx.dp(6) })
         addView(TextView(ctx).apply {
             text = label
             typeface = font(true)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTextColor(Color.WHITE)
+            setTextColor(PlayerColors.FOREGROUND)
         })
     }
 
     private fun bubble() = TextView(ctx).apply {
         typeface = font(true)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        setTextColor(Color.WHITE)
+        setTextColor(PlayerColors.FOREGROUND)
         gravity = Gravity.CENTER
         setPadding(ctx.dp(20), ctx.dp(12), ctx.dp(20), ctx.dp(12))
-        background = GradientDrawable().apply { setColor(0x59000000); cornerRadius = ctx.dpf(999f) }
+        background = GradientDrawable().apply { setColor(PlayerColors.BUBBLE); cornerRadius = ctx.dpf(999f) }
         visibility = GONE
     }
 
     private fun View.fade() {
         if (visibility != VISIBLE) return
         animate().alpha(0f).setDuration(200).withEndAction { visibility = GONE }.start()
+    }
+
+    /** A row that draws a glass pill around its content, at least [minDp] wide (its touch area). */
+    private class Chip(context: Context, pillDp: Int, private val minDp: Int) : LinearLayout(context) {
+        private val pillHeight = context.dp(pillDp)
+        private var contentWidth = 0
+        private val pill = GradientDrawable().apply {
+            setColor(PlayerColors.CHIP_FILL)
+            cornerRadius = context.dpf(999f)
+            setStroke(context.dp(1), PlayerColors.GLASS_STROKE)
+        }
+
+        init { setWillNotDraw(false) }
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            contentWidth = measuredWidth
+            setMeasuredDimension(maxOf(measuredWidth, context.dp(minDp)), measuredHeight)
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            val w = minOf(contentWidth, width)
+            val h = minOf(pillHeight, height)
+            pill.setBounds((width - w) / 2, (height - h) / 2, (width + w) / 2, (height + h) / 2)
+            pill.draw(canvas)
+        }
+    }
+
+    private companion object {
+        /** Phone touch areas (docs/DESIGN_STYLE.md §2). */
+        const val TOUCH_DP = 48
     }
 }

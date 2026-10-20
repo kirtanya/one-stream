@@ -421,7 +421,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             .build()
         playerView.subtitleView?.apply {
             setFractionalTextSize(prefs.subtitleSize.fraction)
-            setStyle(CaptionStyleCompat(Color.WHITE, 0x99000000.toInt(), Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, Color.BLACK, null))
+            setStyle(CaptionStyleCompat(PlayerColors.SUBTITLE_TEXT, PlayerColors.SUBTITLE_BOX, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, PlayerColors.SUBTITLE_EDGE, null))
         }
     }
 
@@ -996,7 +996,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     private fun buildLayout(): View {
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        val root = FrameLayout(this).apply { setBackgroundColor(PlayerColors.VIDEO_BACKGROUND) }
         val tv = isTelevision()
         playerView = PlayerView(this).apply {
             keepScreenOn = true
@@ -1021,7 +1021,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         }
         playerView.useController = false
         playerView.findViewById<android.widget.ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.indeterminateTintList =
-            android.content.res.ColorStateList.valueOf(Color.WHITE)
+            android.content.res.ColorStateList.valueOf(PlayerColors.FOREGROUND)
         phoneControls = PhoneControls(
             activity = this,
             playerView = playerView,
@@ -1061,7 +1061,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             setPadding(dp(14), dp(4), dp(4), dp(4))
             background = glass(radius = 999)
             visibility = View.GONE
-            nextTitle = text(12f, Color.WHITE, medium = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(220) }
+            nextTitle = text(12f, PlayerColors.FOREGROUND, medium = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(220) }
             nextCountdown = text(12f, Tokens.Night.textSecondary.toArgb()).apply { setPadding(dp(8), 0, dp(8), 0); maxLines = 1 }
             addView(nextTitle)
             addView(nextCountdown)
@@ -1085,7 +1085,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             visibility = View.GONE
             addView(android.widget.ProgressBar(context).apply {
                 isIndeterminate = true
-                indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                indeterminateTintList = android.content.res.ColorStateList.valueOf(PlayerColors.FOREGROUND)
             }, LinearLayout.LayoutParams(dp(12), dp(12)).apply { marginEnd = dp(8) })
         }
         // The chip shows and hides with its text (every caller sets the text's visibility).
@@ -1095,7 +1095,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 statusChip.visibility = visibility
             }
         }.apply {
-            setTextColor(Color.WHITE)
+            setTextColor(PlayerColors.FOREGROUND)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             typeface = font(medium = true)
             maxLines = 1
@@ -1121,7 +1121,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             gravity = Gravity.CENTER
             visibility = View.GONE
             setBackgroundColor(Tokens.Night.canvas.copy(alpha = 0.94f).toArgb())
-            errorText = text(20f, Color.WHITE, medium = true).apply {
+            errorText = text(20f, PlayerColors.FOREGROUND, medium = true).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(48), 0, dp(48), dp(28))
             }
@@ -1153,7 +1153,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         text = label
         isAllCaps = false
         typeface = font(medium = true)
-        setTextColor(if (primary) Tokens.Night.onAccent.toArgb() else Color.WHITE)
+        setTextColor(if (primary) Tokens.Night.onAccent.toArgb() else PlayerColors.FOREGROUND)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         minHeight = dp(40)
         minimumHeight = dp(40)
@@ -1162,7 +1162,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         fun shape(focused: Boolean) = GradientDrawable().apply {
             cornerRadius = dp(999).toFloat()
             setColor(if (primary) Tokens.Night.accent.toArgb() else glassColor)
-            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (primary) Color.TRANSPARENT else hairline)
+            setStroke(dp(if (focused) 2 else 1), if (focused) PlayerColors.FOREGROUND else if (primary) Color.TRANSPARENT else hairline)
         }
         background = android.graphics.drawable.StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), shape(true))
