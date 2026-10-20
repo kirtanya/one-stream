@@ -56,12 +56,87 @@ object TmdbParser {
             certification = certification(o, type, region),
             cast = (o.obj("credits")?.get("cast") as? JsonArray).orEmpty().take(20).mapNotNull { c ->
                 val co = c as? JsonObject ?: return@mapNotNull null
-                CastMember(co.str("name") ?: return@mapNotNull null, co.str("character")?.takeIf { it.isNotBlank() }, co.str("profile_path"))
+                CastMember(co.str("name") ?: return@mapNotNull null, co.str("character")?.takeIf { it.isNotBlank() }, co.str("profile_path"), co.int("id"))
             },
             seasons = seasons,
             imdbId = (o.obj("external_ids")?.str("imdb_id") ?: o.str("imdb_id"))?.takeIf { it.startsWith("tt") },
             providers = providers(o.obj("watch/providers"), region),
             lastAired = lastAiredRegular(o),
+            logoPath = o.obj("images")?.let(::bestLogo),
+            videos = videos(o.obj("videos")),
+            recommendations = (o.obj("recommendations")?.let { parseList(it.toString(), type) }.orEmpty())
+                .ifEmpty { o.obj("similar")?.let { parseList(it.toString(), type) }.orEmpty() }
+                .filter { it.ref != summary.ref && it.posterPath != null }
+                .take(20),
+            genreList = (o["genres"] as? JsonArray).orEmpty().mapNotNull { g ->
+                val go = g as? JsonObject ?: return@mapNotNull null
+                Genre(go.int("id") ?: return@mapNotNull null, go.str("name") ?: return@mapNotNull null)
+            },
+            backdrops = (o.obj("images")?.get("backdrops") as? JsonArray).orEmpty()
+                .mapNotNull { it as? JsonObject }
+                .filter { it.str("iso_639_1") == null } // textless
+                .sortedByDescending { it.double("vote_average") ?: 0.0 }
+                .mapNotNull { it.str("file_path") }
+                .take(8),
+        )
+    }
+
+    /** A title's `images` response (or the appended `images` object) → the best logo path. */
+    fun parseLogo(body: String): String? = bestLogo(root(body))
+
+    /** English logos first, then textless; the best voted; PNG (transparent) before SVG. */
+    private fun bestLogo(images: JsonObject): String? =
+        (images["logos"] as? JsonArray).orEmpty()
+            .mapNotNull { it as? JsonObject }
+            .filter { it.str("file_path") != null && it.str("iso_639_1").let { l -> l == "en" || l == null } }
+            .sortedWith(
+                compareBy<JsonObject>({ if (it.str("iso_639_1") == "en") 0 else 1 })
+                    .thenBy { if (it.str("file_path")!!.endsWith(".svg")) 1 else 0 }
+                    .thenByDescending { it.double("vote_average") ?: 0.0 },
+            )
+            .firstOrNull()?.str("file_path")
+
+    /** YouTube only; trailers, then teasers, then the rest; official first, newest first. */
+    private fun videos(obj: JsonObject?): List<Video> {
+        val order = listOf("Trailer", "Teaser", "Clip", "Featurette", "Behind the Scenes")
+        return (obj?.get("results") as? JsonArray).orEmpty()
+            .mapNotNull { it as? JsonObject }
+            .filter { it.str("site") == "YouTube" && it.str("key") != null }
+            .sortedWith(
+                compareBy<JsonObject>({ order.indexOf(it.str("type")).let { i -> if (i < 0) order.size else i } })
+                    .thenBy { if ((it["official"] as? JsonPrimitive)?.content == "true") 0 else 1 }
+                    .thenByDescending { it.str("published_at").orEmpty() },
+            )
+            .map { Video(it.str("key")!!, it.str("name").orEmpty(), it.str("type").orEmpty(), (it["official"] as? JsonPrimitive)?.content == "true") }
+            .take(12)
+    }
+
+    fun parseGenres(body: String): List<Genre> =
+        (root(body)["genres"] as? JsonArray).orEmpty().mapNotNull { g ->
+            val go = g as? JsonObject ?: return@mapNotNull null
+            Genre(go.int("id") ?: return@mapNotNull null, go.str("name") ?: return@mapNotNull null)
+        }
+
+    /** A person with `combined_credits`: acting credits, most popular first, one entry per title. */
+    fun parsePerson(body: String): PersonDetails {
+        val o = root(body)
+        val credits = (o.obj("combined_credits")?.get("cast") as? JsonArray).orEmpty()
+            .mapNotNull { it as? JsonObject }
+            .sortedByDescending { it.double("popularity") ?: 0.0 }
+            .mapNotNull { c ->
+                val type = when (c.str("media_type")) { "movie" -> MediaType.MOVIE; "tv" -> MediaType.TV; else -> null } ?: return@mapNotNull null
+                summary(c, type)
+            }
+            .filter { it.posterPath != null }
+            .distinctBy { it.ref }
+            .take(40)
+        return PersonDetails(
+            id = o.int("id") ?: error("No id in person"),
+            name = o.str("name").orEmpty(),
+            profilePath = o.str("profile_path"),
+            biography = o.str("biography").orEmpty(),
+            knownFor = o.str("known_for_department"),
+            credits = credits,
         )
     }
 

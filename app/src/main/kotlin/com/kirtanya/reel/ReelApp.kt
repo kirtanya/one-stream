@@ -37,6 +37,7 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val aggregator by lazy { SourceAggregator() }
     val addonStore by lazy { com.kirtanya.reel.data.AddonStore(this, fetcher) }
     val history by lazy { WatchHistoryStore(this) }
+    val watchlist by lazy { com.kirtanya.reel.data.WatchlistStore(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
 
     /** TVs receive sources from the phone; phones send them. */
@@ -44,10 +45,10 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         getSystemService(android.app.UiModeManager::class.java).currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
             packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
     }
-    val tvSync by lazy { com.kirtanya.reel.data.sync.TvSync(this, sources) }
+    val tvSync by lazy { com.kirtanya.reel.data.sync.TvSync(this, sources, watchlist) }
     val phoneSync by lazy {
         val syncHttp = http.newBuilder().readTimeout(2, java.util.concurrent.TimeUnit.MINUTES).build()
-        com.kirtanya.reel.data.sync.PhoneSync(this, sources, OkHttpFetcher(syncHttp, null), appScope)
+        com.kirtanya.reel.data.sync.PhoneSync(this, sources, watchlist, OkHttpFetcher(syncHttp, null), appScope)
     }
 
     override fun onCreate() {

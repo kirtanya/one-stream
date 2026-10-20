@@ -19,7 +19,26 @@ data class TitleSummary(
     val overview: String,
 )
 
-data class CastMember(val name: String, val character: String?, val profilePath: String?)
+data class CastMember(val name: String, val character: String?, val profilePath: String?, val id: Int? = null)
+
+data class Genre(val id: Int, val name: String)
+
+/** A YouTube video from TMDB (trailers first). Open [youtubeUrl] with an ACTION_VIEW intent. */
+data class Video(val key: String, val name: String, val type: String, val official: Boolean) {
+    val youtubeUrl get() = "https://www.youtube.com/watch?v=$key"
+    val thumbnailUrl get() = "https://img.youtube.com/vi/$key/hqdefault.jpg"
+    val isTrailer get() = type == "Trailer" || type == "Teaser"
+}
+
+/** A person's page: photo, bio and what they're known for (most popular first). */
+data class PersonDetails(
+    val id: Int,
+    val name: String,
+    val profilePath: String?,
+    val biography: String,
+    val knownFor: String?,
+    val credits: List<TitleSummary>,
+)
 
 data class Provider(val id: Int, val name: String, val logoPath: String?) {
     companion object {
@@ -73,7 +92,19 @@ data class TitleDetails(
     val providers: WatchProviders,
     /** Shows: the latest episode that has aired (TMDB `last_episode_to_air`), so Up next never points past it. */
     val lastAired: Pair<Int, Int>? = null,
-)
+    /** The title's logo artwork (transparent PNG, English or textless) to show instead of plain text. */
+    val logoPath: String? = null,
+    /** YouTube videos, trailers first. */
+    val videos: List<Video> = emptyList(),
+    /** "More like this": TMDB recommendations, else similar titles. */
+    val recommendations: List<TitleSummary> = emptyList(),
+    /** [genres] with ids, for "browse this genre". */
+    val genreList: List<Genre> = emptyList(),
+    /** Extra textless backdrops (for a slideshow behind the title). */
+    val backdrops: List<String> = emptyList(),
+) {
+    val trailer: Video? get() = videos.firstOrNull { it.isTrailer }
+}
 
 data class Episode(
     val season: Int,
@@ -85,7 +116,7 @@ data class Episode(
     val runtimeMin: Int?,
 )
 
-/** TMDB image CDN URLs. Sizes: posters w185/w342/w500, backdrops w780/w1280, logos w92/w154. */
+/** TMDB image CDN URLs. Sizes: posters w185/w342/w500, backdrops w780/w1280, provider logos w92/w154, title logos w300/w500. */
 object TmdbImages {
     private const val BASE = "https://image.tmdb.org/t/p/"
     fun poster(path: String?, size: String = "w342") = path?.let { BASE + size + it }
@@ -93,4 +124,6 @@ object TmdbImages {
     fun logo(path: String?, size: String = "w92") = path?.let { BASE + size + it }
     fun profile(path: String?, size: String = "w185") = path?.let { BASE + size + it }
     fun still(path: String?, size: String = "w300") = path?.let { BASE + size + it }
+    /** A title's logo artwork ([TitleDetails.logoPath]). */
+    fun titleLogo(path: String?, size: String = "w500") = path?.let { BASE + size + it }
 }

@@ -9,6 +9,7 @@ import com.kirtanya.reel.core.sync.SyncClient
 import com.kirtanya.reel.core.sync.SyncException
 import com.kirtanya.reel.core.sync.TvCredentials
 import com.kirtanya.reel.data.SourcesStore
+import com.kirtanya.reel.data.WatchlistStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -17,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -56,6 +59,7 @@ data class PhoneSyncState(val tvs: List<PairedTv> = emptyList(), val autoSync: B
 class PhoneSync(
     private val context: Context,
     private val sources: SourcesStore,
+    private val watchlist: WatchlistStore,
     http: HttpFetcher,
     private val scope: CoroutineScope,
 ) {
@@ -75,8 +79,9 @@ class PhoneSync(
     fun start() {
         scope.launch {
             sources.ensureReady()
-            // Every change (and the current state once) → a push a few seconds later; unchanged sources are skipped by hash.
-            sources.state.debounce(3_000).collect { if (_state.value.autoSync) pushAll() }
+            // Every change to sources or the watchlist (and the current state once) → a push a few seconds
+            // later; an unchanged bundle is skipped by hash.
+            merge(sources.state.map { }, watchlist.all.map { }).debounce(3_000).collect { if (_state.value.autoSync) pushAll() }
         }
         scope.launch {
             while (isActive) {
@@ -116,7 +121,7 @@ class PhoneSync(
     suspend fun push(tvId: String, force: Boolean = false): String? = pushLock.withLock {
         val tv = _state.value.tvs.firstOrNull { it.tvId == tvId } ?: return@withLock null
         if (tv.needsPairing && !force) return@withLock null
-        val bundle = sources.exportBundle(from = deviceName)
+        val bundle = sources.exportBundle(from = deviceName).copy(watchlist = watchlist.all.value)
         val hash = bundle.copy(from = "").hashCode()
         if (!force && hash == tv.lastHash && tv.lastError == null) return@withLock null
         _state.value = _state.value.copy(syncing = true)

@@ -1,5 +1,6 @@
 package com.kirtanya.reel.core.sync
 
+import com.kirtanya.reel.core.library.WatchlistItem
 import kotlinx.serialization.Serializable
 
 /** Addons and plugin repositories as one device has them: what the phone sends the TV. */
@@ -10,6 +11,11 @@ data class SourcesBundle(
     val repos: List<BundleRepo> = emptyList(),
     /** Who sent it, for "Last update from Pixel 8". */
     val from: String = "",
+    /**
+     * The sender's watchlist including removals; merged (newest change wins), not mirrored, so
+     * titles saved on the TV survive. Null = the sender doesn't sync a watchlist (older app).
+     */
+    val watchlist: List<WatchlistItem>? = null,
 )
 
 @Serializable

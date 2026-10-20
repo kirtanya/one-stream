@@ -12,6 +12,7 @@ import com.kirtanya.reel.core.sync.SyncHost
 import com.kirtanya.reel.core.sync.SyncProtocol
 import com.kirtanya.reel.core.sync.SyncServer
 import com.kirtanya.reel.data.SourcesStore
+import com.kirtanya.reel.data.WatchlistStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,7 +37,7 @@ data class TvSyncState(
  * TV side: runs the sync server while Reel's process is alive (kept up by the engine's foreground
  * service) and announces it on the network. Pairing only opens while the Phone & TV card is shown.
  */
-class TvSync(private val context: Context, private val sources: SourcesStore) : SyncHost {
+class TvSync(private val context: Context, private val sources: SourcesStore, private val watchlist: WatchlistStore) : SyncHost {
     private val prefs = context.getSharedPreferences("sync_tv", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
     private val phones = ListSerializer(PairedPhone.serializer())
@@ -90,7 +91,13 @@ class TvSync(private val context: Context, private val sources: SourcesStore) : 
     }
 
     /** One apply at a time (a phone retry can't run alongside its first attempt). */
-    override suspend fun apply(bundle: SourcesBundle): ApplyResult = applyLock.withLock { sources.applyBundle(bundle) }
+    override suspend fun apply(bundle: SourcesBundle): ApplyResult = applyLock.withLock {
+        val result = sources.applyBundle(bundle)
+        // The watchlist is merged, not mirrored: titles saved on the TV stay.
+        val changed = bundle.watchlist?.let(watchlist::mergeFrom) ?: 0
+        if (changed == 0) result
+        else result.copy(summary = listOf(result.summary.takeUnless { it == "already up to date" }, "watchlist: $changed changed").filterNotNull().joinToString(", "))
+    }
 
     override fun pairedPhones(): List<PairedPhone> =
         prefs.getString("phones", null)?.let { runCatching { json.decodeFromString(phones, it) }.getOrNull() }.orEmpty()

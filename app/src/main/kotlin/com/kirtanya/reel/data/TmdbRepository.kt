@@ -3,7 +3,9 @@ package com.kirtanya.reel.data
 import android.util.LruCache
 import com.kirtanya.reel.BuildConfig
 import com.kirtanya.reel.core.tmdb.Episode
+import com.kirtanya.reel.core.tmdb.Genre
 import com.kirtanya.reel.core.tmdb.MediaType
+import com.kirtanya.reel.core.tmdb.PersonDetails
 import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
@@ -66,6 +68,19 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
 
     suspend fun season(tvId: Int, season: Int): List<Episode> =
         TmdbParser.parseSeason(get(TmdbPaths.season(tvId, season)))
+
+    /** The title's logo artwork path (for a Home hero), or null. Details already carry it as [TitleDetails.logoPath]. */
+    suspend fun logo(ref: TitleRef): String? = runCatching { TmdbParser.parseLogo(get(TmdbPaths.images(ref))) }.getOrNull()
+
+    /** All genres for films or shows (stable; cached like everything else). */
+    suspend fun genres(type: MediaType): List<Genre> = TmdbParser.parseGenres(get(TmdbPaths.genres(type)))
+
+    /** Popular titles in one genre; [page] starts at 1 (20 per page). */
+    suspend fun byGenre(type: MediaType, genreId: Int, page: Int = 1): List<TitleSummary> =
+        list(TmdbPaths.byGenre(type, genreId, page), type)
+
+    /** A cast member's page (photo, bio, films and shows). */
+    suspend fun person(id: Int): PersonDetails = TmdbParser.parsePerson(get(TmdbPaths.person(id)))
 
     private suspend fun list(path: String, defaultType: MediaType? = null) =
         TmdbParser.parseList(get(path), defaultType)

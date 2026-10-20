@@ -20,11 +20,24 @@ object TmdbPaths {
 
     fun details(ref: TitleRef): String {
         val extras = when (ref.type) {
-            MediaType.MOVIE -> "credits,external_ids,watch%2Fproviders,release_dates"
-            MediaType.TV -> "credits,external_ids,watch%2Fproviders,content_ratings"
+            MediaType.MOVIE -> "credits,external_ids,watch%2Fproviders,release_dates,$EXTRAS"
+            MediaType.TV -> "credits,external_ids,watch%2Fproviders,content_ratings,$EXTRAS"
         }
-        return "${ref.type.path}/${ref.id}?language=en-US&append_to_response=$extras"
+        return "${ref.type.path}/${ref.id}?language=en-US&append_to_response=$extras&include_image_language=en,null&include_video_language=en,null"
     }
 
     fun season(tvId: Int, season: Int) = "tv/$tvId/season/$season?language=en-US"
+
+    /** Logos and backdrops only (e.g. a logo for a Home hero without fetching full details). */
+    fun images(ref: TitleRef) = "${ref.type.path}/${ref.id}/images?include_image_language=en,null"
+
+    fun genres(type: MediaType) = "genre/${type.path}/list?language=en-US"
+
+    /** Popular titles in one genre. */
+    fun byGenre(type: MediaType, genreId: Int, page: Int = 1) =
+        "discover/${type.path}?language=en-US&sort_by=popularity.desc&with_genres=$genreId&include_adult=false&vote_count.gte=50&page=$page"
+
+    fun person(id: Int) = "person/$id?language=en-US&append_to_response=combined_credits"
+
+    private const val EXTRAS = "images,videos,recommendations,similar"
 }
