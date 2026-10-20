@@ -73,6 +73,8 @@
         <activity
             android:name=".player.PlayerActivity"
             android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.Reel.Player" />
 

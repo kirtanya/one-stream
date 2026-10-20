@@ -70,6 +70,7 @@ class TvControlsRender {
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
         // No video surface here: set the colour the sampler would pick for this picture.
         c.applyColor(color)
+        c.preview(2_712_000, 7_020_000, 3_300_000, playing = true)
         root.captureRoboImage("build/outputs/roborazzi/$name.png")
         exo.release()
     }

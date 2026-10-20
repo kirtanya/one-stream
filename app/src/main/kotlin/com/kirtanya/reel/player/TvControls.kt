@@ -2,13 +2,10 @@ package com.kirtanya.reel.player
 
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
-import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.StateListDrawable
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
@@ -18,33 +15,28 @@ import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.media3.common.C
 import androidx.media3.common.Player
-import androidx.media3.common.TrackSelectionOverride
-import androidx.media3.common.Tracks
-import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
-import androidx.media3.ui.TimeBar
-import java.util.Locale
+import com.kirtanya.reel.R
 import kotlin.math.pow
 
 /**
  * TV player controls: one strip along the bottom, nothing in the middle of the picture and no
- * dimming. Transport on the left, a short seek bar on the right, Settings opens a panel above the
- * video. The strip has no background of its own, so its colour follows the picture behind it: the
- * pixels under it are sampled (PixelCopy, twice a second while it shows) and it turns white or
- * near-black, whichever keeps the higher contrast against the darkest/brightest part.
+ * dimming. Title and "ends at" on top; a round play button, skips, subtitles and settings on the
+ * left; a short seek bar with elapsed / remaining time on the right. Settings opens a panel above
+ * the video. The strip has no background of its own, so its colour follows the picture behind it:
+ * the pixels under it are sampled (PixelCopy, twice a second while it shows) and it turns white or
+ * near-black, whichever keeps the higher contrast against the busiest part.
  */
 internal class TvControls(
     private val playerView: PlayerView,
     title: String,
     private val font: (medium: Boolean) -> Typeface?,
     /** Extra rows at the end of the Settings panel (label → action), e.g. "Open in another player". */
-    private val extraSettings: () -> List<Pair<String, () -> Unit>>,
+    extraSettings: () -> List<Pair<String, () -> Unit>>,
 ) {
     private val context = playerView.context
     private val main = Handler(Looper.getMainLooper())
@@ -53,78 +45,62 @@ internal class TvControls(
     /** Added over the PlayerView. */
     val view = FrameLayout(context)
     private val bar = LinearLayout(context)
-    private val titleView = text(15f, medium = true)
-    private val rew = icon(androidx.media3.ui.R.drawable.exo_ic_rewind, "Back 10 seconds")
-    private val play = icon(androidx.media3.ui.R.drawable.exo_icon_pause, "Play or pause")
-    private val ffwd = icon(androidx.media3.ui.R.drawable.exo_ic_forward, "Forward 10 seconds")
-    private val settings = icon(androidx.media3.ui.R.drawable.exo_ic_settings, "Settings")
-    private val position = text(13f)
-    private val duration = text(13f)
-    private val timeBar = DefaultTimeBar(context, null)
-    private val panel = LinearLayout(context)
-    private val panelScroll = ScrollView(context)
+    private val titleView = text(20f, medium = true)
+    private val metaView = text(13f)
+    private val play = PlayButton(context, 56)
+    private val rew = SkipButton(context, forward = false, seconds = 10, sizeDp = 46, iconDp = 28, font = font(true))
+    private val ffwd = SkipButton(context, forward = true, seconds = 10, sizeDp = 46, iconDp = 28, font = font(true))
+    private val subs = RoundButton(context, R.drawable.ic_pl_subtitles, "Subtitles", 46, 22)
+    private val settings = RoundButton(context, R.drawable.ic_pl_tune, "Settings", 46, 22)
+    private val elapsed = text(14f, medium = true)
+    private val remaining = text(14f, medium = true)
+    private val seek = SeekStrip(context, font(true))
+    private val settingsPanel = SettingsPanel(context, font, { player }, extraSettings) { hide() }
 
     private var fg = Color.WHITE
     private var colorAnim: ValueAnimator? = null
-    private var scrubbing = false
     private var swallowUp: Int? = null
 
     val visible get() = view.visibility == View.VISIBLE
-    val panelOpen get() = panelScroll.visibility == View.VISIBLE
+    val panelOpen get() = settingsPanel.open
 
     init {
         view.visibility = View.GONE
         view.clipChildren = false
-
+        bar.clipChildren = false
         bar.orientation = LinearLayout.VERTICAL
         titleView.text = title
         titleView.maxLines = 1
         titleView.ellipsize = android.text.TextUtils.TruncateAt.END
-        bar.addView(titleView, LinearLayout.LayoutParams(-1, -2).apply { marginStart = dp(6); bottomMargin = dp(6) })
+        bar.addView(titleView, LinearLayout.LayoutParams(-1, -2).apply { marginStart = context.dp(4) })
+        bar.addView(metaView, LinearLayout.LayoutParams(-1, -2).apply { marginStart = context.dp(4); topMargin = context.dp(2); bottomMargin = context.dp(14) })
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
         }
-        for (b in listOf(rew, play, ffwd, settings)) row.addView(b, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
+        row.addView(play, LinearLayout.LayoutParams(context.dp(56), context.dp(56)).apply { marginEnd = context.dp(14) })
+        for (b in listOf(rew, ffwd, subs, settings)) row.addView(b, LinearLayout.LayoutParams(context.dp(46), context.dp(46)).apply { marginEnd = context.dp(8) })
         row.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-        row.addView(position, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(10) })
+        row.addView(elapsed, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
         // Short, on the right of the same line (not the full width).
-        row.addView(timeBar, LinearLayout.LayoutParams(dp(320), dp(32)))
-        row.addView(duration, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
+        row.addView(seek, LinearLayout.LayoutParams(context.dp(380), context.dp(28)))
+        row.addView(remaining, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.dp(6) })
         bar.addView(row, LinearLayout.LayoutParams(-1, -2))
-        view.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(dp(32), 0, dp(32), dp(20)) })
+        view.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(context.dp(40), 0, context.dp(40), context.dp(24)) })
 
         rew.setOnClickListener { seekBy(-10_000); touch() }
         ffwd.setOnClickListener { seekBy(10_000); touch() }
         play.setOnClickListener { togglePlay(); touch() }
-        settings.setOnClickListener { openPanel() }
-        // Left/right inside the strip move focus; the seek bar keeps them for scrubbing.
-        rew.nextFocusLeftId = View.NO_ID
-        timeBar.isFocusable = true
-        timeBar.setKeyTimeIncrement(10_000)
-        timeBar.addListener(object : TimeBar.OnScrubListener {
-            override fun onScrubStart(timeBar: TimeBar, pos: Long) { scrubbing = true; position.text = PlayerActivity.formatTime(pos); touch() }
-            override fun onScrubMove(timeBar: TimeBar, pos: Long) { position.text = PlayerActivity.formatTime(pos); touch() }
-            override fun onScrubStop(timeBar: TimeBar, pos: Long, canceled: Boolean) {
-                scrubbing = false
-                if (!canceled) player?.seekTo(pos)
-                touch()
-            }
+        subs.setOnClickListener { openPanel("sub") }
+        settings.setOnClickListener { openPanel(null) }
+        seek.onScrubStart = { touch() }
+        seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); touch() }
+        seek.onSeek = { player?.seekTo(it); touch() }
+
+        view.addView(settingsPanel.panel, FrameLayout.LayoutParams(context.dp(340), -2, Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, context.dp(24), context.dp(40), context.dp(150))
         })
-
-        panel.orientation = LinearLayout.VERTICAL
-        panel.setPadding(dp(8), dp(8), dp(8), dp(8))
-        panelScroll.addView(panel)
-        panelScroll.background = GradientDrawable().apply {
-            setColor(0xE6141416.toInt())
-            cornerRadius = dp(18).toFloat()
-            setStroke(dp(1), 0x33FFFFFF)
-        }
-        panelScroll.visibility = View.GONE
-        panelScroll.isFillViewport = false
-        view.addView(panelScroll, FrameLayout.LayoutParams(dp(320), -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, dp(24), dp(32), dp(104)) })
-
         applyColor(fg)
     }
 
@@ -142,7 +118,7 @@ internal class TvControls(
 
     // ---------------------------------------------------------------- show / hide
 
-    private val hideRunnable = Runnable { if (player?.isPlaying == true && !panelOpen && !scrubbing) hide() }
+    private val hideRunnable = Runnable { if (player?.isPlaying == true && !panelOpen && !seek.scrubbing) hide() }
     private val tick = object : Runnable {
         override fun run() {
             if (!visible) return
@@ -161,6 +137,9 @@ internal class TvControls(
     fun show(focus: View? = play) {
         if (!visible) {
             view.visibility = View.VISIBLE
+            bar.alpha = 0f
+            bar.translationY = context.dpf(16f)
+            bar.animate().alpha(1f).translationY(0f).setDuration(180).start()
             refresh()
             main.removeCallbacks(tick); main.post(tick)
             main.removeCallbacks(sampler); main.post(sampler)
@@ -170,7 +149,7 @@ internal class TvControls(
     }
 
     fun hide() {
-        closePanel()
+        settingsPanel.hide()
         view.visibility = View.GONE
         main.removeCallbacks(hideRunnable)
         main.removeCallbacks(tick)
@@ -222,12 +201,25 @@ internal class TvControls(
             return false
         }
         if (code == KeyEvent.KEYCODE_BACK) {
-            if (panelOpen) { if (!panelBack()) closePanel() } else hide()
+            // A scrub in progress takes Back itself (cancels it).
+            if (seek.scrubbing) return false
+            if (panelOpen) { if (!settingsPanel.back()) closePanel() } else hide()
             swallowUp = code
             return true
         }
         touch()
         return false
+    }
+
+    /** Renders only: a mid-film state without a player. */
+    internal fun preview(positionMs: Long, durationMs: Long, bufferedMs: Long, playing: Boolean) {
+        seek.duration = durationMs
+        seek.buffered = bufferedMs
+        seek.position = positionMs
+        elapsed.text = PlayerActivity.formatTime(positionMs)
+        remaining.text = "−" + PlayerActivity.formatTime(durationMs - positionMs)
+        play.setIcon(if (playing) R.drawable.ic_pl_pause else R.drawable.ic_pl_play)
+        metaView.text = "Ends at 10:42 PM"
     }
 
     // ---------------------------------------------------------------- playback
@@ -249,134 +241,37 @@ internal class TvControls(
     private fun refresh() {
         val p = player ?: return
         val playing = p.playWhenReady && p.playbackState != Player.STATE_ENDED
-        play.setImageResource(if (playing) androidx.media3.ui.R.drawable.exo_icon_pause else androidx.media3.ui.R.drawable.exo_icon_play)
+        play.setIcon(if (playing) R.drawable.ic_pl_pause else R.drawable.ic_pl_play)
         val d = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
-        timeBar.setDuration(d)
-        timeBar.setBufferedPosition(p.bufferedPosition)
-        if (!scrubbing) {
-            timeBar.setPosition(p.currentPosition)
-            position.text = PlayerActivity.formatTime(p.currentPosition)
-        }
-        duration.text = if (d > 0) PlayerActivity.formatTime(d) else "--:--"
+        seek.duration = d
+        seek.buffered = p.bufferedPosition
+        seek.position = p.currentPosition
+        if (!seek.scrubbing) elapsed.text = PlayerActivity.formatTime(p.currentPosition)
+        remaining.text = if (d > 0) "−" + PlayerActivity.formatTime((d - p.currentPosition).coerceAtLeast(0)) else "--:--"
+        metaView.text = metaLine(p, d)
+    }
+
+    /** "Ends at 10:42 PM" (at the current speed); "Paused" when paused. */
+    private fun metaLine(p: Player, d: Long): String {
+        if (d <= 0) return ""
+        val left = ((d - p.currentPosition) / p.playbackParameters.speed).toLong().coerceAtLeast(0)
+        val end = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(System.currentTimeMillis() + left))
+        return if (p.playWhenReady) "Ends at $end" else "Paused · ends at $end"
     }
 
     // ---------------------------------------------------------------- settings panel
 
-    /** The submenu being shown, or null for the main list. */
-    private var submenu: String? = null
-
-    internal fun openPanel() {
-        submenu = null
-        buildMain()
-        panelScroll.visibility = View.VISIBLE
+    internal fun openPanel(section: String? = null) {
+        settingsPanel.show(section)
         main.removeCallbacks(hideRunnable)
-        focusSelected()
     }
 
     private fun closePanel() {
         if (!panelOpen) return
-        panelScroll.visibility = View.GONE
+        settingsPanel.hide()
         if (visible) settings.requestFocus()
         touch()
     }
-
-    /** Back inside the panel: submenu → main list. False when already on the main list. */
-    private fun panelBack(): Boolean {
-        val from = submenu ?: return false
-        submenu = null
-        buildMain()
-        panel.findViewWithTag<View>(from)?.requestFocus() ?: panel.getChildAt(0)?.requestFocus()
-        return true
-    }
-
-    private fun buildMain() {
-        panel.removeAllViews()
-        val p = player ?: return
-        panel.addView(header("Settings"))
-        panel.addView(row("Subtitles", current(p, C.TRACK_TYPE_TEXT) ?: "Off", tag = "sub") { showTracks(C.TRACK_TYPE_TEXT) })
-        if (trackOptions(p, C.TRACK_TYPE_AUDIO).size > 1) {
-            panel.addView(row("Audio", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", tag = "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
-        }
-        panel.addView(row("Speed", speedLabel(p.playbackParameters.speed), tag = "speed") { showSpeeds() })
-        for ((label, action) in extraSettings()) panel.addView(row(label, null) { hide(); action() })
-    }
-
-    private fun showTracks(type: Int) {
-        val p = player ?: return
-        submenu = if (type == C.TRACK_TYPE_TEXT) "sub" else "audio"
-        panel.removeAllViews()
-        panel.addView(header(if (type == C.TRACK_TYPE_TEXT) "Subtitles" else "Audio"))
-        val options = trackOptions(p, type)
-        if (type == C.TRACK_TYPE_TEXT) {
-            val off = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT) || options.none { it.selected }
-            panel.addView(choice("Off", off) {
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-                panelBack()
-            })
-        }
-        for (o in options) {
-            panel.addView(choice(o.label, o.selected) {
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(type, false)
-                    .setOverrideForType(TrackSelectionOverride(o.group.mediaTrackGroup, o.index))
-                    .build()
-                panelBack()
-            })
-        }
-        if (options.isEmpty() && type == C.TRACK_TYPE_TEXT) panel.addView(note("No subtitles for this video"))
-        focusSelected()
-    }
-
-    private fun showSpeeds() {
-        val p = player ?: return
-        submenu = "speed"
-        panel.removeAllViews()
-        panel.addView(header("Speed"))
-        val now = p.playbackParameters.speed
-        for (s in listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)) {
-            panel.addView(choice(speedLabel(s), kotlin.math.abs(s - now) < 0.01f) {
-                p.setPlaybackSpeed(s)
-                panelBack()
-            })
-        }
-        focusSelected()
-    }
-
-    private fun focusSelected() {
-        (0 until panel.childCount).map { panel.getChildAt(it) }.firstOrNull { it.tag == SELECTED }?.requestFocus()
-            ?: (0 until panel.childCount).map { panel.getChildAt(it) }.firstOrNull { it.isFocusable }?.requestFocus()
-    }
-
-    private class TrackOption(val group: Tracks.Group, val index: Int, val label: String, val selected: Boolean)
-
-    private fun trackOptions(p: Player, type: Int): List<TrackOption> {
-        val out = mutableListOf<TrackOption>()
-        for (g in p.currentTracks.groups) {
-            if (g.type != type) continue
-            for (i in 0 until g.length) {
-                if (!g.isTrackSupported(i)) continue
-                out += TrackOption(g, i, trackLabel(g.getTrackFormat(i), out.size + 1), g.isTrackSelected(i))
-            }
-        }
-        // Same label twice (two English tracks): number them so they can be told apart.
-        val dupes = out.groupBy { it.label }.filter { it.value.size > 1 }.keys
-        return out.map { if (it.label in dupes) TrackOption(it.group, it.index, "${it.label} (${out.indexOf(it) + 1})", it.selected) else it }
-    }
-
-    private fun trackLabel(f: androidx.media3.common.Format, n: Int): String {
-        val lang = f.language?.takeIf { it.isNotBlank() && it != C.LANGUAGE_UNDETERMINED }
-            ?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.getDefault()).takeIf { d -> d.isNotBlank() } ?: it }
-        val channels = if (f.channelCount == 6) " 5.1" else if (f.channelCount == 8) " 7.1" else ""
-        return listOfNotNull(f.label?.takeIf { it.isNotBlank() }, lang?.takeIf { f.label?.contains(it, true) != true })
-            .joinToString(" · ").ifBlank { "Track $n" } + channels
-    }
-
-    private fun current(p: Player, type: Int): String? {
-        if (type == C.TRACK_TYPE_TEXT && p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) return null
-        return trackOptions(p, type).firstOrNull { it.selected }?.label
-    }
-
-    private fun speedLabel(s: Float) = if (s == 1f) "Normal" else (if (s % 1f == 0f) "${s.toInt()}×" else "${s}×")
 
     // ---------------------------------------------------------------- adaptive contrast
 
@@ -416,7 +311,6 @@ internal class TvControls(
     }
 
     internal fun decide(lum: FloatArray) {
-        lum.sort()
         fun worst(fgLum: Float): Float {
             // Contrast against every pixel; the 10th percentile is what the busiest part of the picture leaves.
             val c = FloatArray(lum.size) { contrast(fgLum, lum[it]) }
@@ -456,30 +350,13 @@ internal class TvControls(
 
     private fun paint(c: Int) {
         fg = c
-        val shadow = if (luminance(c) > 0.5f) 0x80000000.toInt() else 0x66FFFFFF
-        for (t in listOf(titleView, position, duration)) {
-            t.setTextColor(c)
-            t.setShadowLayer(dp(6).toFloat(), 0f, 0f, shadow)
+        val shadow = if (luminance(c) > 0.5f) 0x80000000.toInt() else 0x59FFFFFF
+        for (t in listOf(titleView, metaView, elapsed, remaining)) {
+            t.setTextColor(if (t === metaView) withAlpha(c, 0xD9) else c)
+            t.setShadowLayer(context.dpf(6f), 0f, 0f, shadow)
         }
-        for (b in listOf(rew, play, ffwd, settings)) {
-            b.imageTintList = ColorStateList.valueOf(c)
-            b.background = focusRing(c)
-        }
-        timeBar.setPlayedColor(c)
-        timeBar.setScrubberColor(c)
-        timeBar.setBufferedColor(withAlpha(c, 0x8C))
-        timeBar.setUnplayedColor(withAlpha(c, 0x40))
-    }
-
-    private fun focusRing(c: Int) = StateListDrawable().apply {
-        val on = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(withAlpha(c, 0x2E))
-            setStroke(dp(2), c)
-        }
-        addState(intArrayOf(android.R.attr.state_focused), on)
-        addState(intArrayOf(android.R.attr.state_pressed), on)
-        addState(intArrayOf(), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.TRANSPARENT) })
+        for (b in listOf(play, rew, ffwd, subs, settings)) b.tint(c)
+        seek.tint(c)
     }
 
     // ---------------------------------------------------------------- views
@@ -488,65 +365,12 @@ internal class TvControls(
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
         typeface = font(medium)
         setTextColor(Color.WHITE)
+        fontFeatureSettings = "tnum"
     }
-
-    private fun icon(res: Int, label: String) = ImageButton(context).apply {
-        setImageResource(res)
-        contentDescription = label
-        scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-        setPadding(dp(10), dp(10), dp(10), dp(10))
-        isFocusable = true
-    }
-
-    private fun header(label: String) = text(12f, medium = true).apply {
-        text = label.uppercase()
-        letterSpacing = 0.08f
-        setTextColor(0x99FFFFFF.toInt())
-        setPadding(dp(12), dp(6), dp(12), dp(8))
-    }
-
-    private fun note(label: String) = text(13f).apply {
-        text = label
-        setTextColor(0x99FFFFFF.toInt())
-        setPadding(dp(12), dp(8), dp(12), dp(8))
-    }
-
-    private fun row(label: String, value: String?, tag: String? = null, onClick: () -> Unit) = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        isFocusable = true
-        this.tag = tag
-        background = rowBackground()
-        addView(text(14f, medium = true).apply { text = label }, LinearLayout.LayoutParams(0, -2, 1f))
-        if (value != null) addView(text(13f).apply {
-            text = "$value  ›"
-            setTextColor(0xB3FFFFFF.toInt())
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            maxWidth = dp(150)
-        })
-        setOnClickListener { onClick() }
-    }
-
-    private fun choice(label: String, selected: Boolean, onClick: () -> Unit) = row((if (selected) "✓  " else "     ") + label, null) { onClick() }
-        .apply { if (selected) tag = SELECTED }
-
-    private fun rowBackground() = StateListDrawable().apply {
-        val on = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = dp(10).toFloat(); setStroke(dp(2), Color.WHITE) }
-        addState(intArrayOf(android.R.attr.state_focused), on)
-        addState(intArrayOf(android.R.attr.state_pressed), on)
-        addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
-    }
-
-    private fun dp(v: Int) = (v * context.resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val SELECTED = "selected"
         /** Near-black: within 5 % of black's contrast, a little softer on the eye. */
         val DARK = 0xFF0B0B0C.toInt()
-
-        private fun withAlpha(c: Int, a: Int) = (c and 0x00FFFFFF) or (a shl 24)
 
         /** WCAG relative luminance of an sRGB colour. */
         fun luminance(argb: Int): Float {

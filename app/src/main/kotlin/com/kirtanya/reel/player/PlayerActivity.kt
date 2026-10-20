@@ -117,6 +117,8 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var playerView: PlayerView
     /** TV only: the bottom-strip controls (PlayerView's own controller is off there). */
     private var tvControls: TvControls? = null
+    /** Phone only: our controls and gestures (PlayerView's controller is off everywhere). */
+    private var phoneControls: PhoneControls? = null
     private lateinit var status: TextView
     private lateinit var resumeChip: Button
     private lateinit var nextCard: LinearLayout
@@ -145,6 +147,14 @@ class PlayerActivity : ComponentActivity() {
         // Phones: landscape from the first frame (most video is wide; a portrait video turns back below).
         if (!isTelevision()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         setContentView(buildLayout())
+        // Phone: Back closes the settings panel before it leaves the player.
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (phoneControls?.handleBack() == true) return
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
+        })
         start()
     }
 
@@ -289,6 +299,7 @@ class PlayerActivity : ComponentActivity() {
         player = exo
         playerView.player = exo
         tvControls?.attach(exo)
+        phoneControls?.attach(exo)
         applySubtitlePrefs(exo)
         exo.addListener(listener)
         val item = MediaItem.Builder()
@@ -519,6 +530,7 @@ class PlayerActivity : ComponentActivity() {
         playerView.controllerAutoShow = false
         playerView.hideController()
         tvControls?.hide()
+        phoneControls?.hideNow()
         nextTitle.text = "Up next · ${next.subtitle ?: next.episode?.label.orEmpty()}"
         nextPlay.text = if (source != null) "Play now" else "Choose a source"
         nextCard.visibility = View.VISIBLE
@@ -683,6 +695,38 @@ class PlayerActivity : ComponentActivity() {
         val type = playback.tmdbType ?: return
         val id = playback.tmdbId ?: return
         startActivity(MainActivity.openSources(this, type, id, episode?.season, episode?.episode))
+    }
+
+    // ---------------------------------------------------------------- picture in picture
+
+    private fun pipParams(): android.app.PictureInPictureParams {
+        val v = player?.videoSize
+        val ratio = if (v != null && v.width > 0 && v.height > 0) {
+            // Android allows 1:2.39 … 2.39:1.
+            val r = (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(1 / 2.39f, 2.39f)
+            android.util.Rational((r * 1000).toInt(), 1000)
+        } else android.util.Rational(16, 9)
+        return android.app.PictureInPictureParams.Builder().setAspectRatio(ratio).build()
+    }
+
+    private fun enterPip() {
+        if (isTelevision() || player == null) return
+        runCatching { enterPictureInPictureMode(pipParams()) }
+    }
+
+    /** Home while a film plays: keep watching in a small window. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (player?.isPlaying == true && !externalHandoff && !leavingForNext) enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            phoneControls?.hideNow()
+            status.visibility = View.GONE
+            hideResumeChip()
+        }
     }
 
     // ---------------------------------------------------------------- lifecycle
@@ -877,28 +921,24 @@ class PlayerActivity : ComponentActivity() {
             buildErrorPanel(root)
             return root
         }
-        // Accent seek bar: the title's colour, like the rest of Reel.
-        playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
-            setPlayedColor(accent)
-            setScrubberColor(Tokens.Night.accent.toArgb())
-            setBufferedColor(0x55FFFFFF)
-            setUnplayedColor(0x26FFFFFF)
-        }
-
+        playerView.useController = false
         playerView.findViewById<android.widget.ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.indeterminateTintList =
-            android.content.res.ColorStateList.valueOf(accent)
-
-        // Title strip: shows with the controls (what's playing, e.g. "Show · S1 E3").
-        val titleStrip = text(18f, Color.WHITE, medium = true).apply {
-            text = playback.displayTitle
-            setPadding(dp(24), dp(28), dp(24), dp(40))
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xB3000000.toInt(), Color.TRANSPARENT))
-            visibility = View.GONE
-        }
-        root.addView(titleStrip, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
-        playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> titleStrip.visibility = v })
+            android.content.res.ColorStateList.valueOf(Color.WHITE)
+        phoneControls = PhoneControls(
+            activity = this,
+            playerView = playerView,
+            title = playback.displayTitle,
+            font = ::font,
+            extraSettings = {
+                if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
+                else emptyList()
+            },
+            onBack = { finish() },
+            onPip = if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({ enterPip() }) else null,
+            nextLabel = { nextReady?.let { (n, _) -> n.episode?.label?.let { "Next · $it" } ?: "Next episode" } },
+            onNext = { playNext() },
+        )
+        root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))
 
         status = text(15f, Color.WHITE, medium = true).apply {
             setPadding(dp(18), dp(10), dp(18), dp(10))
