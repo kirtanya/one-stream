@@ -27,7 +27,10 @@ import kotlinx.coroutines.launch
 class ReelApp : Application(), SingletonImageLoader.Factory {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val http by lazy { TmdbRepository.createHttp() }
-    val engine: TorrentEngine by lazy { TorrentEngine(this) }
+    private val engineLazy = lazy { TorrentEngine(this) }
+    val engine: TorrentEngine by engineLazy
+    /** The engine if something already created it (problem reports read it but must not start it). */
+    val engineIfCreated: TorrentEngine? get() = if (engineLazy.isInitialized()) engine else null
     val streamServer: LocalStreamServer by lazy { LocalStreamServer(engine) }
     val tmdb by lazy { TmdbRepository(http) }
     val providerApps by lazy { ProviderApps(this) }
@@ -39,6 +42,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val history by lazy { WatchHistoryStore(this) }
     val watchlist by lazy { com.kirtanya.reel.data.WatchlistStore(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
+    /** Problem reports: crashes, freezes, stalls, errors and "Report a problem" (docs/MACHINE_FIRST_PLAN.md step 1). */
+    val reports by lazy { com.kirtanya.reel.report.ReportCenter(this) }
 
     /** TVs receive sources from the phone; phones send them. */
     val isTv by lazy {
@@ -53,6 +58,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // First, so a crash anywhere below is reported too.
+        reports.install()
         appScope.launch { sources.ensureReady() }
         if (isTv) tvSync.start() else phoneSync.start()
     }

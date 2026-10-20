@@ -85,7 +85,7 @@ import kotlinx.serialization.json.Json
  * See PLAN.md §1.5.
  */
 @OptIn(UnstableApi::class)
-class PlayerActivity : ComponentActivity() {
+class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCenter.Screen {
     private val app get() = ReelApp.get(this)
     private val prefs get() = app.playbackSettings.state.value
     private lateinit var playback: Playback
@@ -208,8 +208,10 @@ class PlayerActivity : ComponentActivity() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: EngineException) {
+                errorCause = e
                 showError(e.message ?: "Couldn't start this stream")
             } catch (t: Throwable) {
+                errorCause = t
                 showError("Couldn't start this: ${t.message}")
             }
         }
@@ -662,6 +664,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun showError(text: String, allowExternal: Boolean = true) {
+        reportError(text)
         status.visibility = View.GONE
         nextCancelled = true
         hideNextCard()
@@ -787,6 +790,76 @@ class PlayerActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    // ---------------------------------------------------------------- problem reports (docs/MACHINE_FIRST_PLAN.md step 1)
+
+    /** Why the error panel is up (the exception behind [showError]), for its report. */
+    private var errorCause: Throwable? = null
+
+    /** Every error the user sees saves a report (rate-limited per title), once the panel is drawn. */
+    private fun reportError(text: String) {
+        val cause = errorCause
+        val code = (cause as? PlaybackException)?.errorCodeName
+        playerView.postDelayed({
+            if (isDestroyed) return@postDelayed
+            app.reports.auto(
+                "error", text, key = playback.key,
+                extra = mapOf("exception" to cause?.javaClass?.name, "message" to cause?.message, "errorCode" to code,
+                    "causes" to cause?.let { c -> generateSequence(c) { it.cause }.drop(1).joinToString(" ← ") { it.toString() }.ifEmpty { null } }),
+                stack = cause?.stackTraceToString(),
+            ) { app.reports.capture(this) }
+        }, 300)
+    }
+
+    /**
+     * "Report a problem" in the settings panel. Waits for the closing panel to leave the screen, so
+     * the screenshot shows the film. TV: saved at once (no typing on a remote); phone: optional note.
+     */
+    private fun reportFromSettings() {
+        playerView.postDelayed({
+            if (isDestroyed) return@postDelayed
+            if (isTelevision()) app.reports.saveManual(this, "player-settings") { dir -> flashStatus(if (dir != null) "Report saved" else "Couldn't save the report") }
+            else app.reports.ask(this, "player-settings")
+        }, 400)
+    }
+
+    override fun reportState(): Map<String, Any?> {
+        if (!::playback.isInitialized) return emptyMap()
+        val exo = player
+        val src = playback.source
+        return linkedMapOf(
+            "title" to playback.displayTitle,
+            "titleKey" to playback.titleKey,
+            "key" to playback.key,
+            "sourceKind" to src.kind.name,
+            "provider" to src.provider,
+            "quality" to src.quality.label,
+            "sourceSize" to src.sizeBytes,
+            // The host only: direct links often carry a signed token in the path or query.
+            "sourceHost" to src.url?.let { runCatching { Uri.parse(it).host }.getOrNull() },
+            "state" to exo?.playbackState?.let { listOf("?", "idle", "buffering", "ready", "ended").getOrNull(it) },
+            "playWhenReady" to exo?.playWhenReady,
+            "playing" to exo?.isPlaying,
+            "positionMs" to exo?.currentPosition,
+            "durationMs" to exo?.duration?.takeIf { it != C.TIME_UNSET },
+            "bufferedMs" to exo?.bufferedPosition,
+            "notReadyForMs" to notReadySince.takeIf { it > 0 }?.let { now() - it },
+            "openForMs" to now() - tapMs,
+            "firstFrame" to firstFrameShown,
+            "video" to exo?.videoFormat?.let { "${it.sampleMimeType} ${it.codecs ?: ""} ${it.width}x${it.height} ${it.bitrate}bps".trim() },
+            "audio" to exo?.audioFormat?.let { "${it.sampleMimeType} ${it.codecs ?: ""} ${it.channelCount}ch ${it.language ?: ""}".trim() },
+            "status" to status.text?.toString()?.takeIf { status.visibility == View.VISIBLE },
+            "error" to errorText.text?.toString()?.takeIf { errorPanel.visibility == View.VISIBLE },
+            "nextCard" to (nextCard.visibility == View.VISIBLE),
+            "externalHandoff" to externalHandoff,
+            "tv" to isTelevision(),
+        )
+    }
+
+    override fun reportStreamKey(): String? = hash
+
+    override fun reportVideo(): android.view.SurfaceView? =
+        if (::playerView.isInitialized) playerView.videoSurfaceView as? android.view.SurfaceView else null
+
     // ---------------------------------------------------------------- helpers
 
     private fun sourceRequest(episode: EpisodeNumber?): SourceRequest? {
@@ -805,6 +878,7 @@ class PlayerActivity : ComponentActivity() {
 
     /** What a playback error means for the user (docs/STREAMING_V2.md §6.3). */
     private fun handlePlayerError(error: PlaybackException) {
+        errorCause = error
         val exo = player
         var cause: Throwable? = error.cause
         var gone: com.kirtanya.reel.core.stream.StreamGoneException? = null
@@ -890,12 +964,19 @@ class PlayerActivity : ComponentActivity() {
 
     private var notReadySince = 0L
     private var lastStallDump = 0L
+    private var stallReported = false
 
     /** Not ready for 5 s while wanting to play: log what ExoPlayer's threads are doing (every 5 s). */
     private fun stallWatch(exo: ExoPlayer) {
         val t = now()
         if (exo.playbackState == Player.STATE_READY || !exo.playWhenReady || exo.playbackState == Player.STATE_IDLE) { notReadySince = 0; return }
         if (notReadySince == 0L) notReadySince = t
+        if (!stallReported && t - notReadySince >= STALL_REPORT_MS) {
+            // Once per stream (and at most once per 10 min per title, ReportPolicy): a report with the screen and logs.
+            stallReported = true
+            app.reports.auto("stall", "Buffering for ${(t - notReadySince) / 1000} s", key = playback.key,
+                extra = mapOf("bufferingMs" to t - notReadySince, "loading" to exo.isLoading)) { app.reports.capture(this) }
+        }
         if (t - notReadySince < 5_000 || t - lastStallDump < 5_000) return
         lastStallDump = t
         logStat("stall", mapOf("ms" to t - notReadySince, "state" to exo.playbackState, "loading" to exo.isLoading,
@@ -931,8 +1012,8 @@ class PlayerActivity : ComponentActivity() {
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         if (tv) {
             tvControls = TvControls(playerView, playback.displayTitle, ::font) {
-                if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
-                else emptyList()
+                (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
+                else emptyList()) + (REPORT_ROW to { reportFromSettings() })
             }.also { root.addView(it.view, FrameLayout.LayoutParams(-1, -1)) }
             buildTvChips(root)
             buildErrorPanel(root)
@@ -947,8 +1028,8 @@ class PlayerActivity : ComponentActivity() {
             title = playback.displayTitle,
             font = ::font,
             extraSettings = {
-                if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
-                else emptyList()
+                (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
+                else emptyList()) + (REPORT_ROW to { reportFromSettings() })
             },
             onBack = { finish() },
             onPip = if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({ enterPip() }) else null,
@@ -1108,6 +1189,8 @@ class PlayerActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "ReelPlayer"
+        /** Buffering this long while wanting to play saves a "stall" report. */
+        private const val STALL_REPORT_MS = 15_000L
         private const val EXTRA_PLAYBACK = "playback"
         private val json = Json { ignoreUnknownKeys = true }
 

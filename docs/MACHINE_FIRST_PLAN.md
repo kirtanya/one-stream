@@ -19,6 +19,25 @@ turns that into a working loop. Each step names the Claude **effort** to switch 
 | 9 | **Lifecycle as a checked state machine** (player first, engine later): spec page → generated code → automatic path checks | **Extra high** | The machine-first coding experiment, on the part with the most past bugs |
 | 10 | **Review** of 1–9 with a multi-agent workflow, then fixes | **Ultracode**, fixes **High** | One deep check before calling it done |
 
+## Step 1 in use: problem reports
+
+When something goes wrong the app saves a report on the device: `report.json` (what happened, app
+version, device, screen and player state, stream / engine state, engine flags, last `ReelStats` lines),
+`logs.txt` (the app's own logcat, last 2 minutes, secrets removed), `screen.png` (manual, error and
+stall reports) and `stack.txt` (crashes, freezes, player errors, ANRs).
+
+- **Saved automatically**: crash, freeze (main thread stuck ≥ 5 s), Android's exit records on the next
+  start (ANR, native crash, low-memory kill), buffering ≥ 15 s, every error the player shows. Automatic
+  reports are limited to one per kind and title every 10 minutes; the device keeps the newest 40 (≤ 80 MB).
+- **By hand**: shake the phone firmly twice (any screen, not in PiP) → optional note → Save;
+  player settings → "Report a problem" (TV saves at once; phone asks for a note).
+- **"Check my reports"** = run `tool/pull_reports.sh` (every connected device → `reports/<model>/`,
+  one line per new report), then read each new report's `report.json` first, then `logs.txt`,
+  `stack.txt` and `screen.png`, and start the fix from what they show. `--clear` deletes the pulled
+  reports from the devices afterwards.
+- **Testing over adb**: `adb shell am broadcast -n com.kirtanya.reel/.data.SourcesProbe --ez report true`
+  (manual), `--es reportTest crash` / `--es reportTest freeze` (automatic ones).
+
 Parked separately: home disk (`docs/HOME_DISK_PLAN.md`) — fits after step 7.
 
 ## Rules for every step

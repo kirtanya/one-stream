@@ -21,11 +21,22 @@ import kotlinx.coroutines.withTimeout
  * `--ez mainThreadTest true` adds OpenSubtitles (removed after), searches subtitles + sources on the main thread.
  * `--ez playTest true --es url <direct> [--ei tmdb --ei season --ei episode --ei nextEpisode --el startMs --el durationMs]` plays a test video as an episode.
  * `--es removeTitle <titleKey>` removes a film/show from watch history.
+ * `--ez report true [--es note <text>]` saves a manual problem report (screenshot of the screen on top, if ours).
+ * `--es reportTest crash|freeze` tests the automatic reports: crash the app / block its main thread for 8 s.
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = ReelApp.get(context)
+        if (intent.getBooleanExtra("report", false)) {
+            app.reports.saveManual(app.reports.currentActivity, "adb", intent.getStringExtra("note")) { dir -> Log.i(TAG, "report saved: $dir") }
+            return
+        }
+        when (intent.getStringExtra("reportTest")) {
+            "crash" -> android.os.Handler(android.os.Looper.getMainLooper()).post { throw IllegalStateException("Report test crash (SourcesProbe)") }
+            "freeze" -> android.os.Handler(android.os.Looper.getMainLooper()).post { Log.i(TAG, "blocking the main thread for 8 s"); Thread.sleep(8_000) }
+        }
+        if (intent.hasExtra("reportTest")) return
         if (intent.getBooleanExtra("history", false)) {
             // Watch history + what Continue watching would show right now.
             app.history.entries.value.take(20).forEach { e ->

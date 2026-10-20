@@ -475,6 +475,40 @@ class TorrentEngine(private val context: Context) {
 
     fun snapshot(hash: String): TorrentSnapshot? = _torrents.value.firstOrNull { it.infoHash == hash }
 
+    /** Torrents a player is streaming right now. */
+    fun streamingKeys(): Set<String> = streams.keys.toSet()
+
+    /**
+     * What a problem report needs about one torrent (docs/MACHINE_FIRST_PLAN.md step 1): the UI
+     * snapshot plus, while it streams, the file and how much of it is on disk. Only reads plain
+     * fields (no libtorrent calls), so it is safe from any thread, even a crash handler.
+     */
+    fun reportState(hash: String): Map<String, Any?> {
+        val out = linkedMapOf<String, Any?>("key" to hash)
+        snapshot(hash)?.let { s ->
+            out += mapOf(
+                "name" to s.name, "mode" to s.mode.name, "phase" to s.phase.name, "progress" to s.progress,
+                "peers" to s.peers, "seeds" to s.seeds, "downBps" to s.downBps, "upBps" to s.upBps,
+                "doneBytes" to s.doneBytes, "wantedBytes" to s.wantedBytes, "stalledForSec" to s.stalledForSec,
+                "error" to s.error, "userPaused" to s.userPaused,
+            )
+        }
+        streams[hash]?.let { s ->
+            val span = s.info.span
+            out += mapOf(
+                "file" to s.info.file.path, "fileSize" to s.info.file.size, "mime" to s.info.mimeType,
+                "pieceLength" to span.pieceLength,
+                "filePieces" to span.pieceRange.count(),
+                "filePiecesHave" to span.pieceRange.count { s.gate.pieces.has(it) },
+                "torrentPiecesHave" to s.gate.pieces.count(), "torrentPieces" to s.numPieces,
+                "readers" to s.readers.size, "background" to s.background, "startupDone" to s.startupDone,
+                "bytesPerSec" to s.bytesPerSec, "playerPosMs" to s.signals.positionMs, "playerBufMs" to s.signals.bufferedPositionMs,
+                "streamAgeMs" to EngineStats.now() - s.startedAt,
+            )
+        }
+        return out
+    }
+
     // ---------------------------------------------------------------- streaming
 
     /**

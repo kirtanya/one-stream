@@ -235,6 +235,9 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     }
 }
 
+/** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
+internal const val REPORT_ROW = "Report a problem"
+
 /**
  * Settings panel (subtitles, audio, speed, extras), two levels: a list of settings, each opening its
  * choices. Built into [panel]; the caller places and shows it.
@@ -296,7 +299,10 @@ internal class SettingsPanel(
             list.addView(row(R.drawable.ic_pl_volume, "Audio", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
         }
         list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
-        for ((label, action) in extras()) list.addView(row(R.drawable.ic_pl_external, label, null, null) { onExtra(); action() })
+        for ((label, action) in extras()) {
+            val icon = if (label == REPORT_ROW) R.drawable.ic_pl_report else R.drawable.ic_pl_external
+            list.addView(row(icon, label, null, null) { onExtra(); action() })
+        }
     }
 
     private fun showTracks(type: Int) {

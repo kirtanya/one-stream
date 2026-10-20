@@ -4,6 +4,8 @@ local.properties
 *.iml
 .idea/
 .kotlin/
+# Problem reports pulled from the devices (tool/pull_reports.sh)
+reports/
 # Secrets — never commit
 tmdb.key
 key.properties
