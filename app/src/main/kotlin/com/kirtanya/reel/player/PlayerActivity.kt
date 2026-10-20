@@ -115,6 +115,8 @@ class PlayerActivity : ComponentActivity() {
     private var stoppedSinceHandoff = false
 
     private lateinit var playerView: PlayerView
+    /** TV only: the bottom-strip controls (PlayerView's own controller is off there). */
+    private var tvControls: TvControls? = null
     private lateinit var status: TextView
     private lateinit var resumeChip: Button
     private lateinit var nextCard: LinearLayout
@@ -286,6 +288,7 @@ class PlayerActivity : ComponentActivity() {
         exo.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
         player = exo
         playerView.player = exo
+        tvControls?.attach(exo)
         applySubtitlePrefs(exo)
         exo.addListener(listener)
         val item = MediaItem.Builder()
@@ -515,6 +518,7 @@ class PlayerActivity : ComponentActivity() {
         // Keep the controls from popping up over the card (they'd take the remote's focus at the end).
         playerView.controllerAutoShow = false
         playerView.hideController()
+        tvControls?.hide()
         nextTitle.text = "Up next · ${next.subtitle ?: next.episode?.label.orEmpty()}"
         nextPlay.text = if (source != null) "Play now" else "Choose a source"
         nextCard.visibility = View.VISIBLE
@@ -577,8 +581,12 @@ class PlayerActivity : ComponentActivity() {
             return true
         }
         val overlayUp = nextCard.visibility == View.VISIBLE || resumeChip.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE
+        val controls = tvControls
+        // TV: the strip takes OK/↑/↓/Back/media keys first (unless a chip or card holds the remote).
+        if (controls != null && exo != null && errorPanel.visibility != View.VISIBLE && (controls.visible || !overlayUp) && controls.handleKey(event)) return true
+        val controlsUp = controls?.visible ?: playerView.isControllerFullyVisible
         if (exo != null && isSeekKey && event.action == KeyEvent.ACTION_DOWN && !overlayUp &&
-            (seekKey == event.keyCode || !playerView.isControllerFullyVisible)
+            (seekKey == event.keyCode || !controlsUp)
         ) {
             seekKey = event.keyCode
             val now = android.os.SystemClock.uptimeMillis()
@@ -618,6 +626,7 @@ class PlayerActivity : ComponentActivity() {
                     val line = when {
                         s.phase == TorrentPhase.METADATA -> "Finding peers… ${s.peers} connected"
                         player == null -> "Preparing · ${s.peers} peers"
+                        tvControls != null -> "${formatBytes(s.downBps.toLong())}/s · ${s.peers} peers"
                         else -> "Buffering · ↓ ${formatBytes(s.downBps.toLong())}/s · ${s.peers} peers"
                     }
                     showStatus(line)
@@ -846,12 +855,28 @@ class PlayerActivity : ComponentActivity() {
 
     private fun buildLayout(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        val tv = isTelevision()
         playerView = PlayerView(this).apply {
             keepScreenOn = true
-            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+            // TV: no centre spinner (a small chip at the top right says it) and our own strip.
+            setShowBuffering(if (tv) PlayerView.SHOW_BUFFERING_NEVER else PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             setShowSubtitleButton(true)
+            if (tv) {
+                useController = false
+                isFocusable = true
+                isFocusableInTouchMode = true
+            }
         }
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        if (tv) {
+            tvControls = TvControls(playerView, playback.displayTitle, ::font) {
+                if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
+                else emptyList()
+            }.also { root.addView(it.view, FrameLayout.LayoutParams(-1, -1)) }
+            buildTvChips(root)
+            buildErrorPanel(root)
+            return root
+        }
         // Accent seek bar: the title's colour, like the rest of Reel.
         playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
             setPlayedColor(accent)
@@ -911,6 +936,83 @@ class PlayerActivity : ComponentActivity() {
         }
         root.addView(nextCard, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(48), dp(110)) })
 
+        buildErrorPanel(root)
+        return root
+    }
+
+    /**
+     * TV: every status chip is small and sits at the top right, side by side: Up next, Start over,
+     * then the buffering chip (spinner + speed) at the corner.
+     */
+    private fun buildTvChips(root: FrameLayout) {
+        val chips = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+        }
+        root.addView(chips, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(20), dp(24), 0) })
+        fun chipGap() = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) }
+
+        nextCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(4), dp(4), dp(4))
+            background = glass(radius = 999)
+            visibility = View.GONE
+            nextTitle = text(12f, Color.WHITE, medium = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(220) }
+            nextCountdown = text(12f, Tokens.Night.textSecondary.toArgb()).apply { setPadding(dp(8), 0, dp(8), 0); maxLines = 1 }
+            addView(nextTitle)
+            addView(nextCountdown)
+            nextPlay = smallButton("Play now", primary = true) { playNext() }
+            addView(nextPlay)
+            addView(smallButton("Cancel") { cancelNext() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(4) })
+        }
+        chips.addView(nextCard, chipGap())
+
+        resumeChip = smallButton("") {
+            player?.seekTo(0)
+            hideResumeChip()
+        }.apply { visibility = View.GONE }
+        chips.addView(resumeChip, chipGap())
+
+        val statusChip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(6), dp(12), dp(6))
+            background = glass(radius = 999)
+            visibility = View.GONE
+            addView(android.widget.ProgressBar(context).apply {
+                isIndeterminate = true
+                indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            }, LinearLayout.LayoutParams(dp(12), dp(12)).apply { marginEnd = dp(8) })
+        }
+        // The chip shows and hides with its text (every caller sets the text's visibility).
+        status = object : TextView(this) {
+            override fun setVisibility(visibility: Int) {
+                super.setVisibility(visibility)
+                statusChip.visibility = visibility
+            }
+        }.apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = font(medium = true)
+            maxLines = 1
+            maxWidth = dp(260)
+        }
+        statusChip.addView(status)
+        status.visibility = View.GONE
+        chips.addView(statusChip, chipGap())
+    }
+
+    private fun smallButton(label: String, primary: Boolean = false, onClick: () -> Unit) = button(label, primary, onClick).apply {
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        minHeight = dp(30)
+        minimumHeight = dp(30)
+        minWidth = 0
+        minimumWidth = 0
+        setPadding(dp(12), dp(4), dp(12), dp(4))
+    }
+
+    private fun buildErrorPanel(root: FrameLayout) {
         errorPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -932,7 +1034,6 @@ class PlayerActivity : ComponentActivity() {
             addView(button("Back") { finish() }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) })
         }
         root.addView(errorPanel, FrameLayout.LayoutParams(-1, -1))
-        return root
     }
 
     private fun font(medium: Boolean) =
