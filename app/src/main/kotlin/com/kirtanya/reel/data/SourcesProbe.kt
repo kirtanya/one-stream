@@ -26,6 +26,36 @@ import kotlinx.coroutines.withTimeout
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
+    private suspend fun restoreEntry(app: ReelApp, intent: Intent, prefix: String) {
+        val engine = app.engine
+        engine.start()
+        var snap = engine.torrents.value.firstOrNull { it.infoHash.startsWith(prefix) }
+        var waited = 0
+        while (snap == null && waited < 15_000) { kotlinx.coroutines.delay(500); waited += 500; snap = engine.torrents.value.firstOrNull { it.infoHash.startsWith(prefix) } }
+        if (snap == null) { Log.w(TAG, "restore: no torrent $prefix"); return }
+        val hash = snap.infoHash
+        val isTv = intent.getStringExtra("type") == "tv"
+        val ref = TitleRef(if (isTv) MediaType.TV else MediaType.MOVIE, intent.getIntExtra("tmdb", 0))
+        val d = app.tmdb.details(ref)
+        val ep = if (isTv) com.kirtanya.reel.core.playback.EpisodeNumber(intent.getIntExtra("season", 1), intent.getIntExtra("episode", 1)) else null
+        val video = engine.files(hash).maxByOrNull { it.size }
+        val source = com.kirtanya.reel.core.sources.Source(
+            kind = com.kirtanya.reel.core.sources.SourceKind.TORRENT, title = snap.name, provider = "Torrent",
+            quality = com.kirtanya.reel.core.sources.QualityParser.parse(snap.name),
+            magnet = "magnet:?xt=urn:btih:$hash", infoHash = hash, fileIdx = video?.index, sizeBytes = video?.size,
+        )
+        val type = if (isTv) "tv" else "movie"
+        val playback = com.kirtanya.reel.core.playback.Playback(
+            key = com.kirtanya.reel.core.playback.Playback.keyFor(type, ref.id, ep), titleKey = "$type:${ref.id}",
+            title = d.summary.title, tmdbType = type, tmdbId = ref.id, imdbId = d.imdbId, year = d.summary.year, episode = ep,
+            posterPath = d.summary.posterPath, backdropPath = d.summary.backdropPath,
+            next = ep?.let { com.kirtanya.reel.core.playback.EpisodeNumber(it.season, it.episode + 1) }, source = source,
+        )
+        val duration = intent.getLongExtra("durationMs", (d.runtimeMin ?: 0) * 60_000L)
+        app.history.save(playback, intent.getLongExtra("ms", 0), duration)
+        Log.i(TAG, "restored ${playback.key} at ${intent.getLongExtra("ms", 0)} ms from $hash file ${video?.index}")
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         val app = ReelApp.get(context)
         if (intent.getBooleanExtra("report", false)) {
@@ -48,6 +78,16 @@ class SourcesProbe : BroadcastReceiver() {
         }
         if (intent.hasExtra("sync")) {
             syncProbe(app, intent, goAsync())
+            return
+        }
+        // Rebuild a lost Continue watching entry: --es restoreHash <infohash prefix> --es type movie|tv --ei tmdb N
+        //   [--ei season S --ei episode E] --el ms <position> [--el durationMs D]
+        intent.getStringExtra("restoreHash")?.let { prefix ->
+            val done = goAsync()
+            app.appScope.launch {
+                runCatching { restoreEntry(app, intent, prefix) }.onFailure { Log.w(TAG, "restore failed", it) }
+                done.finish()
+            }
             return
         }
         // Put a watch position back (after tests): --es setPosition <key> --el ms <position>

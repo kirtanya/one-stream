@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,6 +96,28 @@ fun ContinueRow(
     val context = LocalContext.current
     val history = ReelApp.get(context).history
     val shape = RoundedCornerShape(Tokens.Radius.media)
+    // Long-press asks first: on a TV remote a long press happens by accident (it removed two titles at once).
+    var confirmRemove by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<ContinueItem?>(null) }
+    confirmRemove?.let { pending ->
+        val keep = remember { FocusRequester() }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text("Remove from Continue watching?") },
+            text = { Text("${pending.entry.playback.title} and where you stopped will be forgotten.") },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmRemove = null }, modifier = Modifier.focusRequester(keep)) { Text("Keep") }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    history.removeTitle(pending.entry.playback.titleKey)
+                    Toast.makeText(context, "Removed ${pending.entry.playback.title}", Toast.LENGTH_SHORT).show()
+                    confirmRemove = null
+                }) { Text("Remove") }
+            },
+        )
+        // The safe choice has focus, so an accidental OK keeps the title.
+        androidx.compose.runtime.LaunchedEffect(pending) { runCatching { keep.requestFocus() } }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         SectionHeader("Continue watching", Modifier.padding(horizontal = sidePadding))
         LazyRow(
@@ -118,10 +141,7 @@ fun ContinueRow(
                                 // Grows upward, so it never covers the title underneath.
                                 origin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f),
                                 onFocus = onFocus?.let { { it(item) } },
-                                onLongClick = {
-                                    history.removeTitle(p.titleKey)
-                                    Toast.makeText(context, "Removed ${p.title} from Continue watching", Toast.LENGTH_SHORT).show()
-                                },
+                                onLongClick = { confirmRemove = item },
                                 onClick = { openContinue(context, item, onOpenDest) },
                             )
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
