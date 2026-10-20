@@ -98,11 +98,22 @@ internal class TvControls(
             buttons.addView(b, LinearLayout.LayoutParams(context.dp(BUTTON), context.dp(BUTTON)).apply { if (i > 0) marginStart = context.dp(8) })
         }
         bar.addView(buttons, LinearLayout.LayoutParams(-2, -2))
-        view.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(context.dp(40), 0, context.dp(40), context.dp(48)) })
 
-        // Just above the bottom edge: elapsed at the start, remaining at the end.
-        view.addView(elapsed, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(context.dp(40), 0, 0, context.dp(16)) })
-        view.addView(remaining, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, context.dp(40), context.dp(16)) })
+        // Under it: elapsed at the start, remaining at the end.
+        val times = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        times.addView(elapsed, LinearLayout.LayoutParams(-2, -2))
+        times.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
+        times.addView(remaining, LinearLayout.LayoutParams(-2, -2))
+
+        // Title, controls and times are one block, the same distance (EDGE) from the left, right
+        // and bottom of the screen; the seek bar runs along the bottom edge below it.
+        val block = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+        }
+        block.addView(bar, LinearLayout.LayoutParams(-1, -2))
+        block.addView(times, LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.dp(12) })
+        view.addView(block, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(context.dp(EDGE), 0, context.dp(EDGE), context.dp(EDGE)) })
 
         // The bottom edge itself: the seek bar, end to end.
         seek.edge = true
@@ -119,7 +130,7 @@ internal class TvControls(
         seek.onSeek = { player?.seekTo(it); touch() }
 
         view.addView(settingsPanel.panel, FrameLayout.LayoutParams(context.dp(340), -2, Gravity.BOTTOM or Gravity.END).apply {
-            setMargins(0, context.dp(24), context.dp(40), context.dp(112))
+            setMargins(0, context.dp(24), context.dp(EDGE), context.dp(EDGE + 104))
         })
         applyColor(fg)
     }
@@ -159,8 +170,9 @@ internal class TvControls(
             view.visibility = View.VISIBLE
             view.alpha = 0f
             view.animate().alpha(1f).setDuration(180).start()
-            bar.translationY = context.dpf(16f)
-            bar.animate().translationY(0f).setDuration(180).start()
+            val block = bar.parent as View // title, controls and times slide up together
+            block.translationY = context.dpf(16f)
+            block.animate().translationY(0f).setDuration(180).start()
             refresh()
             main.removeCallbacks(tick); main.post(tick)
             main.removeCallbacks(sampler); main.post(sampler)
@@ -393,6 +405,9 @@ internal class TvControls(
     companion object {
         /** Every control's size (dp). */
         const val BUTTON = 48
+
+        /** The controls' distance from the left, right and bottom of the screen (dp). */
+        const val EDGE = 40
 
         /** Near-black: within 5 % of black's contrast, a little softer on the eye. */
         const val DARK = PlayerColors.STRIP_DARK
