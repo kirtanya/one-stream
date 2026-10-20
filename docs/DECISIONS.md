@@ -5,6 +5,19 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · One Launcher API (provider + onestream:// links)**
+Decision: One Stream answers the user's own launcher locally: an exported ContentProvider
+`com.kirtanya.reel.launcher` (info / search / continue / watchlist / title) and `onestream://` links
+into MainActivity (title, imdb, resume, search). Binding contract: docs/LAUNCHER_API.md. Access: no
+signature permission — One Stream keeps its current signing key, so the two apps don't share one;
+instead every query checks the calling package name AND One Launcher's certificate SHA-256
+(`hasSigningCertificate`, core `LauncherCaller`, tested), with both packages in `<queries>` so the
+lookup works on Android 11+; any failure denies. Network queries wait at most 6 s on the binder thread
+(the TMDB call runs on the app scope so a stuck read can't hold the binder) and return an empty cursor
+instead of throwing. IMDb-only links get a small lookup screen (title-page loading / error look) that
+swaps itself for the title page, so Back doesn't land on it. Row building / link parsing in core
+`launcher/` with JVM tests.
+
 **2026-10-21 · Picture modes (like VLC / MX Player)**
 Decision: player Settings → Picture picks how the video fills the screen: Fit (default), Fill (crop),
 Stretch, or a forced 16:9 / 4:3 / 21:9 shape for files that report the wrong one (core `PictureMode`;

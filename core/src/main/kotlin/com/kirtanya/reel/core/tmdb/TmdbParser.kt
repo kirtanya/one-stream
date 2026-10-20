@@ -30,6 +30,17 @@ object TmdbParser {
         }
     }
 
+    /**
+     * A `find` response: the [type] match first, else the other kind (a launcher catalog can file a
+     * mini-series as a film). Null when TMDB doesn't know the id.
+     */
+    fun parseFind(body: String, type: MediaType): TitleSummary? {
+        val o = root(body)
+        fun first(t: MediaType) = (o[if (t == MediaType.MOVIE) "movie_results" else "tv_results"] as? JsonArray)
+            ?.firstNotNullOfOrNull { (it as? JsonObject)?.let { item -> summary(item, t) } }
+        return first(type) ?: first(if (type == MediaType.MOVIE) MediaType.TV else MediaType.MOVIE)
+    }
+
     fun parseDetails(body: String, type: MediaType, region: String = "IN"): TitleDetails {
         val o = root(body)
         val summary = summary(o, type) ?: error("No id in details")

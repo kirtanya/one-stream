@@ -84,6 +84,8 @@ fun PhoneApp(
     onOpenHandled: () -> Unit = {},
     openTab: Tab? = null,
     onTabHandled: () -> Unit = {},
+    openSearch: String? = null,
+    onSearchHandled: () -> Unit = {},
     nav: com.kirtanya.reel.ui.nav.Navigator = rememberNavigator(),
 ) {
     LaunchedEffect(openDest) {
@@ -91,6 +93,9 @@ fun PhoneApp(
     }
     LaunchedEffect(openTab) {
         openTab?.let { nav.select(it); onTabHandled() }
+    }
+    LaunchedEffect(openSearch) {
+        openSearch?.let { nav.openSearch(it); onSearchHandled() }
     }
     val saveable = rememberSaveableStateHolder()
     var showAdd by remember { mutableStateOf(false) }
@@ -111,10 +116,11 @@ fun PhoneApp(
                 is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back)
                 is Dest.Collection -> saveable.SaveableStateProvider(collectionKey(screen)) { CollectionScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { PersonScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
-                is Tab -> saveable.SaveableStateProvider(screen.name) {
+                is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = false, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
+                is Tab -> saveable.SaveableStateProvider(if (screen == Tab.Search) nav.searchStateKey else screen.name) {
                     when (screen) {
                         Tab.Home -> PhoneHome(onOpen = openTitle, onOpenDest = open, onAdd = { showAdd = true })
-                        Tab.Search -> PhoneSearch(onOpen = openTitle, onOpenDest = open)
+                        Tab.Search -> PhoneSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery)
                         Tab.Downloads -> DownloadsScreen(isTv = false, onAdd = { showAdd = true })
                         Tab.Settings -> SettingsScreen(isTv = false)
                     }

@@ -58,6 +58,8 @@ fun TvApp(
     onOpenHandled: () -> Unit = {},
     openTab: Tab? = null,
     onTabHandled: () -> Unit = {},
+    openSearch: String? = null,
+    onSearchHandled: () -> Unit = {},
     nav: Navigator = rememberNavigator(),
 ) {
     // Each screen keeps its state (search text, season, scroll) while you're on a page above it.
@@ -67,6 +69,9 @@ fun TvApp(
     }
     LaunchedEffect(openTab) {
         openTab?.let { nav.select(it); onTabHandled() }
+    }
+    LaunchedEffect(openSearch) {
+        openSearch?.let { nav.openSearch(it); onSearchHandled() }
     }
     val activity = LocalContext.current as? Activity
     BackHandler { if (!nav.back()) activity?.finish() }
@@ -86,10 +91,11 @@ fun TvApp(
                 is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back)
                 is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { com.kirtanya.reel.ui.common.PersonScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
-                is Tab -> saveable.SaveableStateProvider(screen.name) {
+                is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = true, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
+                is Tab -> saveable.SaveableStateProvider(if (screen == Tab.Search) nav.searchStateKey else screen.name) {
                     when (screen) {
                         Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = open)
-                        Tab.Search -> TvSearch(onOpen = openTitle, onOpenDest = open)
+                        Tab.Search -> TvSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery)
                         Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) { DownloadsScreen(isTv = true, onAdd = {}) }
                         Tab.Settings -> Box(Modifier.padding(top = TvTopBarHeight)) { SettingsScreen(isTv = true) }
                     }

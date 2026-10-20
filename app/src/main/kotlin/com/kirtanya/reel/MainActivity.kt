@@ -16,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.kirtanya.reel.core.launcher.LauncherApi
+import com.kirtanya.reel.core.launcher.LauncherLink
 import com.kirtanya.reel.core.magnet.Magnet
 import com.kirtanya.reel.engine.EngineService
 import com.kirtanya.reel.core.tmdb.MediaType
@@ -35,6 +37,8 @@ class MainActivity : ComponentActivity() {
     private var openTab by mutableStateOf<com.kirtanya.reel.ui.nav.Tab?>(null)
     /** An addon / plugin-repo link opened from a website or shared in: asks before adding. */
     private var incomingSourceLink by mutableStateOf<String?>(null)
+    /** A search handed in by One Launcher (onestream://search?q=…). */
+    private var openSearch by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,9 +78,9 @@ class MainActivity : ComponentActivity() {
             ReelTheme {
                 Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
                     if (isTv) {
-                        TvApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null }, openTab = openTab, onTabHandled = { openTab = null })
+                        TvApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null }, openTab = openTab, onTabHandled = { openTab = null }, openSearch = openSearch, onSearchHandled = { openSearch = null })
                     } else {
-                        PhoneApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null }, openTab = openTab, onTabHandled = { openTab = null })
+                        PhoneApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null }, openTab = openTab, onTabHandled = { openTab = null }, openSearch = openSearch, onSearchHandled = { openSearch = null })
                     }
                     incomingSourceLink?.let { link ->
                         androidx.compose.runtime.key(link) { AddSourceLinkDialog(link, isTv = isTv, onDone = { incomingSourceLink = null }) }
@@ -104,6 +108,10 @@ class MainActivity : ComponentActivity() {
             openDest = Dest.Sources(TitleRef(type, id), season, episode)
             return
         }
+        if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme.equals(LauncherLink.SCHEME, ignoreCase = true)) {
+            handleLauncherLink(LauncherLink.parse(intent.dataString))
+            return
+        }
         val text = when (intent?.action) {
             Intent.ACTION_VIEW -> intent.dataString
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
@@ -121,6 +129,25 @@ class MainActivity : ComponentActivity() {
         }
         val link = Regex("""magnet:\?[^\s"'<>]+""", RegexOption.IGNORE_CASE).find(text)?.value ?: return
         if (Magnet.parse(link) != null) incomingMagnet = link
+    }
+
+    /** One Launcher's deep links (docs/LAUNCHER_API.md); a malformed one just opens the app. */
+    private fun handleLauncherLink(link: LauncherLink?) {
+        when (link) {
+            is LauncherLink.Title -> openDest = Dest.Title(link.ref)
+            is LauncherLink.Imdb -> openDest = Dest.ImdbTitle(link.imdb, link.type)
+            is LauncherLink.Search -> openSearch = link.query
+            is LauncherLink.Resume -> {
+                // Exactly what tapping the card in Continue watching does; gone from history → the title page.
+                val item = LauncherApi.findContinue(ReelApp.get(this).history.continueWatching(), link.key)
+                if (item != null) {
+                    com.kirtanya.reel.ui.common.openContinue(this, item) { openDest = it }
+                } else {
+                    LauncherApi.titleOf(link.key)?.let { openDest = Dest.Title(it) }
+                }
+            }
+            null -> Unit
+        }
     }
 
     companion object {

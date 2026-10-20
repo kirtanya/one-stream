@@ -30,6 +30,9 @@ sealed interface Dest {
 
     /** A cast member: photo, bio, what they've been in. */
     data class Person(val id: Int, val name: String) : Dest
+
+    /** A title known only by its IMDb id (One Launcher links): looked up on TMDB, then becomes [Title]. */
+    data class ImdbTitle(val imdbId: String, val type: com.kirtanya.reel.core.tmdb.MediaType) : Dest
 }
 
 /** Tabs at the root; title pages stack on top. Back pops the stack, then returns to Home. */
@@ -40,6 +43,27 @@ class Navigator {
     val top: Dest? get() = stack.lastOrNull()
 
     fun open(dest: Dest) = stack.add(dest)
+
+    /** Swaps [old] for [new] in place (an IMDb link once TMDB has resolved it), so Back skips the lookup. */
+    fun replace(old: Dest, new: Dest) {
+        val i = stack.lastIndexOf(old)
+        if (i >= 0) stack[i] = new
+    }
+
+    /** A query handed in from outside (One Launcher's search link); [searchRequest] gives Search fresh state. */
+    var searchQuery by mutableStateOf("")
+        private set
+    var searchRequest by mutableStateOf(0)
+        private set
+
+    fun openSearch(query: String) {
+        searchQuery = query
+        searchRequest++
+        select(Tab.Search)
+    }
+
+    /** Saved-state key for the Search tab: a new one per handed-in query, so it starts with that text. */
+    val searchStateKey: String get() = if (searchRequest == 0) Tab.Search.name else "${Tab.Search.name}#$searchRequest"
 
     /** Opens [dest] unless it's already showing; if it's further back, returns to it instead of stacking a copy. */
     fun openOrReturn(dest: Dest) {

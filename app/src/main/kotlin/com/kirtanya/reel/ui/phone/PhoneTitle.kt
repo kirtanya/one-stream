@@ -275,7 +275,7 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier = Mo
 
 /** While the title loads: the header's shape and a Play-sized bar, so nothing jumps when it arrives. */
 @Composable
-private fun TitleSkeleton() {
+internal fun TitleSkeleton() {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
         Box(Modifier.fillMaxWidth().height(Tokens.Cinema.titleHeader).background(Brush.verticalGradient(listOf(Tokens.Colors.surface2, Tokens.Colors.canvas)))) {
             Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {

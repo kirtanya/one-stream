@@ -72,6 +72,10 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
     /** The title's logo artwork path (for a Home hero), or null. Details already carry it as [TitleDetails.logoPath]. */
     suspend fun logo(ref: TitleRef): String? = runCatching { TmdbParser.parseLogo(get(TmdbPaths.images(ref))) }.getOrNull()
 
+    /** The title with this IMDb id (tt…), preferring [type]; null when TMDB doesn't know it. */
+    suspend fun findByImdb(imdbId: String, type: MediaType): TitleSummary? =
+        TmdbParser.parseFind(get(TmdbPaths.find(imdbId)), type)
+
     /** All genres for films or shows (stable; cached like everything else). */
     suspend fun genres(type: MediaType): List<Genre> = TmdbParser.parseGenres(get(TmdbPaths.genres(type)))
 

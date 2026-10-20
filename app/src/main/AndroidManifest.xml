@@ -23,6 +23,9 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
         </intent>
+        <!-- One Launcher reads our launcher provider: we must see it to check its signing certificate. -->
+        <package android:name="com.kirtanya.one_launcher" />
+        <package android:name="com.kirtanya.one_launcher.tv" />
     </queries>
 
     <!-- One APK for phone and TV. -->
@@ -63,6 +66,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="stremio" android:host="*" android:pathPattern=".*manifest\\.json" />
             </intent-filter>
+            <!-- One Launcher opens titles, Continue watching and search here (docs/LAUNCHER_API.md). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="onestream" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -83,6 +92,12 @@
             android:name=".data.SourcesProbe"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+
+        <!-- One Launcher's read-only API; each query checks the caller (One Launcher's package + certificate). -->
+        <provider
+            android:name=".data.LauncherProvider"
+            android:authorities="com.kirtanya.reel.launcher"
+            android:exported="true" />
 
         <service
             android:name=".engine.EngineService"

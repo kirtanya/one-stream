@@ -212,6 +212,8 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun titleBare() = render("title-bare", content = phone { open(Dest.Title(Fake.long)) })
     @Test fun titleLoading() = render("title-loading", catalog = FakeCatalog(Answer.Loading), content = phone { open(Dest.Title(Fake.film)) })
     @Test fun titleError() = render("title-error", catalog = FakeCatalog(Answer.Fail), content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun imdbLoading() = render("imdb-loading", catalog = FakeCatalog(Answer.Loading), content = phone { open(Dest.ImdbTitle("tt0137523", com.kirtanya.reel.core.tmdb.MediaType.MOVIE)) })
+    @Test fun imdbUnknown() = render("imdb-unknown", catalog = FakeCatalog(Answer.Empty), content = phone { open(Dest.ImdbTitle("tt0137523", com.kirtanya.reel.core.tmdb.MediaType.MOVIE)) })
 
     @Test fun sourcesSearching() = render("sources-searching", data = RenderData(sourceSearch = { Fake.searching }), content = phone { open(Dest.Sources(Fake.film)) })
     @Test fun sourcesMany() = render("sources-many", data = RenderData(sourceSearch = { Fake.manySources }), content = phone { open(Dest.Sources(Fake.show, 2, 6)) })
@@ -281,6 +283,7 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvSearchNone() = render("search-none", tv = true) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
     @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.film)) })
     @Test @Config(qualifiers = TV) fun tvTitleShow() = render("title-show", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvImdbUnknown() = render("imdb-unknown", tv = true, catalog = FakeCatalog(Answer.Empty), content = tvApp { open(Dest.ImdbTitle("tt0944947", com.kirtanya.reel.core.tmdb.MediaType.TV)) })
     @Test @Config(qualifiers = TV) fun tvTitleBare() = render("title-bare", tv = true, content = tvApp { open(Dest.Title(Fake.long)) })
     @Test @Config(qualifiers = TV) fun tvSourcesMany() = render("sources-many", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.show, 2, 6)) })
     @Test @Config(qualifiers = TV) fun tvSourcesSearching() = render("sources-searching", tv = true, data = RenderData(sourceSearch = { Fake.searching }), content = tvApp { open(Dest.Sources(Fake.film)) })

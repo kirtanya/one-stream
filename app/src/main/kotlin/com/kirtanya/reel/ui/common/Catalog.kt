@@ -31,6 +31,8 @@ interface Catalog {
     suspend fun genres(type: MediaType): List<Genre>
     suspend fun byGenre(type: MediaType, genreId: Int, page: Int = 1): List<TitleSummary>
     suspend fun person(id: Int): PersonDetails
+    /** A title by IMDb id (launcher links); null when TMDB doesn't know it. */
+    suspend fun findByImdb(imdbId: String, type: MediaType): TitleSummary?
 }
 
 /** Null in the app (screens use TMDB); renders provide fixed data. */
@@ -53,4 +55,5 @@ private class TmdbCatalog(private val tmdb: TmdbRepository) : Catalog {
     override suspend fun genres(type: MediaType) = tmdb.genres(type)
     override suspend fun byGenre(type: MediaType, genreId: Int, page: Int) = tmdb.byGenre(type, genreId, page)
     override suspend fun person(id: Int) = tmdb.person(id)
+    override suspend fun findByImdb(imdbId: String, type: MediaType) = tmdb.findByImdb(imdbId, type)
 }

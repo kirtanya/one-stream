@@ -37,6 +37,9 @@ object TmdbPaths {
     fun byGenre(type: MediaType, genreId: Int, page: Int = 1) =
         "discover/${type.path}?language=en-US&sort_by=popularity.desc&with_genres=$genreId&include_adult=false&vote_count.gte=50&page=$page"
 
+    /** Looks a title up by its IMDb id (tt…): `movie_results` / `tv_results`. */
+    fun find(imdbId: String) = "find/${URLEncoder.encode(imdbId.trim(), Charsets.UTF_8)}?external_source=imdb_id&language=en-US"
+
     fun person(id: Int) = "person/$id?language=en-US&append_to_response=combined_credits"
 
     private const val EXTRAS = "images,videos,recommendations,similar"
