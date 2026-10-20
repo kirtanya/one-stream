@@ -81,6 +81,6 @@ fun SourceRow(
 private fun metaLine(s: Source) = listOfNotNull(
     s.provider,
     s.sizeBytes?.let { formatBytes(it) },
-    s.seeders?.let { "$it seeders" },
+    s.seeders?.let { com.kirtanya.reel.ui.plural(it, "seeder") },
 ).joinToString(" · ")
 

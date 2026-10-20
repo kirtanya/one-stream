@@ -21,6 +21,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
@@ -64,7 +65,16 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onSear
     val continueItems = rememberContinueWatching()
     val gutter = Tokens.Space.phoneGutter
 
-    LoadView(load, retry) { rows ->
+    LoadView(load, retry) { all ->
+        // TMDB answered but with nothing to show (e.g. a regional hiccup): say so instead of crashing.
+        val rows = all.filter { it.items.isNotEmpty() }
+        if (rows.isEmpty()) {
+            com.kirtanya.reel.ui.common.EmptyState(
+                androidx.compose.material.icons.Icons.Rounded.Refresh, "Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.",
+                Modifier.statusBarsPadding().padding(top = Tokens.Space.xxxl),
+            ) { com.kirtanya.reel.ui.common.ReelButton("Try again", { retry() }, kind = com.kirtanya.reel.ui.common.ButtonKind.Secondary) }
+            return@LoadView
+        }
         val hero = rows.first().items.take(6)
         val pager = rememberPagerState { hero.size }
         val current = hero.getOrNull(pager.currentPage)

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -144,10 +145,14 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
             }
             if ((search?.sources?.size ?: 0) > 1) {
                 item(key = "filters") {
+                    // Chips count what the list below shows (everything but the Best match card).
+                    val others = search!!.sources.filter { it.key != best?.key }
+                    val chips = SourceFilter.entries.filter { f -> f == SourceFilter.All || others.any(f.test) }
+                    LaunchedEffect(chips) { if (filter !in chips) filter = SourceFilter.All }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                        items(SourceFilter.entries.filter { f -> f == SourceFilter.All || search!!.sources.any(f.test) }) { f ->
+                        items(chips) { f ->
                             ReelButton(
-                                "${f.label} · ${search!!.sources.count { it.key != best?.key && f.test(it) }}",
+                                "${f.label} · ${others.count(f.test)}",
                                 { filter = f },
                                 kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost,
                             )
@@ -220,8 +225,8 @@ private fun BestCard(
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
             Pill(source.provider)
             source.sizeBytes?.let { Pill(formatBytes(it)) }
-            source.seeders?.let { Pill("$it seeders") }
-            if (source.subtitles.isNotEmpty()) Pill("${source.subtitles.size} subtitles")
+            source.seeders?.let { Pill(com.kirtanya.reel.ui.plural(it, "seeder")) }
+            if (source.subtitles.isNotEmpty()) Pill(com.kirtanya.reel.ui.plural(source.subtitles.size, "subtitle"))
         }
         if (!fits) Text("Too big to stream on this device — pick a smaller one below.", style = Tokens.Type.caption, color = Tokens.Colors.warn)
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {

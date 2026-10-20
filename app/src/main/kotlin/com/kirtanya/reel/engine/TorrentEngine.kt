@@ -94,6 +94,10 @@ class TorrentEngine(private val context: Context) {
             if (started) return
             started = true
         }
+        // Whoever starts the engine (a download, a stream, sync) also needs the foreground service,
+        // or Android may kill the process in the background. Not allowed from the background on 12+; then
+        // the app's next launch starts it.
+        runCatching { EngineService.start(context) }
         streamDir.mkdirs()
         stateDir.mkdirs()
         session.addListener(listener)

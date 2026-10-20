@@ -332,6 +332,12 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
         }
     }
 
+    // Results ("Added …", errors) as a toast: the field that caused them is often at the bottom of the page.
+    val context = LocalContext.current
+    LaunchedEffect(message) {
+        message?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show(); message = null }
+    }
+
     // TV: the remote starts on the page's first control.
     val first = remember { FocusRequester() }
     if (isTv) RequestFocusOnce(first)
@@ -347,7 +353,6 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
 
     PageList(isTv, Modifier.focusRequester(first)) {
         item { PageTitle(page.title, subtitle, isTv, onBack) }
-        message?.let { m -> item { Text(m, style = Tokens.Type.label, color = Tokens.Colors.accentBright) } }
 
         when (page) {
             SettingsPage.Appearance -> {

@@ -1,5 +1,6 @@
 package com.kirtanya.reel.engine
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Process
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -54,11 +56,27 @@ class EngineService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_QUIT) {
-            ReelApp.get(this).engine.shutdown()
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            quit()
+            return START_NOT_STICKY
         }
         return START_STICKY
+    }
+
+    /**
+     * Closes the app's screens at once, then saves resume data off the main thread (it waits ~1.5 s)
+     * and ends the process, so the next launch starts a fresh engine instead of reviving a stopped one.
+     */
+    private fun quit() {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        getSystemService(ActivityManager::class.java).appTasks.forEach { runCatching { it.finishAndRemoveTask() } }
+        val engine = ReelApp.get(this).engine
+        Thread({
+            runCatching { engine.shutdown() }
+            ContextCompat.getMainExecutor(this).execute {
+                stopSelf()
+                Process.killProcess(Process.myPid())
+            }
+        }, "reel-quit").start()
     }
 
     private fun notification(text: String, streaming: Boolean = false): Notification {

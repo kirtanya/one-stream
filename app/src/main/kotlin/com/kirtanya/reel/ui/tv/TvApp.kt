@@ -59,6 +59,8 @@ fun TvApp(
     onTabHandled: () -> Unit = {},
 ) {
     val nav = rememberNavigator()
+    // Each screen keeps its state (search text, season, scroll) while you're on a page above it.
+    val saveable = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     LaunchedEffect(openDest) {
         openDest?.let { nav.openOrReturn(it); onOpenHandled() }
     }
@@ -73,10 +75,10 @@ fun TvApp(
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified) {
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         when (val top = nav.top) {
-            is Dest.Title -> TvTitle(top.ref, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) })
+            is Dest.Title -> saveable.SaveableStateProvider("title:${top.ref}") { TvTitle(top.ref, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) }) }
             is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = true, onBack = { nav.back() })
-            is Dest.Collection -> CollectionScreen(top, isTv = true, onBack = { nav.back() }, onOpen = openTitle)
-            null -> {
+            is Dest.Collection -> saveable.SaveableStateProvider("collection:${top.title}") { CollectionScreen(top, isTv = true, onBack = { nav.back() }, onOpen = openTitle) }
+            null -> saveable.SaveableStateProvider(nav.tab.name) {
                 when (nav.tab) {
                     Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = { nav.open(it) })
                     Tab.Search -> TvSearch(onOpen = openTitle)

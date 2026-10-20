@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -97,6 +98,8 @@ fun ContinueRow(
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         SectionHeader("Continue watching", Modifier.padding(horizontal = sidePadding))
         LazyRow(
+            // TV: up/down between rows comes back to the card last focused in this row.
+            modifier = Modifier.focusRestorer(),
             state = listState,
             contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),

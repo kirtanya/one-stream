@@ -90,6 +90,6 @@ fun ReelButton(
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s, Alignment.CenterHorizontally),
     ) {
         if (icon != null) Icon(icon, contentDescription = text.ifEmpty { null }, tint = fg, modifier = Modifier.size(18.dp))
-        if (text.isNotEmpty()) Text(text, style = Tokens.Type.label, color = fg, maxLines = 1, softWrap = false)
+        if (text.isNotEmpty()) Text(text, Modifier.weight(1f, fill = false), style = Tokens.Type.label, color = fg, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }

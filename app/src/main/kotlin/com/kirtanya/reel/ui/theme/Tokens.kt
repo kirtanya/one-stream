@@ -3,6 +3,7 @@ package com.kirtanya.reel.ui.theme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -48,8 +49,10 @@ object Tokens {
         val ringStart: Color get() = c.primary
         val ringEnd: Color get() = c.tertiary
 
-        val good = Color(0xFF4ADE80)
-        val warn = Color(0xFFFBBF24)
+        private val isDark get() = c.surface.luminance() < 0.5f
+        // Status colours, a tone that reads on the current surface (light text-safe in light mode).
+        val good: Color get() = if (isDark) Color(0xFF4ADE80) else Color(0xFF15803D)
+        val warn: Color get() = if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
         val danger: Color get() = c.error
         val scrim: Color get() = c.surface.copy(alpha = 0.8f)
 

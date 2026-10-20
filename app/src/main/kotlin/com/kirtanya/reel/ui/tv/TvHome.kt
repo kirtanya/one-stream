@@ -1,5 +1,7 @@
 package com.kirtanya.reel.ui.tv
 
+import androidx.compose.material.icons.rounded.Refresh
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +26,8 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -82,7 +86,16 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
     val tmdb = ReelApp.get(LocalContext.current).tmdb
     val (load, retry) = rememberLoad(Unit) { tmdb.home() }
     val continueItems = rememberContinueWatching()
-    LoadView(load, retry, Modifier.padding(top = TvTopBarHeight)) { rows ->
+    LoadView(load, retry, Modifier.padding(top = TvTopBarHeight)) { all ->
+        // TMDB answered but with nothing to show (e.g. a regional hiccup): say so instead of crashing.
+        val rows = all.filter { it.items.isNotEmpty() }
+        if (rows.isEmpty()) {
+            com.kirtanya.reel.ui.common.EmptyState(
+                androidx.compose.material.icons.Icons.Rounded.Refresh, "Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.",
+                Modifier.padding(top = Tokens.Space.xxxl),
+            ) { com.kirtanya.reel.ui.common.ReelButton("Try again", { retry() }, kind = com.kirtanya.reel.ui.common.ButtonKind.Secondary) }
+            return@LoadView
+        }
         val initial = continueItems.firstOrNull()?.info() ?: rows.first().items.first().info()
         var focused by remember { mutableStateOf(initial) }
         var backdrop by remember { mutableStateOf(focused.backdropPath) }
@@ -96,7 +109,9 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
         val continueState = rememberLazyListState()
         // The first poster row's scroll, so focus can come back to poster 0 after the last Continue card goes.
         val firstRowState = rememberLazyListState()
-        RequestFocusOnce(firstCard)
+        // First visit: the first card. Coming back (Back from a title): the card you opened, via focusRestorer.
+        val columnFocus = remember { FocusRequester() }
+        RequestFocusOnce(columnFocus)
         // A Continue watching card was removed (hold OK) or changed: refresh the header and put the
         // remote's focus back on the first card instead of losing it.
         LaunchedEffect(continueItems) {
@@ -137,7 +152,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
                     Text(focused.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 }
                 LazyColumn(
-                    Modifier.weight(1f),
+                    Modifier.weight(1f).focusRequester(columnFocus).focusRestorer(),
                     state = columnState,
                     contentPadding = PaddingValues(bottom = Tokens.Space.tvSafeV),
                     verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),

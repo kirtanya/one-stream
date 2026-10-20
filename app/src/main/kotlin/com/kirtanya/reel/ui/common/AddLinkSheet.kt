@@ -62,6 +62,8 @@ fun AddLinkSheet(initialLink: String?, onDismiss: () -> Unit, onDownloadStarted:
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     var link by remember { mutableStateOf(initialLink.orEmpty()) }
+    // A second magnet arriving while the sheet is open replaces the first.
+    androidx.compose.runtime.LaunchedEffect(initialLink) { if (!initialLink.isNullOrBlank()) link = initialLink }
     var file by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var busy by remember { mutableStateOf(false) }
     val magnet = Magnet.parse(link)
@@ -155,7 +157,14 @@ fun AddLinkSheet(initialLink: String?, onDismiss: () -> Unit, onDownloadStarted:
             }
             ReelButton(
                 "Open a .torrent file",
-                { pickFile.launch(arrayOf("application/x-bittorrent", "application/octet-stream")) },
+                {
+                    // Many TVs have no file picker at all.
+                    try {
+                        pickFile.launch(arrayOf("application/x-bittorrent", "application/octet-stream"))
+                    } catch (e: android.content.ActivityNotFoundException) {
+                        android.widget.Toast.makeText(context, "This device has no file picker. Paste a magnet link instead.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                },
                 Modifier.fillMaxWidth(),
                 kind = ButtonKind.Secondary,
                 icon = Icons.Rounded.FileOpen,

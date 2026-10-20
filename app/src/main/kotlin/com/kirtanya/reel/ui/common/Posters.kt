@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.kirtanya.reel.core.tmdb.MediaType
@@ -69,6 +70,8 @@ fun PosterRow(
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         SectionHeader(title, Modifier.padding(horizontal = sidePadding), action = if (onSeeAll != null) "See all" else null, onAction = onSeeAll)
         LazyRow(
+            // TV: up/down between rows comes back to the card last focused in this row.
+            modifier = Modifier.focusRestorer(),
             state = listState,
             contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),

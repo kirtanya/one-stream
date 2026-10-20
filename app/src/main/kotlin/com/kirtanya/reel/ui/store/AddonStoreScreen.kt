@@ -118,7 +118,7 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
                     )
                     else -> Text(
                         buildString {
-                            append("${results.size} addons")
+                            append(com.kirtanya.reel.ui.plural(results.size, "addon"))
                             if (hidden > 0) append(" · $hidden catalog-only addons hidden (One Stream uses streams and subtitles)")
                             if (store.failed.isNotEmpty()) append(" · couldn't load: ${store.failed.joinToString()}")
                         },

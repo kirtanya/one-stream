@@ -172,7 +172,7 @@ fun SearchResults(
                 if (query.isNotEmpty() && results.isEmpty()) {
                     EmptyState(Icons.Rounded.Search, "Nothing found", "No ${if (kind == SearchKind.All) "titles" else kind.label.lowercase()} match “$query”. Try another spelling.")
                 } else {
-                    SectionHeader(if (query.isEmpty()) "Trending this week" else "${results.size} results")
+                    SectionHeader(if (query.isEmpty()) "Trending this week" else com.kirtanya.reel.ui.plural(results.size, "result"))
                 }
             }
             itemsIndexed(results, key = { _, it -> it.ref.toString() }) { i, item ->

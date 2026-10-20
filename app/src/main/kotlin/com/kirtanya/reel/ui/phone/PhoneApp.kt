@@ -102,7 +102,7 @@ fun PhoneApp(
                 PhoneTitle(top.ref, onBack = { nav.back() }, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) })
             }
             is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = false, onBack = { nav.back() })
-            is Dest.Collection -> CollectionScreen(top, isTv = false, onBack = { nav.back() }, onOpen = openTitle)
+            is Dest.Collection -> saveable.SaveableStateProvider("collection:${top.title}") { CollectionScreen(top, isTv = false, onBack = { nav.back() }, onOpen = openTitle) }
             null -> saveable.SaveableStateProvider(nav.tab.name) {
                 when (nav.tab) {
                     Tab.Home -> PhoneHome(onOpen = openTitle, onOpenDest = { nav.open(it) }, onSearch = { nav.select(Tab.Search) }, onDownloads = { nav.select(Tab.Downloads) })

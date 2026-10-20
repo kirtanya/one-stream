@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
         fun openDownloads(context: android.content.Context): Intent =
             Intent(context, MainActivity::class.java)
                 .setAction(ACTION_OPEN_DOWNLOADS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
         /** Brings the app back as it was (e.g. to the player while streaming): the launcher's own intent. */
         fun resume(context: android.content.Context): Intent =

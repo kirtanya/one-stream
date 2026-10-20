@@ -90,14 +90,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
             delay(3000)
         }
     }
-    val shown = torrents.filter {
-        when (filter) {
-            DownloadFilter.All -> true
-            DownloadFilter.Active -> it.phase in setOf(TorrentPhase.DOWNLOADING, TorrentPhase.METADATA, TorrentPhase.CHECKING, TorrentPhase.PAUSED) && it.mode == TorrentMode.DOWNLOAD
-            DownloadFilter.Done -> it.mode == TorrentMode.DOWNLOAD && it.phase in setOf(TorrentPhase.FINISHED, TorrentPhase.SEEDING)
-            DownloadFilter.Streams -> it.mode == TorrentMode.STREAM
-        }
-    }
+    val shown = torrents.filter { it.matches(filter) }
     val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
@@ -131,14 +124,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                     items(DownloadFilter.entries) { f ->
-                        val count = torrents.count { t ->
-                            when (f) {
-                                DownloadFilter.All -> true
-                                DownloadFilter.Active -> t.mode == TorrentMode.DOWNLOAD && t.phase !in setOf(TorrentPhase.FINISHED, TorrentPhase.SEEDING)
-                                DownloadFilter.Done -> t.mode == TorrentMode.DOWNLOAD && t.phase in setOf(TorrentPhase.FINISHED, TorrentPhase.SEEDING)
-                                DownloadFilter.Streams -> t.mode == TorrentMode.STREAM
-                            }
-                        }
+                        val count = torrents.count { it.matches(f) }
                         ReelButton("${f.label} · $count", { filter = f }, kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost)
                     }
                 }
@@ -208,7 +194,7 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
                 Text(t.name, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(statusLine(t), style = Tokens.Type.caption, color = if (t.error != null) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 1)
+                Text(statusLine(t), style = Tokens.Type.caption, color = if (t.error != null) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
         if (!done) GradientProgress(t.progress)
@@ -218,8 +204,9 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
             ReelButton(if (done) "Play" else "Play now", { context.startActivity(PlayerActivity.forTorrent(context, t.infoHash, t.name)) }, kind = ButtonKind.Secondary, icon = Icons.Rounded.PlayArrow)
-            if (t.mode == TorrentMode.STREAM) ReelButton("Keep", { engine.keep(t.infoHash) }, kind = ButtonKind.Ghost, icon = Icons.Rounded.SaveAlt)
             Spacer(Modifier.weight(1f))
+            // Icons, not labels, so Play + up to three actions fit a 360 dp phone.
+            if (t.mode == TorrentMode.STREAM) GlassIconButton(Icons.Rounded.SaveAlt, "Keep (save to Downloads)", { engine.keep(t.infoHash) })
             if (!done) {
                 if (t.phase == TorrentPhase.PAUSED) GlassIconButton(Icons.Rounded.Download, "Resume", { engine.resume(t.infoHash) })
                 else GlassIconButton(Icons.Rounded.Pause, "Pause", { engine.pause(t.infoHash) })
@@ -227,6 +214,14 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
             GlassIconButton(Icons.Rounded.Delete, "Delete", onDelete)
         }
     }
+}
+
+/** One rule for both the filter's list and its count (errors show under Downloading). */
+private fun TorrentSnapshot.matches(f: DownloadFilter): Boolean = when (f) {
+    DownloadFilter.All -> true
+    DownloadFilter.Active -> mode == TorrentMode.DOWNLOAD && phase !in setOf(TorrentPhase.FINISHED, TorrentPhase.SEEDING)
+    DownloadFilter.Done -> mode == TorrentMode.DOWNLOAD && phase in setOf(TorrentPhase.FINISHED, TorrentPhase.SEEDING)
+    DownloadFilter.Streams -> mode == TorrentMode.STREAM
 }
 
 private fun statusLine(t: TorrentSnapshot): String = buildString {
@@ -243,7 +238,7 @@ private fun statusLine(t: TorrentSnapshot): String = buildString {
     )
     if (t.hasMetadata) append(" · ").append(formatBytes(t.wantedBytes))
     if (t.phase == TorrentPhase.DOWNLOADING || t.phase == TorrentPhase.METADATA) {
-        append(" · ↓ ").append(formatBytes(t.downBps.toLong())).append("/s · ").append(t.peers).append(" peers")
+        append(" · ↓ ").append(formatBytes(t.downBps.toLong())).append("/s · ").append(com.kirtanya.reel.ui.plural(t.peers, "peer"))
         t.etaSec?.let { append(" · ").append(formatEta(it)) }
     }
 }
