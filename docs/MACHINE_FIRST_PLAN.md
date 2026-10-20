@@ -52,6 +52,34 @@ visible.
   `app/src/test/resources/design-baseline/` (one line per screen + element + measurement). They are
   fixed over time and the list only shrinks; nothing new is added to it without your OK.
 
+## Step 4 in use: automated device round
+
+One command replaces the hand testing of a release on the TV and the phone:
+`tool/device_round.sh` (≈ 3–4 min per device once the sample is playing).
+
+- **Only idle devices.** Each device is checked first and skipped (with the reason printed) unless it
+  is awake, unlocked, nothing plays, and its launcher or One Stream's home screen is on top. A locked
+  phone is never unlocked, a sleeping TV is never woken. Before every key press / tap the round checks
+  that its own player is still in front; if someone picks the device up, it stops pressing anything.
+- **What it does per device**: installs the newest `~/Desktop/APKs/OneStream-<ver>-<phone|tv>.apk`
+  (skipped when that version is already installed; `--force-install`), opens the app, plays the legal
+  Tears of Steel sample, waits for the first frame (≤ 2 min), then — TV: OK for the strip, D-pad to
+  the seek bar, scrub forward, open Settings, Back, Back; phone: tap for the controls, double-tap right
+  (+10 s), swipe-scrub, open the settings sheet, close it. A screenshot after each step.
+- **Cleans up**: leaves the player, goes to the launcher, and takes the sample out of Continue
+  watching (or puts back your own position if you had it there).
+- **Collects** first-frame time, seeks (count, median, slowest 10 %), rebuffers, reader waits,
+  "outstanding" engine warnings, crashes, ANRs and any problem report saved during the round
+  (pulled with `tool/pull_reports.sh`).
+- **Compares with the last clean round** per device and prints `metric · before · now · verdict`.
+  Swarms are noisy, so a number is only *worse* when it is both 1.5× and clearly more (first frame
+  + 5 s, seek + 2–3 s, rebuffers + 2). A start from cached pieces is not compared with a cold one.
+  The round fails (exit 1) only on a crash, an ANR or playback that never started.
+- **Files** (not committed): `rounds/<time>/<device>/NN-<step>.png`, `reelstats.txt`, `crash.txt`,
+  `meta.json`; `rounds/<time>/summary.json`; `rounds/latest.json` (the comparison point).
+- **Options**: `--only phone|tv`, `--phone-apk` / `--tv-apk <file>`, `--dry-run` (safety check and
+  plan only, touches nothing).
+
 Parked separately: home disk (`docs/HOME_DISK_PLAN.md`) — fits after step 7.
 
 ## Rules for every step

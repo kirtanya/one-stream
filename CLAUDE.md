@@ -104,6 +104,11 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
     `--es reportTest crash|freeze` test the automatic ones
 - **Undo test effects:** tests that play something change the user's Continue watching. Run
   `--ez history true` before, then restore with `setPosition` / `removeTitle` afterwards.
+- **Device round** (verify a release on the devices, MACHINE_FIRST_PLAN step 4): `tool/device_round.sh`
+  [`--only phone|tv`] [`--dry-run`]. Skips any device that isn't idle, installs the newest APK, plays the
+  legal sample, drives the player, screenshots, cleans up Continue watching, compares with
+  `rounds/latest.json` (gitignored `rounds/`). Exit 1 = crash / ANR / no playback. Logic + tests:
+  `core/round/` (IdleGate, RoundLog, RoundCompare). Run it at home only (it streams P2P).
 - **Streaming numbers:** `adb logcat -s ReelStats` (ttm / ttff / rebuffers / seeks / stalls, see
   STREAMING_V2.md §11). Engine flags: `files/engine_flags.properties` on the device (§11.2).
 

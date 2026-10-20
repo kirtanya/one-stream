@@ -24,3 +24,14 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+// tool/device_round.sh runs the round logic (core/round/DeviceRoundCli) with plain `java`, a second
+// per call instead of a Gradle run each time: this compiles it and writes the classpath it needs.
+tasks.register("deviceRoundClasspath") {
+    dependsOn("classes")
+    val cp = sourceSets.main.get().runtimeClasspath
+    val out = layout.buildDirectory.file("device-round.classpath")
+    inputs.files(cp)
+    outputs.file(out)
+    doLast { out.get().asFile.writeText(cp.asPath) }
+}

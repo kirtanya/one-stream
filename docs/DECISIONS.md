@@ -5,6 +5,26 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-20 · Automated device round (machine-first step 4)**
+Decision: `tool/device_round.sh` verifies a build on the TV and phone the way today's hand test did:
+install, play the legal Tears of Steel sample, drive the player (TV: D-pad strip, scrub, settings;
+phone: tap, double-tap, swipe-scrub, settings sheet; PiP left out), screenshot each step, collect
+ReelStats + crashes / ANRs / problem reports, clean up, compare with the last clean round. Choices:
+- Safety gate is strict: awake, unlocked, nothing playing, and only the launcher or our *home* screen on
+  top (our player on top, even paused, counts as busy). Re-checked before every input; if anything else
+  comes to the front the round stops pressing keys on that device.
+- Thresholds tolerate swarm noise: worse only when ≥ 1.5× AND clearly more (ttff + 5 s, seek p50 + 2 s,
+  p90 + 3 s, rebuffer time + 5 s, longest wait + 3 s; rebuffers + 2; waits / outstanding warnings 2× and
+  + 5 / + 3). Cold vs cached starts aren't compared (the sample's pieces stay in the cache after a
+  round, so later rounds usually start cached). Exit 1 only for crash, ANR, or no first frame.
+- Only a clean, complete round becomes `rounds/latest.json` (the comparison point), so a failed or
+  interrupted round never lowers the bar.
+- The decisions live in `:core` (`core/round/`: IdleGate, RoundLog, RoundCompare, unit-tested); the shell
+  script only drives adb and runs them with plain `java` (classpath from `:core:deviceRoundClasspath`).
+- Continue watching is restored exactly: the sample is removed, or the user's own position on it put back.
+Why: releases get verified the same way every time without a person or a long Claude session.
+Evidence: `docs/MACHINE_FIRST_PLAN.md` "Step 4 in use"; `core/src/test/.../DeviceRoundTest.kt`.
+
 **2026-10-20 · Trimmed the machine-first plan; short names again**
 Decision: no "machine-only" code style (the user's call: compilers strip names, so it gives no speed and makes
 Claude worse). Plan step 9 (state-machine experiment) dropped, step 5 (auto-install) postponed. Release

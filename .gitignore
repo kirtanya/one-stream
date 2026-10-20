@@ -11,3 +11,5 @@ tmdb.key
 key.properties
 *.jks
 mappings/
+# Automated device rounds (tool/device_round.sh): screenshots, logs, summaries
+rounds/
