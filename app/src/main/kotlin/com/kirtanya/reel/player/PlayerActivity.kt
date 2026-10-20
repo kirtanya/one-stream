@@ -638,8 +638,7 @@ class PlayerActivity : ComponentActivity() {
                     val line = when {
                         s.phase == TorrentPhase.METADATA -> "Finding peers… ${s.peers} connected"
                         player == null -> "Preparing · ${s.peers} peers"
-                        tvControls != null -> "${formatBytes(s.downBps.toLong())}/s · ${s.peers} peers"
-                        else -> "Buffering · ↓ ${formatBytes(s.downBps.toLong())}/s · ${s.peers} peers"
+                        else -> "${formatBytes(s.downBps.toLong())}/s · ${s.peers} peers"
                     }
                     showStatus(line)
                 }
@@ -920,8 +919,8 @@ class PlayerActivity : ComponentActivity() {
         val tv = isTelevision()
         playerView = PlayerView(this).apply {
             keepScreenOn = true
-            // TV: no centre spinner (a small chip at the top right says it) and our own strip.
-            setShowBuffering(if (tv) PlayerView.SHOW_BUFFERING_NEVER else PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+            // No centre spinner: a small chip at the top right says it (TV and phone).
+            setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
             setShowSubtitleButton(true)
             if (tv) {
                 useController = false
@@ -957,57 +956,22 @@ class PlayerActivity : ComponentActivity() {
             onNext = { playNext() },
         )
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))
-
-        status = text(15f, Color.WHITE, medium = true).apply {
-            setPadding(dp(18), dp(10), dp(18), dp(10))
-            background = glass(radius = 999)
-            // Hidden until there's something to say (it showed as an empty pill on direct links).
-            visibility = View.GONE
-        }
-        // Top-left, so it never covers the seek bar or controls.
-        // Below the title strip: status on the left, "Start over" on the right, never on top of each other.
-        status.maxWidth = (resources.displayMetrics.widthPixels * 0.48f).toInt()
-        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(24), dp(84), dp(24), 0) })
-
-        resumeChip = button("") {
-            player?.seekTo(0)
-            hideResumeChip()
-        }.apply { visibility = View.GONE }
-        resumeChip.maxWidth = (resources.displayMetrics.widthPixels * 0.48f).toInt()
-        root.addView(resumeChip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(84), dp(24), 0) })
-
-        nextCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(18))
-            background = glass(radius = 24)
-            visibility = View.GONE
-            nextTitle = text(18f, Color.WHITE, medium = true)
-            nextCountdown = text(14f, Tokens.Night.textSecondary.toArgb()).apply { setPadding(0, dp(4), 0, dp(14)) }
-            addView(nextTitle)
-            addView(nextCountdown)
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                nextPlay = button("Play now", primary = true) { playNext() }
-                addView(nextPlay)
-                addView(button("Cancel") { cancelNext() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
-            })
-        }
-        root.addView(nextCard, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(48), dp(110)) })
-
+        // The same small chips as the TV, under the top bar on the right.
+        buildTvChips(root, topMarginDp = 64)
         buildErrorPanel(root)
         return root
     }
 
     /**
-     * TV: every status chip is small and sits at the top right, side by side: Up next, Start over,
+     * Every status chip is small and sits at the top right (under the top bar on phones), side by side: Up next, Start over,
      * then the buffering chip (spinner + speed) at the corner.
      */
-    private fun buildTvChips(root: FrameLayout) {
+    private fun buildTvChips(root: FrameLayout, topMarginDp: Int = 20) {
         val chips = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
         }
-        root.addView(chips, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(20), dp(24), 0) })
+        root.addView(chips, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(topMarginDp), dp(24), 0) })
         fun chipGap() = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) }
 
         nextCard = LinearLayout(this).apply {

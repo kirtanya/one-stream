@@ -81,6 +81,7 @@ internal class PhoneControls(
     private val rightBubble = bubble()
     private val settingsPanel = SettingsPanel(ctx, font, { player }, extraSettings) { closePanel() }
 
+    private val centre = LinearLayout(ctx)
     private var locked = false
     private var zoomed = false
     private val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -115,7 +116,8 @@ internal class PhoneControls(
         safe.addView(top, LayoutParams(-1, -2, Gravity.TOP).apply { setMargins(ctx.dp(8), ctx.dp(8), ctx.dp(8), 0) })
 
         // Centre transport
-        val centre = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        centre.orientation = LinearLayout.HORIZONTAL
+        centre.gravity = Gravity.CENTER_VERTICAL
         centre.addView(rew, LinearLayout.LayoutParams(ctx.dp(56), ctx.dp(56)))
         centre.addView(play, LinearLayout.LayoutParams(ctx.dp(72), ctx.dp(72)).apply { marginStart = ctx.dp(36); marginEnd = ctx.dp(36) })
         centre.addView(ffwd, LinearLayout.LayoutParams(ctx.dp(56), ctx.dp(56)))
@@ -169,6 +171,8 @@ internal class PhoneControls(
         seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); remaining.text = "−" + PlayerActivity.formatTime((seek.duration - it).coerceAtLeast(0)); showHud(null, PlayerActivity.formatTime(it)); touch() }
         seek.onSeek = { player?.seekTo(it); hideHudSoon(); touch() }
         for (b in listOf(play, rew, ffwd, back, subs, tune, lock, fit, pip, unlock)) b.tint(Color.WHITE)
+        // Alone on the picture: a dark disc keeps the unlock button readable on bright scenes.
+        unlock.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x66000000) }
         seek.tint(Color.WHITE)
         controls.visibility = GONE
     }
@@ -236,6 +240,8 @@ internal class PhoneControls(
     internal fun openPanelForPreview() = openPanel(null)
 
     private fun openPanel(section: String?) {
+        // The sheet sits over the right half: the centre buttons step aside while it's open.
+        centre.visibility = INVISIBLE
         settingsPanel.show(section)
         main.removeCallbacks(hideRunnable)
     }
@@ -243,6 +249,7 @@ internal class PhoneControls(
     private fun closePanel() {
         if (!settingsPanel.open) return
         settingsPanel.hide()
+        centre.visibility = VISIBLE
         touch()
     }
 
@@ -373,7 +380,8 @@ internal class PhoneControls(
         override fun onLongPress(e: MotionEvent) {
             if (locked || drag != Drag.NONE) return
             val p = player ?: return
-            if (!p.isPlaying) return
+            // While playing or waiting for data (not when the user paused).
+            if (!p.playWhenReady) return
             fastHeld = true
             speedBeforeFast = p.playbackParameters.speed
             p.setPlaybackSpeed(2f)
