@@ -54,8 +54,15 @@ class WatchHistoryStore(context: Context) {
     }
 
     private fun update(change: (List<WatchEntry>) -> List<WatchEntry>) {
-        val next = synchronized(lock) {
-            change(_entries.value).also { _entries.value = it }
+        val (before, next) = synchronized(lock) {
+            val before = _entries.value
+            before to change(before).also { _entries.value = it }
+        }
+        // Entries disappearing is the one change the user can't easily redo: always say which and from where.
+        val gone = before.map { it.playback.key } - next.map { it.playback.key }.toSet()
+        if (gone.isNotEmpty()) {
+            val from = Throwable().stackTrace.drop(1).take(4).joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}" }
+            Log.i(TAG, "removed ${gone.joinToString()} (${before.size} -> ${next.size}) from $from")
         }
         pending.trySend(next)
     }
@@ -64,6 +71,8 @@ class WatchHistoryStore(context: Context) {
     private fun write(snapshot: List<WatchEntry>) {
         var out: java.io.FileOutputStream? = null
         runCatching {
+            // One generation back, so a bad change can be undone (files/history.prev.json).
+            if (file.baseFile.exists()) runCatching { file.baseFile.copyTo(File(file.baseFile.parentFile, "history.prev.json"), overwrite = true) }
             out = file.startWrite()
             out!!.write(json.encodeToString(ListSerializer(WatchEntry.serializer()), snapshot).toByteArray())
             file.finishWrite(out)
