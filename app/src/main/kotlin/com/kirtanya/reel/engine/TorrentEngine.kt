@@ -14,7 +14,25 @@ import com.kirtanya.reel.core.stream.DiskBackend
 import com.kirtanya.reel.core.stream.FileChoice
 import com.kirtanya.reel.core.stream.FileSpan
 import com.kirtanya.reel.core.stream.FormFactor
-import com.kirtanya.reel.core.stream.PieceDeadline
+import com.kirtanya.reel.core.stream.AppliedState
+import com.kirtanya.reel.core.stream.ContainerProbe
+import com.kirtanya.reel.core.stream.DiffContext
+import com.kirtanya.reel.core.stream.GuardState
+import com.kirtanya.reel.core.stream.KiB
+import com.kirtanya.reel.core.stream.MediaRate
+import com.kirtanya.reel.core.stream.PlanDiff
+import com.kirtanya.reel.core.stream.PlanInput
+import com.kirtanya.reel.core.stream.PlanMerge
+import com.kirtanya.reel.core.stream.PlanOp
+import com.kirtanya.reel.core.stream.PlayerSignals
+import com.kirtanya.reel.core.stream.ProbeStep
+import com.kirtanya.reel.core.stream.ReaderView
+import com.kirtanya.reel.core.stream.SchedulerProfile
+import com.kirtanya.reel.core.stream.StartupPlanner
+import com.kirtanya.reel.core.stream.StartupSet
+import com.kirtanya.reel.core.stream.StorageAllowance
+import com.kirtanya.reel.core.stream.StreamPhase
+import com.kirtanya.reel.core.stream.ZoneScheduler
 import com.kirtanya.reel.core.stream.PieceGate
 import com.kirtanya.reel.core.stream.ReaderKind
 import com.kirtanya.reel.core.stream.ReaderListener
@@ -27,7 +45,6 @@ import com.kirtanya.reel.core.stream.RestoreFlags
 import com.kirtanya.reel.core.stream.RestoreMeta
 import com.kirtanya.reel.core.stream.RestorePolicy
 import com.kirtanya.reel.core.stream.SessionTuning
-import com.kirtanya.reel.core.stream.StreamPlanner
 import com.kirtanya.reel.core.stream.TorrentFileEntry
 import com.kirtanya.reel.core.stream.TorrentKey
 import com.kirtanya.reel.core.stream.mimeTypeFor
@@ -487,7 +504,10 @@ class TorrentEngine(private val context: Context) {
                 uri = TorrentStreamRef(hash, file.index, token, file.name).format(),
             )
             metas[hash]?.let { saveMeta(it.copy(streamFileIndex = file.index, lastUsedAt = System.currentTimeMillis())) }
-            val active = ActiveStream(stream, handle, StreamPlanner(span), gate)
+            val profile = SchedulerProfile.of(formFactor, disk)
+            val baseline = baselineVector(fs, info.numPieces(), info.pieceLength(), intended)
+            val active = ActiveStream(stream, handle, gate, profile, info.numPieces(), baseline, download = mode == TorrentMode.DOWNLOAD)
+            active.startupSet = StartupPlanner.initial(span, file.extension, startMs = 0, durationMs = null, rate = MediaRate.of(file.size, null, null), profile = profile)
             active.fileReady = !changed
             synchronized(streamLock) {
                 // A previous stream on this torrent (the last episode of a season pack): its readers
@@ -562,6 +582,7 @@ class TorrentEngine(private val context: Context) {
         val rate = owner.file.size * 1000 / durationMs
         if (s.bytesPerSec == rate) return
         s.bytesPerSec = rate
+        s.playerDurationMs = durationMs
         EngineStats.event(owner.infoHash, "rate", mapOf("B" to rate, "src" to "player"))
         kick(s, immediate = false)
     }
@@ -570,10 +591,28 @@ class TorrentEngine(private val context: Context) {
      * The player went to the background: stop fetching [owner]'s stream-mode torrent so it doesn't
      * eat bandwidth (e.g. while another app plays). Downloads and other players' streams are untouched.
      */
-    fun suspendStream(hash: String, owner: StreamInfo?) = streamHandleIfOwned(hash, owner)?.pause()
+    fun suspendStream(hash: String, owner: StreamInfo?) {
+        streams[hash]?.takeIf { owner == null || it.info === owner }?.let { it.background = true }
+        streamHandleIfOwned(hash, owner)?.pause()
+    }
 
     /** The player is visible again: carry on fetching. */
-    fun resumeStream(hash: String, owner: StreamInfo?) = streamHandleIfOwned(hash, owner)?.resume()
+    fun resumeStream(hash: String, owner: StreamInfo?) {
+        val s = streams[hash]?.takeIf { owner == null || it.info === owner }
+        s?.background = false
+        streamHandleIfOwned(hash, owner)?.resume()
+        s?.let { kick(it, immediate = true) }
+    }
+
+    /** The player's live state (position, buffer, playing), read by the scheduler. */
+    fun playerSignals(owner: StreamInfo): PlayerSignals? = streams[owner.infoHash]?.takeIf { it.info === owner }?.signals
+
+    /** First frame, seeks and hand-offs replan at once. */
+    fun onPlayerEvent(owner: StreamInfo, event: String) {
+        val s = streams[owner.infoHash]?.takeIf { it.info === owner } ?: return
+        if (event == "firstFrame") s.signals.firstFrame = true
+        kick(s, immediate = true)
+    }
 
     private fun streamHandleIfOwned(hash: String, owner: StreamInfo?): TorrentHandle? = synchronized(streamLock) {
         val s = streams[hash] ?: return null
@@ -766,6 +805,7 @@ class TorrentEngine(private val context: Context) {
             if (!ok) { engineExec.schedule({ releaseFileBarrier(s, true) }, 500, TimeUnit.MILLISECONDS); return }
         }
         s.fileReady = true
+        s.forceFull = true
         s.gate.signalAll()
         kick(s, immediate = true)
     }
@@ -775,55 +815,155 @@ class TorrentEngine(private val context: Context) {
             runCatching { engineExec.execute { replan(s) } }
             return
         }
-        if (s.pending.compareAndSet(false, true)) runCatching { engineExec.schedule({ replan(s) }, 250, TimeUnit.MILLISECONDS) }
+        if (s.pending.compareAndSet(false, true)) runCatching { engineExec.schedule({ replan(s) }, s.profile.replanThrottleMs, TimeUnit.MILLISECONDS) }
     }
 
     /**
-     * Interim scheduler (docs/STREAMING_V2.md §12, phase 2): startup pieces plus a read-ahead window
-     * sized in seconds of video, applied incrementally. New deadlines are set before departed ones
-     * are reset, and the deadline list is never cleared while streaming, so libtorrent keeps its
-     * in-flight requests instead of cancelling and re-requesting them on every piece.
+     * The zone scheduler (docs/STREAMING_V2.md §4): plan → merge → diff → apply, on the engine
+     * thread. Urgent pieces get deadlines timed against the playhead; everything ahead comes in
+     * file order through a sequential range; libtorrent only ever receives the differences.
      */
     private fun replan(s: ActiveStream) {
         s.pending.set(false)
         if (s.closedReason != null || streams[s.info.infoHash] !== s) return
+        val now = EngineStats.now()
         val gate = s.gate
-        val wanted = LinkedHashMap<Int, Int>()
-        fun add(list: List<PieceDeadline>) = list.forEach { (p, ms) -> if (!gate.pieces.has(p)) wanted.merge(p, ms, ::minOf) }
-        add(s.planner.startup())
-        val window = StreamPlanner.windowBytes(s.bytesPerSec, s.info.span.pieceLength)
-        val positions = s.readers.values.map { it.position }.toMutableList()
-        if (s.lastClosedAt > 0 && EngineStats.now() - s.lastClosedAt < GHOST_MS) positions += s.lastClosedPos
-        positions.forEach { add(s.planner.window(it, window)) }
-        s.readers.values.forEach { r -> r.blockedPiece.takeIf { it >= 0 && !gate.pieces.has(it) }?.let { wanted[it] = 0 } }
-
-        val h = s.handle
-        var sets = 0
-        for ((p, ms) in wanted) {
-            val old = s.applied[p]
-            if (old == null || (ms == 0 && old != 0) || kotlin.math.abs(old - ms) > 1_000) {
-                runCatching { h.setPieceDeadline(p, ms) }
-                s.applied[p] = ms
-                sets++
-            }
+        val span = s.info.span
+        val P = s.profile
+        if (!s.startupDone && startupComplete(s, now)) s.startupDone = true
+        maybeProbe(s)
+        val phase = when {
+            s.background -> StreamPhase.BACKGROUND
+            !s.startupDone -> StreamPhase.STARTUP
+            else -> StreamPhase.PLAYING
         }
-        val gone = s.applied.keys.filter { it !in wanted }
-        for (p in gone) {
-            s.applied.remove(p)
-            // Had pieces leave libtorrent's list by themselves; others go back to normal priority
-            // (a reset leaves them at 1, below the rest of the file).
-            if (!gate.pieces.has(p)) runCatching { h.resetPieceDeadline(p); h.piecePriority(p, Priority.DEFAULT) }
+        val views = s.readers.values.map { r ->
+            ReaderView(r.id, r.kind, r.position, r.openedNanos / 1_000_000, r.lastProgressNanos / 1_000_000, r.blockedPiece, r.bytesRead)
+        }.toMutableList()
+        if (s.lastClosedAt > 0 && now - s.lastClosedAt < P.ghostCloseMs && views.none { it.kind == ReaderKind.IN_APP }) {
+            views += ReaderView(-1, ReaderKind.IN_APP, s.lastClosedPos, s.lastClosedAt, s.lastClosedAt, ghost = true)
         }
-        if (sets > 0 || gone.isNotEmpty()) s.lastPlanAt = EngineStats.now()
+        val rate = MediaRate.of(s.info.file.size, s.playerDurationMs, s.hintDurationMs)
+        val baselineOf: (Int) -> Int = { q -> s.baseline.getOrElse(q) { 0 }.toInt() }
+        val plan = ZoneScheduler.plan(
+            PlanInput(span, gate.pieces, P, phase, s.download, views, s.lastAnchor, s.signals.view(now), rate, s.startupSet, s.startupDone, StorageAllowance(), baselineOf),
+        )
+        s.lastAnchor = plan.anchor
+        val merged = PlanMerge.merge(plan, span, emptyList(), baselineOf, gate.pieces, s.numPieces, streamMode = !s.download, prevGuard = s.guard,
+            pieceLength = span.pieceLength, rate = rate, nowMs = now)
+        s.guard = merged.guard
+        val urgentBytes = maxOf(2L * span.pieceLength, minOf(maxOf(rate.bytesPerSec, 128 * KiB) * P.urgentSec, P.urgentMaxBytes))
+        val (ops, next) = PlanDiff.diff(s.applied, merged,
+            DiffContext(now, s.forceFull, s.forceClear, gate.pieces, P, s.numPieces, P.farSeekBytes(urgentBytes)))
+        s.forceFull = false
+        s.forceClear = false
+        // While new file priorities are being applied, send deadlines only: piece priorities would be overwritten.
+        val allowed = if (s.fileReady) ops else ops.filter { it !is PlanOp.SetPriorities && it !is PlanOp.SetAllPriorities }
+        apply(s, allowed)
+        s.applied = if (s.fileReady) next else next.copy(vector = s.applied?.vector)
+        if (allowed.isNotEmpty()) s.lastPlanAt = now
     }
 
-    /** Stream over: drop its deadlines and put its pieces back at normal priority (no leftover 1s). */
+    private fun startupComplete(s: ActiveStream, now: Long): Boolean {
+        if (s.signals.firstFrame) return true
+        if (now - s.startedAt > s.profile.startupExitMs) return true
+        val st = s.startupSet ?: return true
+        val span = s.info.span
+        val had = span.piecesForBytes(st.header.first, st.header.last + 1).all { s.gate.pieces.has(it) } &&
+            (st.index?.let { ix -> span.piecesForBytes(ix.first, ix.last + 1).all { s.gate.pieces.has(it) } } ?: true)
+        return had && s.readers.values.any { it.bytesRead >= 4L * span.pieceLength }
+    }
+
+    /** Once the header is on disk, find the real index (MP4 moov / MKV Cues) instead of a blind tail. */
+    private fun maybeProbe(s: ActiveStream) {
+        if (s.probed || s.probeAttempts >= 5) return
+        val st = s.startupSet ?: return
+        val span = s.info.span
+        if (!span.piecesForBytes(st.header.first, st.header.last + 1).all { s.gate.isReadable(it) }) return
+        s.probed = true
+        s.probeAttempts++
+        runCatching {
+            io.execute {
+                val probe = ContainerProbe(span.size, s.info.file.extension)
+                val step = runCatching {
+                    java.io.RandomAccessFile(s.info.path, "r").use { raf ->
+                        fun read(pos: Long, len: Int): ByteArray? {
+                            val end = minOf(span.size, pos + len)
+                            if (pos >= end) return null
+                            if (!span.piecesForBytes(pos, end).all { s.gate.isReadable(it) }) return null
+                            val b = ByteArray((end - pos).toInt())
+                            raf.seek(pos); raf.readFully(b)
+                            return b
+                        }
+                        var st2 = probe.step(::read)
+                        repeat(3) { if (st2 is ProbeStep.Need) st2 = probe.step(::read) }
+                        st2
+                    }
+                }.getOrNull()
+                engineExec.execute {
+                    when (step) {
+                        is ProbeStep.Done -> {
+                            s.startupSet = StartupPlanner.refine(st, step.layout, span)
+                            EngineStats.event(s.info.infoHash, "index", mapOf("kind" to step.layout.kind.name.lowercase(), "tail" to if (step.layout.needTail) 1 else 0))
+                            kick(s, immediate = true)
+                        }
+                        else -> s.probed = false // bytes not there yet: try again on a later plan
+                    }
+                }
+            }
+        }
+    }
+
+    private fun apply(s: ActiveStream, ops: List<PlanOp>) {
+        val h = s.handle
+        for (op in ops) runCatching {
+            when (op) {
+                PlanOp.ClearDeadlines -> h.clearPieceDeadlines()
+                is PlanOp.SetDeadline -> h.setPieceDeadline(op.piece, op.ms)
+                is PlanOp.ResetDeadline -> h.resetPieceDeadline(op.piece)
+                is PlanOp.SetPriorities -> {
+                    val v = org.libtorrent4j.swig.int_byte_pair_vector(op.changes.map { org.libtorrent4j.swig.int_byte_pair(it.first, it.second.toByte()) })
+                    h.swig().prioritize_pieces_ex(v)
+                    runCatching { v.delete() }
+                }
+                is PlanOp.SetAllPriorities -> h.prioritizePieces(Array(op.vector.size) { Priority.fromSwig(op.vector[it].toInt()) })
+                is PlanOp.SetSequential -> {
+                    if (!s.seqFlagSet) {
+                        h.setFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD)
+                        s.seqFlagSet = true
+                        EngineStats.event(s.info.infoHash, "seq", mapOf("on" to if (h.getFlags().and_(TorrentFlags.SEQUENTIAL_DOWNLOAD).non_zero()) 1 else 0))
+                    }
+                    h.setSequentialRange(op.first, op.last)
+                }
+                PlanOp.UnsetSequential -> {
+                    h.unsetFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD)
+                    s.seqFlagSet = false
+                }
+            }
+        }
+    }
+
+    /** Stream over: drop its deadlines, put every piece back at its file's priority, stop sequential mode. */
     private fun clearPlan(s: ActiveStream) {
         val h = s.handle
         runCatching { h.clearPieceDeadlines() }
-        val gate = s.gate
-        s.applied.keys.filter { !gate.pieces.has(it) }.forEach { p -> runCatching { h.piecePriority(p, Priority.DEFAULT) } }
-        s.applied.clear()
+        runCatching { h.prioritizePieces(Array(s.baseline.size) { Priority.fromSwig(s.baseline[it].toInt()) }) }
+        runCatching { h.unsetFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD) }
+        s.seqFlagSet = false
+        s.applied = null
+    }
+
+    /** Per piece: the highest priority among the files it belongs to (pad files excluded). */
+    private fun baselineVector(fs: org.libtorrent4j.FileStorage, numPieces: Int, pieceLength: Int, filePrios: List<Int>): ByteArray {
+        val v = ByteArray(numPieces)
+        for (f in 0 until fs.numFiles()) {
+            val prio = filePrios.getOrElse(f) { 4 }
+            if (prio <= 0 || fs.padFileAt(f) || fs.fileSize(f) == 0L) continue
+            val firstP = (fs.fileOffset(f) / pieceLength).toInt()
+            val lastP = ((fs.fileOffset(f) + fs.fileSize(f) - 1) / pieceLength).toInt().coerceAtMost(numPieces - 1)
+            for (p in firstP..lastP) if (v[p] < prio) v[p] = prio.toByte()
+        }
+        return v
     }
 
     /** One gate per torrent, created once metadata is known and seeded from libtorrent's bitfield. */
@@ -983,6 +1123,8 @@ class TorrentEngine(private val context: Context) {
     private suspend fun pollLoop() {
         while (scope.isActive) {
             runCatching { refreshSnapshots() }.onFailure { Log.w(TAG, "poll failed", it) }
+            // Deadlines follow the playhead, and startup can end on time alone: replan every second.
+            streams.values.forEach { kick(it, immediate = false) }
             delay(1000)
         }
     }
@@ -1141,7 +1283,16 @@ class TorrentEngine(private val context: Context) {
     private fun find(hash: String): TorrentHandle? =
         runCatching { handles.findTorrent(Sha1Hash.parseHex(hash)) }.getOrNull()?.takeIf { it.isValid }
 
-    private class ActiveStream(val info: StreamInfo, val handle: TorrentHandle, val planner: StreamPlanner, val gate: PieceGate) {
+    private class ActiveStream(
+        val info: StreamInfo,
+        val handle: TorrentHandle,
+        val gate: PieceGate,
+        val profile: SchedulerProfile,
+        val numPieces: Int,
+        /** Per piece: priority from the torrent's file choices (restored when the stream stops). */
+        val baseline: ByteArray,
+        val download: Boolean,
+    ) {
         /** Open readers (in-app player, external players, bench). */
         val readers = ConcurrentHashMap<Long, StreamReaderCore>()
         @Volatile var lastActivityAt: Long = System.currentTimeMillis()
@@ -1151,13 +1302,27 @@ class TorrentEngine(private val context: Context) {
         @Volatile var fileReady = true
         /** Media bytes per second (from the player's duration) for read-ahead sizing. */
         @Volatile var bytesPerSec: Long? = null
+        @Volatile var playerDurationMs: Long? = null
+        @Volatile var hintDurationMs: Long? = null
         @Volatile var lastClosedPos = 0L
         @Volatile var lastClosedAt = 0L
         @Volatile var lastPlanAt = 0L
+        @Volatile var background = false
+        @Volatile var startupSet: StartupSet? = null
+        @Volatile var startupDone = false
+        @Volatile var probed = false
+        @Volatile var probeAttempts = 0
+        @Volatile var forceFull = false
+        @Volatile var forceClear = false
+        val startedAt = EngineStats.now()
+        val signals = PlayerSignals()
         val pending = java.util.concurrent.atomic.AtomicBoolean(false)
         val flushPolls: MutableSet<Int> = ConcurrentHashMap.newKeySet()
-        /** Deadlines we've set (piece → ms); engine thread only. */
-        val applied = HashMap<Int, Int>()
+        // Engine thread only.
+        var lastAnchor: Long? = null
+        var applied: AppliedState? = null
+        var guard: GuardState? = null
+        var seqFlagSet = false
     }
 
     companion object {

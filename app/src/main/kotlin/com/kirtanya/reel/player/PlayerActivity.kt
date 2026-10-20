@@ -25,6 +25,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -191,6 +192,8 @@ class PlayerActivity : ComponentActivity() {
         val info = engine.startStream(magnet, source.fileIdx, source.filename, tapMs)
         hash = info.infoHash
         preparedStream = info
+        // A duration we already know (Continue watching): size the read-ahead right from the start.
+        app.history.get(playback.key)?.durationMs?.takeIf { it > 0 }?.let { engine.setStreamDuration(info, it) }
         // In-app reads go straight to the engine (no HTTP hop); the flag keeps the old path for diagnosis.
         return if (com.kirtanya.reel.engine.EngineFlags.inapp) info.uri else engine.httpUrlFor(info)
     }
@@ -271,6 +274,7 @@ class PlayerActivity : ComponentActivity() {
         exo.prepare()
         exo.playWhenReady = true
         playerView.requestFocus()
+        startSignals()
         if (resumeAtMs > 0) showResumeChip(resumeAtMs)
         startProgressSaving()
         Log.i(TAG, "playing ${playback.key} from ${formatTime(resumeAtMs)} with ${subtitles.size} subtitle tracks")
@@ -306,6 +310,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onRenderedFirstFrame() {
+            preparedStream?.let { app.engine.onPlayerEvent(it, "firstFrame") }
             stats { s ->
                 if (s.firstFrameAt == null) {
                     s.firstFrame(now())
@@ -315,7 +320,10 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) stats { it.seek(now()) }
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                stats { it.seek(now()) }
+                preparedStream?.let { app.engine.onPlayerEvent(it, "seek") }
+            }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -762,6 +770,31 @@ class PlayerActivity : ComponentActivity() {
                 showError("This stream stopped (${error.errorCodeName}).")
             }
             else -> showError("This device can't play this file (${error.errorCodeName}).")
+        }
+    }
+
+    /**
+     * Twice a second while visible: tell the engine where the playhead and buffer are, so urgent
+     * pieces are timed against real playback (docs/STREAMING_V2.md §3.5). Stops in the background,
+     * so the signals go stale there.
+     */
+    private fun startSignals() {
+        val info = preparedStream ?: return
+        val signals = app.engine.playerSignals(info) ?: return
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (isActive) {
+                    player?.let { exo ->
+                        signals.positionMs = exo.currentPosition
+                        signals.bufferedPositionMs = exo.bufferedPosition
+                        signals.durationMs = exo.duration.takeIf { it != C.TIME_UNSET } ?: 0
+                        signals.playWhenReady = exo.playWhenReady
+                        signals.playing = exo.isPlaying
+                        signals.updatedAtMs = now()
+                    }
+                    delay(500)
+                }
+            }
         }
     }
 
