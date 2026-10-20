@@ -111,12 +111,12 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     Box(Modifier.fillMaxSize()) {
         Backdrop(
             ep?.stillPath?.let { TmdbImages.still(it, "original") } ?: TmdbImages.backdrop(d.summary.backdropPath),
-            Modifier.fillMaxWidth().height(if (isTv) 600.dp else 320.dp),
+            Modifier.fillMaxWidth().height(if (isTv) 480.dp else 260.dp),
             fromLeft = isTv,
         )
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.xxxl else 200.dp, bottom = Tokens.Space.xxxl),
+            contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.xxl else 150.dp, bottom = Tokens.Space.xxxl),
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {
             item(key = "header") {
@@ -136,6 +136,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                         Icons.Rounded.Hub,
                         if (search.total == 0) "No sources for this yet" else "Nothing found",
                         if (search.total == 0) "Add addons or plugins in Settings to find places to play this."
+                        else if (search.total == 1) "Your only source didn't have this. Try again later, or add more sources in Settings."
                         else "None of your ${search.total} sources had this. Try again later, or add more sources in Settings.",
                         action = { ReelButton("Search again", rescan, kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh) },
                     )
@@ -178,7 +179,7 @@ private fun Status(search: SourceSearch?) {
             search == null -> "Getting your sources ready…"
             search.total == 0 -> "None of your sources handle this yet."
             !search.done -> "Searching · $answered of ${search.total} sources · ${search.sources.size} found"
-            else -> "${search.sources.size} found from ${search.total} sources"
+            else -> "${search.sources.size} found from ${search.total} ${if (search.total == 1) "source" else "sources"}"
         }
         Text(text, style = Tokens.Type.label, color = Tokens.Colors.textSecondary)
         if (search != null && search.total > 0 && !search.done) GradientProgress((answered ?: 0).toFloat() / search.total, height = 3.dp)

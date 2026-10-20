@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -33,9 +34,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ui.theme.Tokens
 
-/** Afterglow surface card: surface1, radius 24, hairline. */
+/** Surface card: surface container, radius 16, hairline. */
 @Composable
-fun ReelCard(modifier: Modifier = Modifier, padding: Dp = Tokens.Space.l, content: @Composable ColumnScope.() -> Unit) {
+fun ReelCard(modifier: Modifier = Modifier, padding: Dp = Tokens.Space.l, spacing: Dp = Tokens.Space.m, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.l)
     Column(
         modifier
@@ -43,7 +44,7 @@ fun ReelCard(modifier: Modifier = Modifier, padding: Dp = Tokens.Space.l, conten
             .background(Tokens.Colors.surface1)
             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
             .padding(padding),
-        verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
+        verticalArrangement = Arrangement.spacedBy(spacing),
         content = content,
     )
 }
@@ -69,30 +70,31 @@ fun Pill(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null,
     Row(
         modifier
             .clip(shape)
-            .then(if (accent) Modifier.background(Tokens.Gradients.brand) else Modifier.background(if (onGlass) Tokens.Colors.glass else Tokens.Colors.surface2))
-            .border(Tokens.Size.hairline, if (accent) Color.White.copy(alpha = 0.2f) else Tokens.Colors.hairline, shape)
-            .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs + 1.dp),
+            .background(if (accent) Tokens.Colors.accent else if (onGlass) Tokens.Colors.glass else Tokens.Colors.surface2)
+            .then(if (accent) Modifier else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairline, shape))
+            .padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
     ) {
-        if (icon != null) Icon(icon, null, tint = if (accent) Tokens.Colors.onAccent else Tokens.Colors.textSecondary, modifier = Modifier.size(14.dp))
+        if (icon != null) Icon(icon, null, tint = if (accent) Tokens.Colors.onAccent else Tokens.Colors.textSecondary, modifier = Modifier.size(12.dp))
         Text(text, style = Tokens.Type.caption, color = if (accent) Tokens.Colors.onAccent else Tokens.Colors.text, maxLines = 1)
     }
 }
 
-/** Round glass button (48 dp): on images and in headers. Focus ring + glow on TV. */
+/** Round glass icon button (40 dp, 48 dp touch area): on images and in headers. Focus ring on TV. */
 @Composable
 fun GlassIconButton(icon: ImageVector, contentDescription: String?, onClick: () -> Unit, modifier: Modifier = Modifier, badge: Boolean = false) {
     Box(
         modifier
+            .minimumInteractiveComponentSize()
             .size(Tokens.Size.iconButton)
             .focusCard(shape = CircleShape, onClick = onClick)
             .background(Tokens.Colors.glass)
             .border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription, tint = Tokens.Colors.text, modifier = Modifier.size(22.dp))
-        if (badge) Box(Modifier.align(Alignment.TopEnd).padding(11.dp).size(8.dp).clip(CircleShape).background(Tokens.Colors.danger))
+        Icon(icon, contentDescription, tint = Tokens.Colors.text, modifier = Modifier.size(20.dp))
+        if (badge) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).clip(CircleShape).background(Tokens.Colors.danger))
     }
 }
 
@@ -128,7 +130,7 @@ fun RingAvatar(
     }
 }
 
-/** 4 dp track with the brand-gradient fill. */
+/** 4 dp track with a primary fill. */
 @Composable
 fun GradientProgress(progress: Float, modifier: Modifier = Modifier, height: Dp = Tokens.Size.progressBar, track: Color = Tokens.Colors.surface3) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
@@ -153,14 +155,14 @@ fun SectionHeader(title: String, modifier: Modifier = Modifier, action: String? 
     }
 }
 
-/** Big empty state: icon in a glowing ring, title, line of help, optional action. */
+/** Empty state: icon in a tonal circle, title, line of help, optional action. */
 @Composable
 fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(Tokens.Space.xl), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
         Box(
-            Modifier.size(72.dp).clip(CircleShape).background(Tokens.Colors.accent.copy(alpha = 0.14f)).border(Tokens.Size.ring, Tokens.Gradients.ring, CircleShape),
+            Modifier.size(56.dp).clip(CircleShape).background(Tokens.Colors.tonal),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, tint = Tokens.Colors.accentBright, modifier = Modifier.size(30.dp)) }
+        ) { Icon(icon, null, tint = Tokens.Colors.onTonal, modifier = Modifier.size(26.dp)) }
         Text(title, style = Tokens.Type.heading, color = Tokens.Colors.text, textAlign = TextAlign.Center)
         Text(body, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, textAlign = TextAlign.Center)
         action?.invoke()

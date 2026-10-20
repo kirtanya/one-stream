@@ -2,48 +2,30 @@ package com.kirtanya.reel.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.unit.sp
 
-/** Material 3 mapped onto Afterglow, so stock components (fields, switches, sheets) match. */
+/** Reel's live Material 3 scheme (see [AccentState]) and type scale, so stock components match. */
 @Composable
 fun ReelTheme(content: @Composable () -> Unit) {
-    val c = Tokens.Colors
-    // Stock components follow where the live accent is heading (not every animation frame).
-    val target = AccentState.target
-    val a = remember(target) { AccentTones.from(target) }
-    AccentHost()
+    val dark = AccentState.isDark(isSystemInDarkTheme())
+    AccentHost(dark)
     MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = a.base,
-            onPrimary = c.onAccent,
-            primaryContainer = a.deep,
-            onPrimaryContainer = c.text,
-            secondary = a.bright,
-            background = c.canvas,
-            onBackground = c.text,
-            surface = c.surface1,
-            onSurface = c.text,
-            surfaceVariant = c.surface2,
-            onSurfaceVariant = c.textSecondary,
-            surfaceContainer = c.surface1,
-            surfaceContainerHigh = c.surface2,
-            surfaceContainerHighest = c.surface3,
-            surfaceContainerLow = c.surface1,
-            outline = c.hairlineStrong,
-            outlineVariant = c.hairline,
-            error = c.danger,
-        ),
+        colorScheme = AccentState.scheme,
         typography = Typography(
-            bodyLarge = Tokens.Type.body,
+            bodyLarge = Tokens.Type.body.copy(fontSize = 16.sp, lineHeight = 24.sp),
             bodyMedium = Tokens.Type.body,
             bodySmall = Tokens.Type.caption,
             labelLarge = Tokens.Type.label,
             labelMedium = Tokens.Type.caption,
+            labelSmall = Tokens.Type.caption.copy(fontSize = 11.sp),
+            titleSmall = Tokens.Type.label,
             titleMedium = Tokens.Type.heading,
             titleLarge = Tokens.Type.title,
-            headlineMedium = Tokens.Type.display,
+            headlineSmall = Tokens.Type.display,
+            headlineMedium = Tokens.Type.display.copy(fontSize = 28.sp, lineHeight = 36.sp),
+            headlineLarge = Tokens.Type.hero,
         ),
         content = content,
     )

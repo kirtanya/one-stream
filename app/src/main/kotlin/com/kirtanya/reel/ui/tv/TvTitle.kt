@@ -96,11 +96,11 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = Tokens.Space.tvSafeV),
-            verticalArrangement = Arrangement.spacedBy(Tokens.Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
         ) {
             item(key = "hero") {
                 Column(Modifier.padding(horizontal = side).fillMaxWidth(0.55f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
-                    Spacer(Modifier.height(64.dp))
+                    Spacer(Modifier.height(40.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                         Pill(if (d.summary.ref.type == MediaType.TV) "Series" else "Film", onGlass = true)
                         d.summary.year?.let { Pill(it.toString(), onGlass = true) }
@@ -126,7 +126,7 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
                         SectionHeader("Where to watch in India", Modifier.padding(horizontal = side))
                         LazyRow(contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                             items(providers, key = { it.second.id }) { (label, p) ->
-                                RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 80.dp, onClick = { openProvider(p) }, sublabel = label)
+                                RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 60.dp, onClick = { openProvider(p) }, sublabel = label)
                             }
                         }
                     }
@@ -145,13 +145,13 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
                 }
                 item(key = "episodes") {
                     when (episodes) {
-                        Load.Loading -> LoadingBox(Modifier.height(200.dp))
+                        Load.Loading -> LoadingBox(Modifier.height(160.dp))
                         is Load.Failed -> ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = side), kind = ButtonKind.Ghost)
                         is Load.Ready -> LazyRow(contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.m), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
                             itemsIndexed(episodes.value, key = { _, e -> "${e.season}x${e.number}" }) { _, e ->
                                 val watched = progress[EpisodeNumber(e.season, e.number)]
                                 val shape = RoundedCornerShape(Tokens.Radius.media)
-                                Column(Modifier.width(280.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                                Column(Modifier.width(240.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                                     Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
                                         RemoteImage(TmdbImages.still(e.stillPath, "w780"), Modifier.fillMaxSize())
                                         when {
@@ -172,7 +172,7 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         SectionHeader("Cast", Modifier.padding(horizontal = side))
                         LazyRow(contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                            items(d.cast) { c -> RingAvatar(TmdbImages.profile(c.profilePath), c.name, 80.dp, onClick = {}, sublabel = c.character, placeholder = c.name.take(1)) }
+                            items(d.cast) { c -> RingAvatar(TmdbImages.profile(c.profilePath), c.name, 60.dp, onClick = {}, sublabel = c.character, placeholder = c.name.take(1)) }
                         }
                     }
                 }

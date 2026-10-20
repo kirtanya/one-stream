@@ -127,7 +127,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
             Column(Modifier.fillMaxSize()) {
                 Spacer(Modifier.height(TvTopBarHeight))
                 Column(
-                    Modifier.fillMaxWidth(0.52f).height(220.dp).padding(horizontal = Tokens.Space.tvSafeH),
+                    Modifier.fillMaxWidth(0.52f).height(196.dp).padding(horizontal = Tokens.Space.tvSafeH),
                     verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
@@ -146,7 +146,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
                         item(key = "continue") {
                             ContinueRow(
                                 continueItems,
-                                cardWidth = 260.dp,
+                                cardWidth = 240.dp,
                                 sidePadding = Tokens.Space.tvSafeH,
                                 onOpenDest = onOpenDest,
                                 onFocus = { focused = it.info() },
@@ -159,7 +159,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
                         PosterRow(
                             title = row.title,
                             items = row.items,
-                            posterWidth = 120.dp,
+                            posterWidth = 112.dp,
                             sidePadding = Tokens.Space.tvSafeH,
                             onOpen = onOpen,
                             showText = false,
@@ -171,7 +171,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
                         // "On your services" after the first row, like a second hero.
                         if (i == 0) {
                             Spacer(Modifier.height(Tokens.Space.l))
-                            ServicesRow(Tokens.Space.tvSafeH, 80.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
+                            ServicesRow(Tokens.Space.tvSafeH, 60.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
                         }
                     }
                 }

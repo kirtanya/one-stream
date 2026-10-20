@@ -31,7 +31,13 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +68,7 @@ import com.kirtanya.reel.ui.nav.Tab
 import com.kirtanya.reel.ui.nav.rememberNavigator
 import com.kirtanya.reel.ui.settings.SettingsScreen
 import com.kirtanya.reel.ui.sources.SourcesScreen
+import com.kirtanya.reel.ui.theme.AccentState
 import com.kirtanya.reel.ui.theme.Tokens
 
 /**
@@ -105,7 +112,18 @@ fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: D
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {
-            FloatingBar(selected = nav.tab, onSelect = { nav.select(it) }, onAdd = { showAdd = true })
+            Column(horizontalAlignment = Alignment.End) {
+                // Add a magnet / .torrent (Downloads has its own + in the header).
+                if (nav.tab == Tab.Home) {
+                    FloatingActionButton(
+                        onClick = { showAdd = true },
+                        modifier = Modifier.padding(end = Tokens.Space.l, bottom = Tokens.Space.l),
+                        containerColor = Tokens.Colors.accentDeep,
+                        contentColor = AccentState.scheme.onPrimaryContainer,
+                    ) { Icon(Icons.Rounded.Add, contentDescription = "Add a magnet or .torrent") }
+                }
+                BottomBar(selected = nav.tab, onSelect = { nav.select(it) })
+            }
         }
     }
 
@@ -121,77 +139,37 @@ fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: D
     }
 }
 
-/** The reference's floating dark bar, with Reel's glowing "+" (add a magnet / .torrent) in the middle. */
+/** Material 3 navigation bar: four destinations, a pill behind the selected one. */
 @Composable
-private fun FloatingBar(selected: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit) {
+private fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
     val engine = ReelApp.get(LocalContext.current).engine
     val torrents by engine.torrents.collectAsState()
     val downloading = torrents.any { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA }
-    val shape = RoundedCornerShape(Tokens.Radius.xl)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            // Fade the content out under the bar so it reads as floating.
-            .background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Tokens.Colors.canvas.copy(alpha = 0.85f)))
-            .navigationBarsPadding()
-            .padding(horizontal = Tokens.Space.l, vertical = Tokens.Space.m),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(72.dp)
-                .clip(shape)
-                .background(Tokens.Colors.surface1.copy(alpha = 0.94f))
-                .border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape)
-                // A faint accent wash along the top edge, like the reference.
-                .drawBehind {
-                    drawRect(Brush.verticalGradient(0f to Tokens.Colors.accent.copy(alpha = 0.10f), 0.6f to Color.Transparent))
+    NavigationBar(containerColor = Tokens.Colors.surface1, tonalElevation = 0.dp) {
+        listOf(
+            Triple(Tab.Home, Icons.Rounded.Home, Icons.Outlined.Home),
+            Triple(Tab.Search, Icons.Rounded.Search, Icons.Outlined.Search),
+            Triple(Tab.Downloads, Icons.Rounded.Download, Icons.Outlined.Download),
+            Triple(Tab.Settings, Icons.Rounded.Settings, Icons.Outlined.Settings),
+        ).forEach { (tab, filled, outlined) ->
+            val on = tab == selected
+            NavigationBarItem(
+                selected = on,
+                onClick = { onSelect(tab) },
+                icon = {
+                    BadgedBox(badge = { if (tab == Tab.Downloads && downloading) Badge(containerColor = Tokens.Colors.accent) }) {
+                        Icon(if (on) filled else outlined, contentDescription = null)
+                    }
                 },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            BarItem(Tab.Home, Icons.Rounded.Home, Icons.Outlined.Home, selected, onSelect, Modifier.weight(1f))
-            BarItem(Tab.Search, Icons.Rounded.Search, Icons.Outlined.Search, selected, onSelect, Modifier.weight(1f))
-            AddButton(onAdd)
-            BarItem(Tab.Downloads, Icons.Rounded.Download, Icons.Outlined.Download, selected, onSelect, Modifier.weight(1f), badge = downloading)
-            BarItem(Tab.Settings, Icons.Rounded.Settings, Icons.Outlined.Settings, selected, onSelect, Modifier.weight(1f))
+                label = { Text(tab.label, style = Tokens.Type.caption, maxLines = 1) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Tokens.Colors.onTonal,
+                    selectedTextColor = Tokens.Colors.text,
+                    indicatorColor = Tokens.Colors.tonal,
+                    unselectedIconColor = Tokens.Colors.textSecondary,
+                    unselectedTextColor = Tokens.Colors.textSecondary,
+                ),
+            )
         }
-    }
-}
-
-@Composable
-private fun BarItem(tab: Tab, filled: ImageVector, outlined: ImageVector, selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier, badge: Boolean = false) {
-    val on = tab == selected
-    Column(
-        modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1f, onClick = { onSelect(tab) }).padding(vertical = Tokens.Space.xs),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Box {
-            Icon(if (on) filled else outlined, contentDescription = tab.label, tint = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, modifier = Modifier.size(24.dp))
-            if (badge) Box(Modifier.align(Alignment.TopEnd).size(8.dp).clip(CircleShape).background(Tokens.Colors.accentBright))
-        }
-        Text(tab.label, style = Tokens.Type.caption.copy(fontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp)), color = if (on) Tokens.Colors.text else Tokens.Colors.textTertiary, maxLines = 1, softWrap = false)
-    }
-}
-
-/** Centre action: gradient pill sitting in its own accent glow. */
-@Composable
-private fun AddButton(onAdd: () -> Unit) {
-    val shape = RoundedCornerShape(Tokens.Radius.pill)
-    Box(contentAlignment = Alignment.Center) {
-        Box(
-            Modifier.size(width = 76.dp, height = 64.dp).drawBehind {
-                drawCircle(Brush.radialGradient(listOf(Tokens.Colors.accent.copy(alpha = 0.45f), Color.Transparent), center = Offset(size.width / 2, size.height / 2), radius = size.width / 1.6f))
-            },
-        )
-        Box(
-            Modifier
-                .size(width = 60.dp, height = 44.dp)
-                .focusCard(shape = shape, onClick = onAdd)
-                .background(Tokens.Gradients.brand)
-                .border(Tokens.Size.hairline, Color.White.copy(alpha = 0.2f), shape),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Rounded.Add, contentDescription = "Add a magnet or .torrent", tint = Tokens.Colors.onAccent, modifier = Modifier.size(26.dp)) }
     }
 }

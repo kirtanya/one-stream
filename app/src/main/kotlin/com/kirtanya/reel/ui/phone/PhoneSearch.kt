@@ -109,7 +109,7 @@ fun PhoneSearch(onOpen: (TitleSummary) -> Unit) {
 
 /** Glass pill search field: icon, text, clear button. */
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, onSubmit: () -> Unit = {}, height: Dp = 56.dp) {
+fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, onSubmit: () -> Unit = {}, height: Dp = 48.dp) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
     Row(
         modifier.fillMaxWidth().height(height).clip(shape).background(Tokens.Colors.surface2).border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape)

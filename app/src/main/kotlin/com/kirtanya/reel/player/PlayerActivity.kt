@@ -618,9 +618,9 @@ class PlayerActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- Afterglow overlays (docs/DESIGN_STYLE.md)
 
-    private val accent get() = Tokens.Colors.accent.toArgb()
-    private val glassColor get() = Tokens.Colors.glass.toArgb()
-    private val hairline get() = Tokens.Colors.hairlineStrong.toArgb()
+    private val accent get() = Tokens.Night.accent.toArgb()
+    private val glassColor get() = Tokens.Night.glass.toArgb()
+    private val hairline get() = Tokens.Night.hairline.toArgb()
 
     private fun buildLayout(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -633,7 +633,7 @@ class PlayerActivity : ComponentActivity() {
         // Accent seek bar: the title's colour, like the rest of Reel.
         playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
             setPlayedColor(accent)
-            setScrubberColor(Tokens.Colors.accentBright.toArgb())
+            setScrubberColor(Tokens.Night.accent.toArgb())
             setBufferedColor(0x55FFFFFF)
             setUnplayedColor(0x26FFFFFF)
         }
@@ -677,7 +677,7 @@ class PlayerActivity : ComponentActivity() {
             background = glass(radius = 24)
             visibility = View.GONE
             nextTitle = text(18f, Color.WHITE, medium = true)
-            nextCountdown = text(14f, Tokens.Colors.textSecondary.toArgb()).apply { setPadding(0, dp(4), 0, dp(14)) }
+            nextCountdown = text(14f, Tokens.Night.textSecondary.toArgb()).apply { setPadding(0, dp(4), 0, dp(14)) }
             addView(nextTitle)
             addView(nextCountdown)
             addView(LinearLayout(context).apply {
@@ -693,7 +693,7 @@ class PlayerActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             visibility = View.GONE
-            setBackgroundColor(Tokens.Colors.canvas.copy(alpha = 0.94f).toArgb())
+            setBackgroundColor(Tokens.Night.canvas.copy(alpha = 0.94f).toArgb())
             errorText = text(20f, Color.WHITE, medium = true).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(48), 0, dp(48), dp(28))
@@ -722,26 +722,21 @@ class PlayerActivity : ComponentActivity() {
         typeface = font(medium)
     }
 
-    /** Pill button: brand gradient (primary) or glass; a bright ring when the remote focuses it. */
+    /** Pill button: filled primary (Material) or glass; a bright ring when the remote focuses it. */
     private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
         typeface = font(medium = true)
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        minHeight = dp(48)
-        minimumHeight = dp(48)
-        setPadding(dp(22), dp(10), dp(22), dp(10))
+        setTextColor(if (primary) Tokens.Night.onAccent.toArgb() else Color.WHITE)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        minHeight = dp(40)
+        minimumHeight = dp(40)
+        setPadding(dp(20), dp(8), dp(20), dp(8))
         stateListAnimator = null
         fun shape(focused: Boolean) = GradientDrawable().apply {
             cornerRadius = dp(999).toFloat()
-            if (primary) {
-                orientation = GradientDrawable.Orientation.TL_BR
-                colors = intArrayOf(Tokens.Colors.accentBright.toArgb(), Tokens.Colors.accentDeep.toArgb())
-            } else {
-                setColor(glassColor)
-            }
-            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (primary) 0x2EFFFFFF else hairline)
+            setColor(if (primary) Tokens.Night.accent.toArgb() else glassColor)
+            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (primary) Color.TRANSPARENT else hairline)
         }
         background = android.graphics.drawable.StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), shape(true))

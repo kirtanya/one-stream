@@ -82,7 +82,7 @@ private fun TvSyncContent() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
             Column {
                 Text("Pairing code", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
-                Text(state.code.chunked(3).joinToString(" "), style = Tokens.Type.hero, color = Tokens.Colors.accentBright)
+                Text(state.code.chunked(3).joinToString(" "), style = Tokens.Type.hero.copy(letterSpacing = androidx.compose.ui.unit.TextUnit(2f, androidx.compose.ui.unit.TextUnitType.Sp)), color = Tokens.Colors.accentBright)
                 Text("Valid for ${left / 60}:${"%02d".format(left % 60)}", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
             }
             Pill(state.deviceName)

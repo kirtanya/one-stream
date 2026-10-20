@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -22,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -30,11 +30,12 @@ import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ui.theme.Tokens
 
 /**
- * Afterglow buttons:
- * - [ButtonKind.Primary] — gradient pill with an accent glow (one per screen: Play, Resume, Add).
- * - [ButtonKind.Secondary] — tonal: surface2 with accent-bright text ("Follow" in the reference).
- * - [ButtonKind.Ghost] — hairline pill, white text.
+ * Material 3 buttons:
+ * - [ButtonKind.Primary] — filled (primary): one per screen (Play, Resume, Add).
+ * - [ButtonKind.Secondary] — tonal (secondary container).
+ * - [ButtonKind.Ghost] — outlined; also unselected chips.
  * - [ButtonKind.Glass] — for use on images: translucent with hairline.
+ * 40 dp tall (48 when [large]) with a 48 dp touch area; on TV a focused button lifts and gets a ring.
  */
 enum class ButtonKind { Primary, Secondary, Ghost, Glass }
 
@@ -54,40 +55,41 @@ fun ReelButton(
     val shape = RoundedCornerShape(Tokens.Radius.pill)
     val fg = when (kind) {
         ButtonKind.Primary -> Tokens.Colors.onAccent
-        ButtonKind.Secondary -> Tokens.Colors.accentBright
+        ButtonKind.Secondary -> Tokens.Colors.onTonal
         else -> Tokens.Colors.text
     }
-    val glow = kind == ButtonKind.Primary && enabled
     Row(
         modifier = modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.4f }
-            // The accent glow behind primary actions (stronger when focused on TV).
-            .then(if (glow) Modifier.shadow(if (focused) 28.dp else 16.dp, shape, ambientColor = Tokens.Colors.accent, spotColor = Tokens.Colors.accent) else Modifier)
+            .minimumInteractiveComponentSize()
+            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.38f }
             .clip(shape)
             .then(
                 when (kind) {
-                    ButtonKind.Primary -> Modifier.background(Tokens.Gradients.brand)
-                    ButtonKind.Secondary -> Modifier.background(Tokens.Colors.surface2)
+                    ButtonKind.Primary -> Modifier.background(Tokens.Colors.accent)
+                    ButtonKind.Secondary -> Modifier.background(Tokens.Colors.tonal)
                     ButtonKind.Ghost -> Modifier.background(Color.Transparent)
                     ButtonKind.Glass -> Modifier.background(Tokens.Colors.glass)
                 },
             )
-            .border(
-                if (focused) Tokens.Size.focusBorder else Tokens.Size.hairline,
+            .then(
                 when {
-                    focused -> Tokens.Colors.text
-                    kind == ButtonKind.Primary -> Color.White.copy(alpha = 0.18f)
-                    else -> Tokens.Colors.hairlineStrong
+                    focused -> Modifier.border(Tokens.Size.focusBorder, Tokens.Colors.text, shape)
+                    kind == ButtonKind.Ghost || kind == ButtonKind.Glass -> Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape)
+                    else -> Modifier
                 },
-                shape,
             )
             .clickable(interactionSource = interaction, indication = ripple(), enabled = enabled, onClick = onClick)
-            .heightIn(min = if (large) 56.dp else Tokens.Size.touchTarget)
-            .padding(horizontal = if (text.isEmpty()) Tokens.Space.m else Tokens.Space.l, vertical = Tokens.Space.s),
+            .heightIn(min = if (large) Tokens.Size.buttonLarge else Tokens.Size.button)
+            .padding(
+                start = if (icon != null && text.isNotEmpty()) Tokens.Space.m else Tokens.Space.l,
+                end = if (text.isEmpty()) Tokens.Space.m else Tokens.Space.l,
+                top = Tokens.Space.xs,
+                bottom = Tokens.Space.xs,
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s, Alignment.CenterHorizontally),
     ) {
-        if (icon != null) Icon(icon, contentDescription = text.ifEmpty { null }, tint = fg, modifier = Modifier.size(if (large) 24.dp else 20.dp))
-        if (text.isNotEmpty()) Text(text, style = if (large) Tokens.Type.heading.copy(fontSize = androidx.compose.ui.unit.TextUnit(16f, androidx.compose.ui.unit.TextUnitType.Sp)) else Tokens.Type.label, color = fg, maxLines = 1, softWrap = false)
+        if (icon != null) Icon(icon, contentDescription = text.ifEmpty { null }, tint = fg, modifier = Modifier.size(18.dp))
+        if (text.isNotEmpty()) Text(text, style = Tokens.Type.label, color = fg, maxLines = 1, softWrap = false)
     }
 }

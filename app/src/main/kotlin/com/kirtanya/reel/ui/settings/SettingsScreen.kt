@@ -46,6 +46,9 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -91,7 +94,8 @@ import com.kirtanya.reel.ui.formatBytes
 import com.kirtanya.reel.ui.store.AddonStorePage
 import com.kirtanya.reel.ui.theme.AccentPreset
 import com.kirtanya.reel.ui.theme.AccentState
-import com.kirtanya.reel.ui.theme.AccentTones
+import com.kirtanya.reel.ui.theme.ThemeMode
+import androidx.compose.ui.graphics.luminance
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -181,7 +185,11 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
     }
 
     fun summary(page: SettingsPage): String = when (page) {
-        SettingsPage.Appearance -> AccentState.preset.label + if (AccentState.adaptive) " · matches what's on screen" else ""
+        SettingsPage.Appearance -> listOfNotNull(
+            if (isTv) null else "${AccentState.themeMode.label} theme",
+            AccentState.preset.label + " colour",
+            if (AccentState.adaptive) "matches what's on screen" else null,
+        ).joinToString(" · ")
         SettingsPage.Playback -> if (playback.autoplayNext) "Next episode plays by itself" else "Next episode: ask first"
         SettingsPage.Subtitles -> listOf(
             PlaybackSettings.LANGUAGES.firstOrNull { it.first == playback.subtitleLanguage }?.second ?: "Off",
@@ -204,10 +212,10 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
         GROUPS.forEach { (group, pages) ->
             item(key = group) {
                 Column(Modifier.widthIn(max = 860.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    Text(group.uppercase(), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, modifier = Modifier.padding(start = Tokens.Space.xs))
-                    ReelCard(Modifier.fillMaxWidth(), padding = Tokens.Space.xs) {
+                    GroupLabel(group)
+                    ReelCard(Modifier.fillMaxWidth(), padding = Tokens.Space.xs, spacing = 0.dp) {
                         pages.forEachIndexed { i, page ->
-                            if (i > 0) HorizontalDivider(Modifier.padding(start = 64.dp), thickness = Tokens.Size.hairline, color = Tokens.Colors.hairline)
+                            if (i > 0) HorizontalDivider(Modifier.padding(start = 68.dp, end = Tokens.Space.l), thickness = Tokens.Size.hairline, color = Tokens.Colors.hairline)
                             NavRow(page.icon, page.title, summary(page), Modifier.focusRequester(requesters.getValue(page))) { onOpen(page) }
                         }
                     }
@@ -217,11 +225,17 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
     }
 }
 
+/** Material list-group label: sentence case, primary colour. */
+@Composable
+private fun GroupLabel(text: String) {
+    Text(text, style = Tokens.Type.label, color = Tokens.Colors.accent, modifier = Modifier.padding(start = Tokens.Space.l, top = Tokens.Space.s))
+}
+
 /** One row of the root list: icon tile, name, where it stands, chevron. The whole row opens the page. */
 @Composable
 private fun NavRow(icon: ImageVector, title: String, summary: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        modifier.fillMaxWidth().focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1.02f, onClick = onClick).padding(Tokens.Space.m),
+        modifier.fillMaxWidth().focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1.02f, onClick = onClick).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
     ) {
@@ -237,9 +251,9 @@ private fun NavRow(icon: ImageVector, title: String, summary: String, modifier: 
 @Composable
 private fun IconTile(icon: ImageVector) {
     Box(
-        Modifier.size(40.dp).clip(CircleShape).background(Tokens.Colors.accent.copy(alpha = 0.16f)).border(Tokens.Size.hairline, Tokens.Colors.accent.copy(alpha = 0.4f), CircleShape),
+        Modifier.size(40.dp).clip(CircleShape).background(Tokens.Colors.tonal),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = Tokens.Colors.accentBright, modifier = Modifier.size(22.dp)) }
+    ) { Icon(icon, null, tint = Tokens.Colors.onTonal, modifier = Modifier.size(20.dp)) }
 }
 
 // ─── Page frame ────────────────────────────────────────────────────────────────────────────
@@ -255,7 +269,7 @@ internal fun PageList(isTv: Boolean, modifier: Modifier = Modifier, content: Laz
             top = if (isTv) Tokens.Space.l else 0.dp,
             bottom = if (isTv) Tokens.Space.tvSafeV else Tokens.Space.bottomBarClearance + Tokens.Space.xl,
         ),
-        verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
+        verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         content = content,
     )
 }
@@ -284,7 +298,7 @@ internal fun PageTitle(title: String, subtitle: String?, isTv: Boolean, onBack: 
 @Composable
 private fun Section(title: String? = null, note: String? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.widthIn(max = 860.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        if (title != null) Text(title.uppercase(), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, modifier = Modifier.padding(start = Tokens.Space.xs))
+        if (title != null) GroupLabel(title)
         ReelCard(Modifier.fillMaxWidth(), content = content)
         if (note != null) Text(note, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, modifier = Modifier.padding(horizontal = Tokens.Space.xs))
     }
@@ -323,7 +337,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
     if (isTv) RequestFocusOnce(first)
 
     val subtitle = when (page) {
-        SettingsPage.Appearance -> "Reel's colour, and whether it follows what you're watching."
+        SettingsPage.Appearance -> "Light or dark, Reel's colour, and whether it follows what you're watching."
         SettingsPage.Addons -> "Stremio addons answer “where can I play this?”."
         SettingsPage.Plugins -> "Plugin repositories (Nuvio format) run small scripts on this device to find sources."
         SettingsPage.PhoneTv -> if (isTv) "Get addons and plugins from your phone, so you never type on the TV." else "Set sources up once on the phone; your TV gets them too."
@@ -337,18 +351,33 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
 
         when (page) {
             SettingsPage.Appearance -> {
-                item {
-                    Section("Accent colour") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
-                            AccentPreset.entries.forEach { preset -> Swatch(preset, selected = AccentState.preset == preset) { AccentState.choose(preset) } }
+                if (!isTv) item {
+                    Section("Theme", note = "System follows your phone's dark-mode setting.") {
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            ThemeMode.entries.forEachIndexed { i, mode ->
+                                SegmentedButton(
+                                    selected = AccentState.themeMode == mode,
+                                    onClick = { AccentState.chooseTheme(mode) },
+                                    shape = SegmentedButtonDefaults.itemShape(i, ThemeMode.entries.size),
+                                ) { Text(mode.label, style = Tokens.Type.label) }
+                            }
                         }
                     }
                 }
                 item {
-                    Section(note = "Off: Reel always uses ${AccentState.preset.label.lowercase()}.") {
+                    Section("Colour", note = if (AccentState.systemSeed != null) "System uses your phone's accent colour (from the wallpaper)." else null) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+                            AccentPreset.entries.filter { it != AccentPreset.System || AccentState.systemSeed != null }.forEach { preset ->
+                                Swatch(preset, selected = AccentState.preset == preset) { AccentState.choose(preset) }
+                            }
+                        }
+                    }
+                }
+                item {
+                    Section(note = "Off: Reel always uses the colour above.") {
                         ToggleRow(
                             "Match what's on screen",
-                            "Buttons, focus and light take the colour of the film or show you're looking at.",
+                            "The whole screen takes the colours of the film or show you're looking at.",
                             AccentState.adaptive,
                         ) { AccentState.matchScreen(!AccentState.adaptive) }
                     }
@@ -486,18 +515,20 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
     }
 }
 
-/** One accent choice: a filled circle in that colour, ringed and ticked when chosen. */
+/** One colour choice: a circle in the colour it gives the app, ringed and ticked when chosen. */
 @Composable
 private fun Swatch(preset: AccentPreset, selected: Boolean, onClick: () -> Unit) {
-    val tones = remember(preset) { AccentTones.from(preset.seed) }
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+    val dark = AccentState.scheme.surface.luminance() < 0.5f
+    val primary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark, media = false).primary }
+    val onPrimary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark, media = false).onPrimary }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
         Box(
-            Modifier.size(56.dp)
+            Modifier.size(44.dp)
                 .focusCard(shape = CircleShape, onClick = onClick)
-                .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(tones.bright, tones.base, tones.deep)))
+                .background(primary)
                 .border(Tokens.Size.focusBorder, if (selected) Tokens.Colors.text else Color.Transparent, CircleShape),
             contentAlignment = Alignment.Center,
-        ) { if (selected) Icon(Icons.Rounded.Check, "${preset.label}, chosen", tint = Tokens.Colors.onAccent) }
+        ) { if (selected) Icon(Icons.Rounded.Check, "${preset.label}, chosen", tint = onPrimary, modifier = Modifier.size(20.dp)) }
         Text(preset.label, style = Tokens.Type.caption, color = if (selected) Tokens.Colors.text else Tokens.Colors.textTertiary)
     }
 }
@@ -520,7 +551,7 @@ private fun AccentPreview() {
 internal fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemove: (() -> Unit)? = null, onToggle: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         Row(
-            Modifier.weight(1f).focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1.02f, onClick = onToggle).background(Tokens.Colors.surface2).padding(Tokens.Space.m),
+            Modifier.weight(1f).focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1.02f, onClick = onToggle).padding(vertical = Tokens.Space.s, horizontal = Tokens.Space.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {

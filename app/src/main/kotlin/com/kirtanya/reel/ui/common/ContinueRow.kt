@@ -120,7 +120,15 @@ fun ContinueRow(
                             )
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
                     ) {
-                        RemoteImage(TmdbImages.still(p.stillPath, "w780") ?: TmdbImages.backdrop(p.backdropPath, "w780"), Modifier.fillMaxSize())
+                        val art = TmdbImages.still(p.stillPath, "w780") ?: TmdbImages.backdrop(p.backdropPath, "w780")
+                        if (art != null) {
+                            RemoteImage(art, Modifier.fillMaxSize())
+                        } else {
+                            // A file with no artwork (a link or .torrent): its initial on a tonal tile.
+                            Box(Modifier.fillMaxSize().background(Tokens.Colors.tonal), contentAlignment = Alignment.Center) {
+                                Text(p.title.trim().take(1).uppercase(), style = Tokens.Type.hero, color = Tokens.Colors.onTonal)
+                            }
+                        }
                         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Tokens.Colors.scrim)))
                         // Play affordance: glass circle, bottom-left.
                         Box(

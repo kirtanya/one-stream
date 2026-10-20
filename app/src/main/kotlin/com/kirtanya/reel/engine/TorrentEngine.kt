@@ -61,7 +61,8 @@ import org.libtorrent4j.swig.torrent_flags_t
  */
 class TorrentEngine(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val session = SessionManager(false)
+    // Created on first use (start()), so building the engine never loads native code (screen renders on the Mac).
+    private val session by lazy { SessionManager(false) }
     private val handles get() = SessionHandle(session.swig())
     private val json = Json { ignoreUnknownKeys = true }
 

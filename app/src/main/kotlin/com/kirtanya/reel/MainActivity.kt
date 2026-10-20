@@ -36,17 +36,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Afterglow is always dark: light status/nav bar icons, content drawn edge to edge.
+        // Content drawn edge to edge; the bar icon colour follows light / dark (set in setContent).
         enableEdgeToEdge(
             statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         EngineService.start(this)
-        com.kirtanya.reel.ui.theme.AccentState.init(this)
         // `adb shell am start -n com.kirtanya.reel/.MainActivity --ez forceTv true` previews the TV UI on a phone.
         val forceTv = intent.getBooleanExtra(EXTRA_FORCE_TV, false)
         val isTv = forceTv || ReelApp.get(this).isTv
         if (forceTv) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        com.kirtanya.reel.ui.theme.AccentState.init(this, tv = isTv)
         if (!isTv && Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -56,6 +56,13 @@ class MainActivity : ComponentActivity() {
         // (the same link would ask again).
         if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) handleIntent(intent)
         setContent {
+            // Status / nav bar icons follow light or dark (the bars themselves stay transparent).
+            val dark = com.kirtanya.reel.ui.theme.AccentState.isDark(androidx.compose.foundation.isSystemInDarkTheme())
+            androidx.compose.runtime.LaunchedEffect(dark) {
+                val t = android.graphics.Color.TRANSPARENT
+                val style = if (dark) androidx.activity.SystemBarStyle.dark(t) else androidx.activity.SystemBarStyle.light(t, t)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
             ReelTheme {
                 Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
                     if (isTv) {

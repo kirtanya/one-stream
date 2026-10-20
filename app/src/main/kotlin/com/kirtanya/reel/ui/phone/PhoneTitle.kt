@@ -28,6 +28,8 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -79,7 +81,7 @@ fun PhoneTitle(ref: TitleRef, onBack: () -> Unit, onPlay: (season: Int?, episode
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         LoadView(load, retry) { d -> TitleBody(d, onPlay) }
         com.kirtanya.reel.ui.common.TopFade()
-        GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.l))
+        GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.s))
     }
 }
 
@@ -96,12 +98,16 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
     var overviewOpen by rememberSaveable { mutableStateOf(false) }
     val openSources: (EpisodeNumber?) -> Unit = { ep -> onPlay(ep?.season, ep?.episode) }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = Tokens.Space.xxxl), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xl)) {
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    // Material top app bar: appears (solid, with the title) once the header has scrolled away.
+    val scrolled by remember { derivedStateOf { list.firstVisibleItemIndex > 0 } }
+    Box(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = Tokens.Space.xxxl), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
         // Cinematic header: backdrop under the status bar, the poster's light spilling into the page.
         item(key = "header") {
             Backdrop(
                 TmdbImages.backdrop(d.summary.backdropPath),
-                Modifier.fillMaxWidth().height(480.dp).drawBehind {
+                Modifier.fillMaxWidth().height(340.dp).drawBehind {
                     drawRect(Brush.radialGradient(listOf(glow.copy(alpha = 0.45f), Color.Transparent), center = Offset(size.width * 0.15f, size.height), radius = size.width))
                 },
             ) {
@@ -120,7 +126,7 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
             }
         }
         item(key = "actions") {
-            Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+            Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                 ReelButton(action.label, { runPlayAction(context, action, openSources) }, Modifier.fillMaxWidth(), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
                 if (action is PlayAction.Resume) GradientProgress(action.entry.progress, height = 3.dp)
                 Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
@@ -151,7 +157,7 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
                 } else {
                     LazyRow(contentPadding = PaddingValues(horizontal = gutter), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         items(all, key = { it.second.id }) { (label, p) ->
-                            RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 64.dp, onClick = { openProvider(p) }, sublabel = label)
+                            RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 52.dp, onClick = { openProvider(p) }, sublabel = label)
                         }
                     }
                     Text("Availability in India · data by JustWatch", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, modifier = Modifier.padding(horizontal = gutter))
@@ -170,7 +176,7 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
                 }
             }
             when (episodes) {
-                Load.Loading -> item { LoadingBox(Modifier.height(160.dp)) }
+                Load.Loading -> item { LoadingBox(Modifier.height(120.dp)) }
                 is Load.Failed -> item { ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = gutter), kind = ButtonKind.Ghost) }
                 is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
                     EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], Modifier.padding(horizontal = gutter)) { onPlay(e.season, e.number) }
@@ -183,12 +189,18 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit) {
                     SectionHeader("Cast", Modifier.padding(horizontal = gutter))
                     LazyRow(contentPadding = PaddingValues(horizontal = gutter), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                         items(d.cast) { c ->
-                            RingAvatar(TmdbImages.profile(c.profilePath), c.name, 64.dp, sublabel = c.character, placeholder = c.name.take(1))
+                            RingAvatar(TmdbImages.profile(c.profilePath), c.name, 56.dp, sublabel = c.character, placeholder = c.name.take(1))
                         }
                     }
                 }
             }
         }
+    }
+    androidx.compose.animation.AnimatedVisibility(scrolled, enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
+        Box(Modifier.fillMaxWidth().background(Tokens.Colors.surface1).statusBarsPadding().height(56.dp).padding(start = 64.dp, end = Tokens.Space.l), contentAlignment = Alignment.CenterStart) {
+            Text(d.summary.title, style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
     }
 }
 
@@ -202,7 +214,7 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier = Mo
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(144.dp).aspectRatio(16f / 9f).clip(stillShape).border(Tokens.Size.hairline, Tokens.Colors.hairline, stillShape)) {
+        Box(Modifier.width(128.dp).aspectRatio(16f / 9f).clip(stillShape).border(Tokens.Size.hairline, Tokens.Colors.hairline, stillShape)) {
             RemoteImage(TmdbImages.still(e.stillPath), Modifier.fillMaxSize())
             when {
                 watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.xs), icon = Icons.Rounded.Check, accent = true)

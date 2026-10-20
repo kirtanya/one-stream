@@ -74,23 +74,22 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onSear
             AmbientGlow(glow, height = 700.dp, strength = 0.5f)
             LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = Tokens.Space.bottomBarClearance + Tokens.Space.xl),
-                verticalArrangement = Arrangement.spacedBy(Tokens.Space.xl),
+                contentPadding = PaddingValues(bottom = Tokens.Space.bottomBarClearance + Tokens.Space.xxxl),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
             ) {
                 item(key = "header") {
-                    Row(Modifier.statusBarsPadding().padding(start = gutter, end = gutter, top = Tokens.Space.l), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.statusBarsPadding().padding(start = gutter, end = Tokens.Space.s, top = Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(greeting(), style = Tokens.Type.label, color = Tokens.Colors.textSecondary)
                             Text("Reel", style = Tokens.Type.display, color = Tokens.Colors.text)
                         }
                         GlassIconButton(Icons.Outlined.Search, "Search", onSearch)
-                        androidx.compose.foundation.layout.Spacer(Modifier.width(Tokens.Space.m))
                         GlassIconButton(Icons.Outlined.Download, "Downloads", onDownloads)
                     }
                 }
                 item(key = "hero") {
-                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
-                        HorizontalPager(pager, contentPadding = PaddingValues(horizontal = gutter), pageSpacing = Tokens.Space.m) { page ->
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        HorizontalPager(pager, contentPadding = PaddingValues(horizontal = gutter), pageSpacing = Tokens.Space.s) { page ->
                             HeroCard(hero[page], onOpen = onOpen, onPlay = { item ->
                                 if (item.ref.type == MediaType.MOVIE) onOpenDest(Dest.Sources(item.ref)) else onOpen(item)
                             })
@@ -99,13 +98,13 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onSear
                     }
                 }
                 if (continueItems.isNotEmpty()) {
-                    item(key = "continue") { ContinueRow(continueItems, cardWidth = 240.dp, sidePadding = gutter, onOpenDest = onOpenDest) }
+                    item(key = "continue") { ContinueRow(continueItems, cardWidth = 220.dp, sidePadding = gutter, onOpenDest = onOpenDest) }
                 }
                 item(key = "services") {
-                    ServicesRow(gutter, 64.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
+                    ServicesRow(gutter, 52.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
                 }
                 items(rows, key = { it.title }) { row ->
-                    PosterRow(row.title, row.items, posterWidth = 120.dp, sidePadding = gutter, onOpen = onOpen, onSeeAll = { onOpenDest(Dest.Collection(row.title, items = row.items)) })
+                    PosterRow(row.title, row.items, posterWidth = 104.dp, sidePadding = gutter, onOpen = onOpen, onSeeAll = { onOpenDest(Dest.Collection(row.title, items = row.items)) })
                 }
             }
         }
@@ -119,7 +118,7 @@ private fun HeroCard(item: TitleSummary, onOpen: (TitleSummary) -> Unit, onPlay:
     Box(
         Modifier
             .fillMaxWidth()
-            .aspectRatio(4f / 5f)
+            .aspectRatio(5f / 6f)
             .focusCard(shape = shape, scale = 1f, onClick = { onOpen(item) })
             .border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape),
     ) {
@@ -146,7 +145,7 @@ private fun HeroCard(item: TitleSummary, onOpen: (TitleSummary) -> Unit, onPlay:
 private fun PagerDots(count: Int, current: Int, modifier: Modifier = Modifier) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(count) { i ->
-            val w by animateDpAsState(if (i == current) 20.dp else 6.dp, label = "dot")
+            val w by animateDpAsState(if (i == current) 16.dp else 6.dp, label = "dot")
             Box(
                 Modifier.height(6.dp).width(w).clip(RoundedCornerShape(Tokens.Radius.pill))
                     .background(if (i == current) Tokens.Gradients.brand else Brush.linearGradient(listOf(Tokens.Colors.surface3, Tokens.Colors.surface3))),

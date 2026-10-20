@@ -45,7 +45,7 @@ fun CollectionScreen(dest: Dest.Collection, isTv: Boolean, onBack: () -> Unit, o
         AmbientGlow(glow)
         LoadView(load, retry) { items ->
             LazyVerticalGrid(
-                columns = if (isTv) GridCells.Fixed(7) else GridCells.Adaptive(104.dp),
+                columns = if (isTv) GridCells.Fixed(7) else GridCells.Fixed(3),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.tvSafeV else 0.dp, bottom = Tokens.Space.xxxl),
                 horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
@@ -58,9 +58,9 @@ fun CollectionScreen(dest: Dest.Collection, isTv: Boolean, onBack: () -> Unit, o
                     ) {
                         if (!isTv) GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
-                            dest.provider?.let { RingAvatar(TmdbImages.logo(it.logoPath, "w154"), null, if (isTv) 72.dp else 56.dp) }
+                            dest.provider?.let { RingAvatar(TmdbImages.logo(it.logoPath, "w154"), null, if (isTv) 56.dp else 48.dp) }
                             Column {
-                                Text(dest.title, style = if (isTv) Tokens.Type.hero else Tokens.Type.display, color = Tokens.Colors.text)
+                                Text(dest.title, style = Tokens.Type.display, color = Tokens.Colors.text)
                                 Text(
                                     if (dest.provider != null) "Streaming in India · ${items.size} titles" else "${items.size} titles",
                                     style = Tokens.Type.body,

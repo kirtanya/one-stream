@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    // Renders screens on the Mac (phone + TV sizes) so layouts can be checked without a device.
+    id("io.github.takahirom.roborazzi")
 }
 
 // TMDB read token lives in a local file that is never committed.
@@ -15,8 +17,8 @@ android {
         applicationId = "com.kirtanya.reel"
         minSdk = 28
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.5.9"
+        versionCode = 17
+        versionName = "0.6.0"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
     }
 
@@ -52,6 +54,20 @@ android {
 
     packaging {
         jniLibs.useLegacyPackaging = true
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { test ->
+                // Robolectric downloads its Android runtime itself: give it the same trust store as Gradle
+                // (the company network inspects HTTPS). Screen renders also fetch TMDB posters.
+                listOf("javax.net.ssl.trustStore", "javax.net.ssl.trustStorePassword").forEach { key ->
+                    System.getProperty(key)?.let { value -> test.systemProperty(key, value) }
+                }
+                test.maxHeapSize = "3g"
+            }
+        }
     }
 }
 
@@ -91,10 +107,21 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.6.3")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
     implementation("androidx.palette:palette-ktx:1.0.0")
+    // Material 3 colour schemes from one seed colour (Google's HCT / tonal-palette algorithm).
+    implementation("com.materialkolor:material-kolor:5.0.1")
 
     val media3 = "1.11.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.media3:media3-exoplayer-hls:$media3")
     implementation("androidx.media3:media3-datasource-okhttp:$media3")
+
+    // Screen renders: ./gradlew :app:recordRoborazziDebug → app/build/screens/*.png
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.76.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.76.0")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

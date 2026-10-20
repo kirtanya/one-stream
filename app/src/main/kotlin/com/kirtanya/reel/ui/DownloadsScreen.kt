@@ -198,7 +198,7 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
             // Tile: initial on the accent gradient (torrents have no artwork).
             Box(
-                Modifier.size(56.dp).clip(RoundedCornerShape(Tokens.Radius.m))
+                Modifier.size(48.dp).clip(RoundedCornerShape(Tokens.Radius.m))
                     .background(Brush.linearGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.surface3)))
                     .border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, RoundedCornerShape(Tokens.Radius.m)),
                 contentAlignment = Alignment.Center,

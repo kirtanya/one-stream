@@ -39,10 +39,14 @@ import com.kirtanya.reel.ui.nav.Tab
 import com.kirtanya.reel.ui.nav.rememberNavigator
 import com.kirtanya.reel.ui.settings.SettingsScreen
 import com.kirtanya.reel.ui.sources.SourcesScreen
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.height
+import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.theme.Tokens
 
 /** Height reserved at the top of every TV tab for the tab bar. */
-val TvTopBarHeight = 96.dp
+val TvTopBarHeight = 64.dp
 
 /** TV root: remote-first. A glass tab bar across the top; title, sources and collections full screen. */
 @Composable
@@ -55,6 +59,8 @@ fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest
     BackHandler { if (!nav.back()) activity?.finish() }
     val openTitle: (com.kirtanya.reel.core.tmdb.TitleSummary) -> Unit = { nav.open(Dest.Title(it.ref)) }
 
+    // Remote only: no 48 dp touch padding around controls (it would only push layouts apart).
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified) {
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         when (val top = nav.top) {
             is Dest.Title -> TvTitle(top.ref, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) })
@@ -71,6 +77,7 @@ fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest
             }
         }
     }
+    }
 
     // A magnet sent to the TV (e.g. opened from another app): Stream / Download sheet.
     if (incomingMagnet != null) AddLinkSheet(initialLink = incomingMagnet, onDismiss = onIncomingHandled, onDownloadStarted = { nav.select(Tab.Downloads) })
@@ -79,23 +86,40 @@ fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest
 @Composable
 private fun TvTopBar(nav: Navigator) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = Tokens.Space.tvSafeH, vertical = Tokens.Space.tvSafeV),
+        Modifier.fillMaxWidth().height(TvTopBarHeight).padding(horizontal = Tokens.Space.tvSafeH).padding(top = Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Wordmark: a small glowing dot + "Reel".
-        Box(Modifier.size(12.dp).clip(CircleShape).background(Tokens.Gradients.brand))
+        // Wordmark: a small primary dot + "Reel".
+        Box(Modifier.size(10.dp).clip(CircleShape).background(Tokens.Colors.accent))
         Spacer(Modifier.width(Tokens.Space.s))
         Text("Reel", style = Tokens.Type.title, color = Tokens.Colors.text)
         Spacer(Modifier.width(Tokens.Space.xl))
         val shape = RoundedCornerShape(Tokens.Radius.pill)
         Row(
-            Modifier.clip(shape).background(Tokens.Colors.glass).border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape).padding(Tokens.Space.xs),
-            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
+            Modifier.clip(shape).background(Tokens.Colors.glass).padding(Tokens.Space.xs),
+            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xxs),
         ) {
             listOf(Tab.Home to Icons.Rounded.Home, Tab.Search to Icons.Rounded.Search, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings)
-                .forEach { (tab, icon) ->
-                    ReelButton(tab.label, { nav.select(tab) }, kind = if (nav.tab == tab) ButtonKind.Primary else ButtonKind.Ghost, icon = icon)
-                }
+                .forEach { (tab, icon) -> TvTab(tab.label, icon, selected = nav.tab == tab) { nav.select(tab) } }
         }
+    }
+}
+
+/** A top tab: the selected one is a filled primary pill, the rest plain; focus lifts it with a ring. */
+@Composable
+private fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(Tokens.Radius.pill)
+    val fg = if (selected) Tokens.Colors.onAccent else Tokens.Colors.textSecondary
+    Row(
+        Modifier
+            .focusCard(shape = shape, scale = 1.04f, onClick = onClick)
+            .background(if (selected) Tokens.Colors.accent else Color.Transparent)
+            .height(36.dp)
+            .padding(horizontal = Tokens.Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
+    ) {
+        Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
+        Text(label, style = Tokens.Type.label, color = fg)
     }
 }
