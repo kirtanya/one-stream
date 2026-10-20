@@ -10,8 +10,8 @@ import com.kirtanya.reel.ui.theme.Tokens
 
 /** A network image on a placeholder surface (shows the surface if [url] is null or fails). */
 @Composable
-fun RemoteImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
+fun RemoteImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop, alignment: androidx.compose.ui.Alignment = androidx.compose.ui.Alignment.Center) {
     Box(modifier.background(Tokens.Colors.surfaceHigh)) {
-        if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = Modifier.matchParentSize())
+        if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = contentScale, alignment = alignment, modifier = Modifier.matchParentSize())
     }
 }

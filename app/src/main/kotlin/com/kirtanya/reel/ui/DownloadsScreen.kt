@@ -76,13 +76,15 @@ private enum class DownloadFilter(val label: String) { All("All"), Active("Downl
 fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
-    val torrents by engine.torrents.collectAsState()
+    val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
+    val live by engine.torrents.collectAsState()
+    val torrents = fixed?.torrents ?: live
     var filter by remember { mutableStateOf(DownloadFilter.All) }
     var confirmDelete by remember { mutableStateOf<TorrentSnapshot?>(null) }
-    var cacheBytes by remember { mutableLongStateOf(0L) }
-    var freeBytes by remember { mutableLongStateOf(0L) }
+    var cacheBytes by remember { mutableLongStateOf(fixed?.storage?.first ?: 0L) }
+    var freeBytes by remember { mutableLongStateOf(fixed?.storage?.second ?: 0L) }
     LaunchedEffect(Unit) {
-        while (true) {
+        while (fixed?.storage == null) {
             withContext(Dispatchers.IO) {
                 cacheBytes = engine.cacheBytes()
                 freeBytes = runCatching { StatFs(engine.downloadsDir().path).availableBytes }.getOrDefault(0L)
@@ -91,6 +93,9 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
         }
     }
     val shown = torrents.filter { it.matches(filter) }
+    // Disk checks once, not on every recomposition (and some devices can't answer at all).
+    val saveDir = remember { runCatching { engine.downloadsDir().path.substringAfter("/0/") }.getOrNull() }
+    val needsFileAccess = remember { !isTv && Build.VERSION.SDK_INT >= 30 && runCatching { !Environment.isExternalStorageManager() }.getOrDefault(false) }
     val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
@@ -104,13 +109,13 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
                 Row(Modifier.then(if (isTv) Modifier else Modifier.statusBarsPadding()).padding(top = Tokens.Space.l), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Downloads", style = Tokens.Type.display, color = Tokens.Colors.text)
-                        Text("Saving to ${engine.downloadsDir().path.substringAfter("/0/")}", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (saveDir != null) Text("Saving to $saveDir", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (!isTv) GlassIconButton(Icons.Rounded.Add, "Add a link", onAdd)
                 }
             }
             item { StorageCard(torrents, cacheBytes, freeBytes) { engine.trimCache(0) } }
-            if (!isTv && Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
+            if (needsFileAccess) {
                 item {
                     ReelCard {
                         Text("Save to your Downloads folder", style = Tokens.Type.heading, color = Tokens.Colors.text)
@@ -148,7 +153,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             containerColor = Tokens.Colors.surface1,
-            title = { Text("Delete “${t.name}”?", style = Tokens.Type.heading, color = Tokens.Colors.text) },
+            title = { Text("Delete “${com.kirtanya.reel.ui.sources.releaseName(t.name)}”?", style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis) },
             text = { Text("This removes the torrent and its downloaded files from this device.", style = Tokens.Type.body, color = Tokens.Colors.textSecondary) },
             confirmButton = { ReelButton("Delete", { engine.remove(t.infoHash, deleteFiles = true); confirmDelete = null }, kind = ButtonKind.Primary, icon = Icons.Rounded.Delete) },
             dismissButton = { ReelButton("Keep it", { confirmDelete = null }, kind = ButtonKind.Ghost) },
@@ -167,7 +172,7 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
             Text("free on this device", style = Tokens.Type.label, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(bottom = 3.dp))
         }
         GradientProgress(used.toFloat() / total, height = 6.dp)
-        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
             Pill("${formatBytes(downloaded)} downloads")
             Pill("${formatBytes(cacheBytes)} stream cache")
         }
@@ -193,13 +198,13 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
                 else Text(t.name.trim().take(1).uppercase(), style = Tokens.Type.title, color = Tokens.Colors.text)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
-                Text(t.name, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(com.kirtanya.reel.ui.sources.releaseName(t.name), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(statusLine(t), style = Tokens.Type.caption, color = if (t.error != null) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
         if (!done) GradientProgress(t.progress)
         when {
-            t.error != null -> Text(t.error, style = Tokens.Type.caption, color = Tokens.Colors.danger)
+            t.error != null -> Text(t.error, style = Tokens.Type.caption, color = Tokens.Colors.danger, maxLines = 3, overflow = TextOverflow.Ellipsis)
             t.stalledForSec >= 120 -> Text("No one is sharing this right now. It'll continue when someone does.", style = Tokens.Type.caption, color = Tokens.Colors.warn)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {

@@ -76,11 +76,13 @@ import kotlinx.coroutines.launch
 fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
     val app = ReelApp.get(context)
-    val store by app.addonStore.state.collectAsState()
-    val sources by app.sources.state.collectAsState()
+    val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
+    val liveStore by app.addonStore.state.collectAsState()
+    val store = fixed?.store ?: liveStore
+    val sources = com.kirtanya.reel.ui.settings.installedSources(app)
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(StoreFilter.ALL) }
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(fixed?.store == null) }
     var adding by remember { mutableStateOf<String?>(null) }
     var catalogUrl by remember { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
@@ -89,6 +91,7 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
     if (isTv) RequestFocusOnce(searchFocus)
 
     LaunchedEffect(Unit) {
+        if (fixed?.store != null) return@LaunchedEffect
         runCatching { app.addonStore.refresh() }
         loading = false
     }
@@ -100,9 +103,9 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         PageList(isTv) {
             item { PageTitle("Addon store", "Addons from Stremio's official catalog and any catalogs you add.", isTv, onBack) }
-            item { SearchField(query, { query = it }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus)) }
+            item { SearchField(query, { query = it }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus), placeholder = "Search addons") }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                     StoreFilter.entries.forEach { f ->
                         ReelButton(f.label, { filter = f }, kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost)
                     }
@@ -122,7 +125,7 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
                             if (hidden > 0) append(" · $hidden catalog-only addons hidden (One Stream uses streams and subtitles)")
                             if (store.failed.isNotEmpty()) append(" · couldn't load: ${store.failed.joinToString()}")
                         },
-                        style = Tokens.Type.caption, color = Tokens.Colors.textTertiary,
+                        style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

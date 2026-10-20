@@ -1,6 +1,8 @@
 package com.kirtanya.reel.ui.common
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +15,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -24,7 +28,10 @@ import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
 import com.kirtanya.reel.ui.theme.Tokens
 
-/** 2:3 poster (radius 16, hairline) with title and a quiet meta line underneath. */
+/**
+ * 2:3 poster (radius 12, hairline) with title and a quiet meta line underneath. Long-press (hold
+ * OK on the remote) adds it to My list or takes it off.
+ */
 @Composable
 fun PosterCard(
     item: TitleSummary,
@@ -36,19 +43,29 @@ fun PosterCard(
     onFocus: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(Tokens.Radius.m)
+    val toggleSaved = rememberWatchlistToggler()
     Column(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-        RemoteImage(
-            url = TmdbImages.poster(item.posterPath),
-            // [modifier] goes on the focusable image so focus requesters land on it.
-            modifier = modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .focusCard(shape = shape, onFocus = onFocus, onClick = onClick)
-                .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
-        )
+        // [modifier] goes on the focusable image so focus requesters land on it.
+        val frame = modifier
+            .fillMaxWidth()
+            .aspectRatio(2f / 3f)
+            .focusCard(
+                shape = shape, scale = Tokens.Motion.posterFocusScale, onFocus = onFocus, onLongClick = { toggleSaved(item) },
+                origin = if (showText) androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) else androidx.compose.ui.graphics.TransformOrigin.Center,
+                onClick = onClick,
+            )
+            .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
+        if (item.posterPath != null) {
+            RemoteImage(url = TmdbImages.poster(item.posterPath), modifier = frame)
+        } else {
+            // No poster: the name on a tonal card, so the grid never shows a blank hole.
+            Box(frame.background(Brush.verticalGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.surface2))).padding(Tokens.Space.s), contentAlignment = Alignment.BottomStart) {
+                Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            }
+        }
         if (showText) {
             Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1)
+            Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -84,8 +101,8 @@ fun PosterRow(
     }
 }
 
+/** Under a poster (a third of a phone's width): "★ 8.2 · 2024", "Series · 2016" when there's no rating. */
 fun metaLine(item: TitleSummary): String = listOfNotNull(
-    if (item.ref.type == MediaType.TV) "Series" else "Film",
+    item.rating?.let { "★ %.1f".format(it) } ?: if (item.ref.type == MediaType.TV) "Series" else "Film",
     item.year?.toString(),
-    item.rating?.let { "★ %.1f".format(it) },
 ).joinToString(" · ")

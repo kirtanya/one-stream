@@ -16,8 +16,20 @@ sealed interface Dest {
     /** Where to play a film, or one episode of a show. */
     data class Sources(val ref: TitleRef, val season: Int? = null, val episode: Int? = null) : Dest
 
-    /** A grid: a Home row's titles ("See all"), or everything on one streaming service. */
-    data class Collection(val title: String, val items: List<com.kirtanya.reel.core.tmdb.TitleSummary>? = null, val provider: com.kirtanya.reel.core.tmdb.Provider? = null) : Dest
+    /**
+     * A grid: a Home row's titles ("See all"), everything on one streaming service, or the most
+     * popular films / shows in a genre ([genre] with [genreType]; loads more as you scroll).
+     */
+    data class Collection(
+        val title: String,
+        val items: List<com.kirtanya.reel.core.tmdb.TitleSummary>? = null,
+        val provider: com.kirtanya.reel.core.tmdb.Provider? = null,
+        val genre: com.kirtanya.reel.core.tmdb.Genre? = null,
+        val genreType: com.kirtanya.reel.core.tmdb.MediaType? = null,
+    ) : Dest
+
+    /** A cast member: photo, bio, what they've been in. */
+    data class Person(val id: Int, val name: String) : Dest
 }
 
 /** Tabs at the root; title pages stack on top. Back pops the stack, then returns to Home. */

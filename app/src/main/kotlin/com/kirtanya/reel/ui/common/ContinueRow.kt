@@ -114,6 +114,9 @@ fun ContinueRow(
                             .aspectRatio(16f / 9f)
                             .focusCard(
                                 shape = shape,
+                                scale = Tokens.Motion.posterFocusScale,
+                                // Grows upward, so it never covers the title underneath.
+                                origin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f),
                                 onFocus = onFocus?.let { { it(item) } },
                                 onLongClick = {
                                     history.removeTitle(p.titleKey)

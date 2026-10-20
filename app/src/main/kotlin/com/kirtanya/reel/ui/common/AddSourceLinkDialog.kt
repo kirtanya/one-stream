@@ -36,7 +36,9 @@ private sealed interface AddOutcome {
 @Composable
 fun AddSourceLinkDialog(link: String, isTv: Boolean, onDone: () -> Unit) {
     val app = ReelApp.get(LocalContext.current)
-    val (preview, retry) = rememberLoad(link) { app.sources.preview(link) }
+    val fixed = LocalRenderData.current?.linkPreview
+    val (livePreview, retry) = rememberLoad(link) { if (fixed != null) kotlinx.coroutines.awaitCancellation() else app.sources.preview(link) }
+    val preview = fixed ?: livePreview
     var adding by remember { mutableStateOf(false) }
     var outcome by remember { mutableStateOf<AddOutcome?>(null) }
     val buttonFocus = remember { FocusRequester() }

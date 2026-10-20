@@ -43,10 +43,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.height
 import com.kirtanya.reel.ui.common.focusCard
+import com.kirtanya.reel.ui.common.pageTransition
 import com.kirtanya.reel.ui.theme.Tokens
 
-/** Height reserved at the top of every TV tab for the tab bar. */
-val TvTopBarHeight = 64.dp
+/** Height reserved at the top of every TV tab for the tab bar (it sits inside the overscan-safe area). */
+val TvTopBarHeight = Tokens.Space.tvSafeV + Tokens.Size.button + Tokens.Space.s
 
 /** TV root: remote-first. A glass tab bar across the top; title, sources and collections full screen. */
 @Composable
@@ -57,8 +58,8 @@ fun TvApp(
     onOpenHandled: () -> Unit = {},
     openTab: Tab? = null,
     onTabHandled: () -> Unit = {},
+    nav: Navigator = rememberNavigator(),
 ) {
-    val nav = rememberNavigator()
     // Each screen keeps its state (search text, season, scroll) while you're on a page above it.
     val saveable = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     LaunchedEffect(openDest) {
@@ -73,21 +74,30 @@ fun TvApp(
 
     // Remote only: no 48 dp touch padding around controls (it would only push layouts apart).
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified) {
+    val back: () -> Unit = { nav.back() }
+    val open: (Dest) -> Unit = { nav.open(it) }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-        when (val top = nav.top) {
-            is Dest.Title -> saveable.SaveableStateProvider("title:${top.ref}") { TvTitle(top.ref, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) }) }
-            is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = true, onBack = { nav.back() })
-            is Dest.Collection -> saveable.SaveableStateProvider("collection:${top.title}") { CollectionScreen(top, isTv = true, onBack = { nav.back() }, onOpen = openTitle) }
-            null -> saveable.SaveableStateProvider(nav.tab.name) {
-                when (nav.tab) {
-                    Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = { nav.open(it) })
-                    Tab.Search -> TvSearch(onOpen = openTitle)
-                    Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) { DownloadsScreen(isTv = true, onAdd = {}) }
-                    Tab.Settings -> Box(Modifier.padding(top = TvTopBarHeight)) { SettingsScreen(isTv = true) }
+        // Screen to screen: a short cross-fade with a slight zoom; each screen keeps its state underneath.
+        androidx.compose.animation.AnimatedContent(nav.top ?: nav.tab, transitionSpec = { pageTransition() }, label = "screen") { screen ->
+            when (screen) {
+                is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
+                    TvTitle(screen.ref, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
                 }
-                TvTopBar(nav)
+                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back)
+                is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
+                is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { com.kirtanya.reel.ui.common.PersonScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
+                is Tab -> saveable.SaveableStateProvider(screen.name) {
+                    when (screen) {
+                        Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = open)
+                        Tab.Search -> TvSearch(onOpen = openTitle, onOpenDest = open)
+                        Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) { DownloadsScreen(isTv = true, onAdd = {}) }
+                        Tab.Settings -> Box(Modifier.padding(top = TvTopBarHeight)) { SettingsScreen(isTv = true) }
+                    }
+                }
             }
         }
+        // The tab bar stays put while tabs change under it.
+        if (nav.top == null) TvTopBar(nav)
     }
     }
 
@@ -96,9 +106,9 @@ fun TvApp(
 }
 
 @Composable
-private fun TvTopBar(nav: Navigator) {
+internal fun TvTopBar(nav: Navigator) {
     Row(
-        Modifier.fillMaxWidth().height(TvTopBarHeight).padding(horizontal = Tokens.Space.tvSafeH).padding(top = Tokens.Space.m),
+        Modifier.fillMaxWidth().height(TvTopBarHeight).padding(horizontal = Tokens.Space.tvSafeH).padding(top = Tokens.Space.tvSafeV, bottom = Tokens.Space.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Wordmark: the One Stream mark + name.

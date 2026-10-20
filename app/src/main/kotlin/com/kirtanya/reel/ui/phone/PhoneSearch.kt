@@ -1,6 +1,21 @@
 package com.kirtanya.reel.ui.phone
 
 import android.content.Context
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.style.TextOverflow
+import com.kirtanya.reel.core.tmdb.Genre
+import com.kirtanya.reel.ui.common.ErrorBox
+import com.kirtanya.reel.ui.common.Load
+import com.kirtanya.reel.ui.common.LoadingBox
+import com.kirtanya.reel.ui.common.rememberCatalog
+import com.kirtanya.reel.ui.nav.Dest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -65,10 +80,10 @@ import kotlinx.coroutines.delay
 enum class SearchKind(val label: String) { All("All"), Films("Films"), Shows("Shows") }
 
 @Composable
-fun PhoneSearch(onOpen: (TitleSummary) -> Unit) {
+fun PhoneSearch(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit = {}, initialQuery: String = "") {
     val context = LocalContext.current
-    var query by rememberSaveable { mutableStateOf("") }
-    var debounced by rememberSaveable { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf(initialQuery) }
+    var debounced by rememberSaveable { mutableStateOf(initialQuery) }
     var kind by rememberSaveable { mutableStateOf(SearchKind.All) }
     var recents by remember { mutableStateOf(RecentSearches.load(context)) }
     val focus = remember { FocusRequester() }
@@ -77,49 +92,96 @@ fun PhoneSearch(onOpen: (TitleSummary) -> Unit) {
         debounced = query.trim()
     }
     LaunchedEffect(Unit) { if (query.isEmpty()) runCatching { focus.requestFocus() } }
+    val gutter = Tokens.Space.phoneGutter
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         AmbientGlow(Tokens.Colors.accent, strength = 0.3f)
         Column(Modifier.fillMaxSize().statusBarsPadding(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
-            Text("Search", style = Tokens.Type.display, color = Tokens.Colors.text, modifier = Modifier.padding(start = Tokens.Space.phoneGutter, top = Tokens.Space.l))
-            SearchField(query, { query = it }, Modifier.padding(horizontal = Tokens.Space.phoneGutter).focusRequester(focus), onSubmit = {
+            Text("Search", style = Tokens.Type.display, color = Tokens.Colors.text, modifier = Modifier.padding(start = gutter, top = Tokens.Space.l))
+            SearchField(query, { query = it }, Modifier.padding(horizontal = gutter).focusRequester(focus), onSubmit = {
                 if (query.isNotBlank()) recents = RecentSearches.add(context, query.trim())
             })
-            Row(Modifier.padding(horizontal = Tokens.Space.phoneGutter), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                SearchKind.entries.forEach { k -> ReelButton(k.label, { kind = k }, kind = if (kind == k) ButtonKind.Primary else ButtonKind.Ghost) }
-            }
-            if (debounced.isEmpty() && recents.isNotEmpty()) {
-                Column(Modifier.padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    SectionHeader("Recent", action = "Clear", onAction = { recents = RecentSearches.clear(context) })
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                        recents.forEach { r -> ReelButton(r, { query = r; debounced = r }, kind = ButtonKind.Ghost, icon = Icons.Rounded.History) }
-                    }
-                }
-            }
+            KindChips(kind, { kind = it }, Modifier.padding(horizontal = gutter))
             SearchResults(
-                debounced, kind, GridCells.Fixed(3), Tokens.Space.phoneGutter, Tokens.Space.bottomBarClearance + Tokens.Space.xl,
+                debounced, kind, GridCells.Fixed(3), gutter, Tokens.Space.bottomBarClearance + Tokens.Space.xl,
                 onOpen = { item ->
                     if (debounced.isNotEmpty()) recents = RecentSearches.add(context, debounced)
                     onOpen(item)
+                },
+                // Nothing typed yet: recent searches and genres to browse, above what's trending.
+                browse = {
+                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
+                        if (recents.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                                SectionHeader("Recent", action = "Clear", onAction = { recents = RecentSearches.clear(context) })
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                                    recents.forEach { r -> ReelButton(r, { query = r; debounced = r }, Modifier.widthIn(max = 280.dp), kind = ButtonKind.Ghost, icon = Icons.Rounded.History) }
+                                }
+                            }
+                        }
+                        GenreBrowser(kind, rows = 2, onOpen = { g, type -> onOpenDest(Dest.Collection(g.name, genre = g, genreType = type)) })
+                    }
                 },
             )
         }
     }
 }
 
-/** Glass pill search field: icon, text, clear button. */
+/** All · Films · Shows. Scrolls sideways rather than squeezing at large font sizes. */
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, onSubmit: () -> Unit = {}, height: Dp = 48.dp) {
+fun KindChips(kind: SearchKind, onChange: (SearchKind) -> Unit, modifier: Modifier = Modifier) {
+    LazyRow(modifier, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+        items(SearchKind.entries) { k -> ReelButton(k.label, { onChange(k) }, kind = if (kind == k) ButtonKind.Primary else ButtonKind.Ghost) }
+    }
+}
+
+/**
+ * "Browse by genre": film genres (or show genres when Shows is picked) as chips that scroll
+ * sideways: two rows on the phone (each chip as wide as its name), one focusable row on TV.
+ * Each opens the genre's most popular titles.
+ */
+@Composable
+fun GenreBrowser(kind: SearchKind, rows: Int, onOpen: (Genre, MediaType) -> Unit, modifier: Modifier = Modifier, sidePadding: Dp = 0.dp) {
+    val catalog = rememberCatalog()
+    val type = if (kind == SearchKind.Shows) MediaType.TV else MediaType.MOVIE
+    val (genres, _) = rememberLoad(type) { catalog.genres(type) }
+    val list = (genres as? Load.Ready)?.value.orEmpty()
+    if (list.isEmpty()) return
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+        SectionHeader(if (type == MediaType.TV) "Browse shows by genre" else "Browse films by genre", Modifier.padding(horizontal = sidePadding))
+        if (rows <= 1) {
+            LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = sidePadding), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                items(list, key = { it.id }) { g -> ReelButton(g.name, { onOpen(g, type) }, kind = ButtonKind.Ghost) }
+            }
+        } else {
+            // Rows scroll together; a lazy grid would size every chip in a column alike.
+            val perRow = (list.size + rows - 1) / rows
+            Column(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = sidePadding), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                list.chunked(perRow).forEach { line ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        line.forEach { g -> ReelButton(g.name, { onOpen(g, type) }, kind = ButtonKind.Ghost) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Pill search field: icon, text, clear button. On TV it gets the focus ring like every other control. */
+@Composable
+fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, onSubmit: () -> Unit = {}, height: Dp = 48.dp, placeholder: String = "Films, shows, people…") {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
+    var focused by remember { mutableStateOf(false) }
     Row(
-        modifier.fillMaxWidth().height(height).clip(shape).background(Tokens.Colors.surface2).border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape)
+        modifier.onFocusChanged { focused = it.hasFocus }.fillMaxWidth().height(height).clip(shape).background(Tokens.Colors.surface2)
+            .border(if (focused) Tokens.Size.focusBorder else Tokens.Size.hairline, if (focused) Tokens.Colors.accentBright else Tokens.Colors.hairlineStrong, shape)
             .padding(horizontal = Tokens.Space.l),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
     ) {
         Icon(Icons.Rounded.Search, null, tint = Tokens.Colors.textSecondary)
         Box(Modifier.weight(1f)) {
-            if (value.isEmpty()) Text("Films, shows, people…", style = Tokens.Type.body, color = Tokens.Colors.textTertiary)
+            if (value.isEmpty()) Text(placeholder, style = Tokens.Type.body, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             BasicTextField(
                 value, onChange,
                 singleLine = true,
@@ -133,13 +195,16 @@ fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = 
         if (value.isNotEmpty()) {
             Icon(
                 Icons.Rounded.Close, "Clear", tint = Tokens.Colors.textSecondary,
-                modifier = Modifier.size(24.dp).clip(RoundedCornerShape(Tokens.Radius.pill)).clickable(interactionSource = null, indication = null) { onChange("") },
+                modifier = Modifier.minimumInteractiveComponentSize().size(24.dp).clip(RoundedCornerShape(Tokens.Radius.pill)).clickable(interactionSource = null, indication = null) { onChange("") },
             )
         }
     }
 }
 
-/** Results grid for [query] (filtered by [kind]); trending titles when it's empty. Shared by phone and TV. */
+/**
+ * Results grid for [query] (filtered by [kind]); what's trending when it's empty, with [browse]
+ * (recent searches, genres) above it. Shared by phone and TV.
+ */
 @Composable
 fun SearchResults(
     query: String,
@@ -149,35 +214,40 @@ fun SearchResults(
     bottomPadding: Dp,
     onOpen: (TitleSummary) -> Unit,
     focusFirst: FocusRequester? = null,
+    browse: (@Composable () -> Unit)? = null,
 ) {
-    val tmdb = ReelApp.get(LocalContext.current).tmdb
+    val catalog = rememberCatalog()
     val (load, retry) = rememberLoad(query) {
-        if (query.isEmpty()) tmdb.home().firstOrNull()?.items.orEmpty() else tmdb.search(query)
+        if (query.isEmpty()) catalog.home().firstOrNull()?.items.orEmpty() else catalog.search(query)
     }
-    LoadView(load, retry) { all ->
-        val results = all.filter {
-            when (kind) {
-                SearchKind.All -> true
-                SearchKind.Films -> it.ref.type == MediaType.MOVIE
-                SearchKind.Shows -> it.ref.type == MediaType.TV
-            }
+    val results = (load as? Load.Ready)?.value.orEmpty().filter {
+        when (kind) {
+            SearchKind.All -> true
+            SearchKind.Films -> it.ref.type == MediaType.MOVIE
+            SearchKind.Shows -> it.ref.type == MediaType.TV
         }
-        LazyVerticalGrid(
-            columns = columns,
-            contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = Tokens.Space.s, bottom = bottomPadding),
-            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-            verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
-        ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                if (query.isNotEmpty() && results.isEmpty()) {
-                    EmptyState(Icons.Rounded.Search, "Nothing found", "No ${if (kind == SearchKind.All) "titles" else kind.label.lowercase()} match “$query”. Try another spelling.")
-                } else {
-                    SectionHeader(if (query.isEmpty()) "Trending this week" else com.kirtanya.reel.ui.plural(results.size, "result"))
+    }
+    LazyVerticalGrid(
+        columns = columns,
+        contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = Tokens.Space.s, bottom = bottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
+        verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
+    ) {
+        if (query.isEmpty() && browse != null) item(span = { GridItemSpan(maxLineSpan) }, key = "browse") { browse() }
+        item(span = { GridItemSpan(maxLineSpan) }, key = "heading") {
+            when (load) {
+                Load.Loading -> LoadingBox(Modifier.height(160.dp))
+                is Load.Failed -> ErrorBox(load.message, { retry() }, Modifier.height(200.dp))
+                is Load.Ready -> when {
+                    query.isNotEmpty() && results.isEmpty() ->
+                        EmptyState(Icons.Rounded.Search, "Nothing found", "No ${if (kind == SearchKind.All) "titles" else kind.label.lowercase()} match “$query”. Try another spelling.")
+                    query.isEmpty() -> SectionHeader("Trending this week")
+                    else -> SectionHeader(com.kirtanya.reel.ui.plural(results.size, "result"))
                 }
             }
-            itemsIndexed(results, key = { _, it -> it.ref.toString() }) { i, item ->
-                PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = if (i == 0 && focusFirst != null) Modifier.focusRequester(focusFirst) else Modifier)
-            }
+        }
+        itemsIndexed(results, key = { _, it -> it.ref.toString() }) { i, item ->
+            PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = if (i == 0 && focusFirst != null) Modifier.focusRequester(focusFirst) else Modifier)
         }
     }
 }

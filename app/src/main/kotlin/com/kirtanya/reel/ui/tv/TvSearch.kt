@@ -18,24 +18,27 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.ui.common.AmbientGlow
-import com.kirtanya.reel.ui.common.ButtonKind
-import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RequestFocusOnce
+import com.kirtanya.reel.ui.nav.Dest
+import com.kirtanya.reel.ui.phone.GenreBrowser
+import com.kirtanya.reel.ui.phone.KindChips
 import com.kirtanya.reel.ui.phone.SearchField
 import com.kirtanya.reel.ui.phone.SearchKind
 import com.kirtanya.reel.ui.phone.SearchResults
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.delay
 
+/** TV search: the field and All · Films · Shows on one line; genres to browse until you type; results 8 across. */
 @Composable
-fun TvSearch(onOpen: (TitleSummary) -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var debounced by rememberSaveable { mutableStateOf("") }
+fun TvSearch(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit = {}, initialQuery: String = "") {
+    var query by rememberSaveable { mutableStateOf(initialQuery) }
+    var debounced by rememberSaveable { mutableStateOf(initialQuery) }
     var kind by rememberSaveable { mutableStateOf(SearchKind.All) }
     LaunchedEffect(query) {
         delay(500)
@@ -48,11 +51,14 @@ fun TvSearch(onOpen: (TitleSummary) -> Unit) {
         AmbientGlow(Tokens.Colors.accent, strength = 0.3f)
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
             Spacer(Modifier.height(TvTopBarHeight))
-            Row(Modifier.padding(horizontal = Tokens.Space.tvSafeH), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+            Row(Modifier.padding(horizontal = Tokens.Space.tvSafeH), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
                 SearchField(query, { query = it }, Modifier.fillMaxWidth(0.5f).focusRequester(field))
-                SearchKind.entries.forEach { k -> ReelButton(k.label, { kind = k }, kind = if (kind == k) ButtonKind.Primary else ButtonKind.Ghost) }
+                KindChips(kind, { kind = it })
             }
-            SearchResults(debounced, kind, GridCells.Fixed(8), Tokens.Space.tvSafeH, Tokens.Space.tvSafeV, onOpen = onOpen)
+            SearchResults(
+                debounced, kind, GridCells.Fixed(8), Tokens.Space.tvSafeH, Tokens.Space.tvSafeV, onOpen = onOpen,
+                browse = { GenreBrowser(kind, rows = 1, onOpen = { g, type -> onOpenDest(Dest.Collection(g.name, genre = g, genreType = type)) }, Modifier.fillMaxWidth()) },
+            )
         }
     }
 }

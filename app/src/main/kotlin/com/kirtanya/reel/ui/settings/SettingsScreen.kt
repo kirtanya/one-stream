@@ -129,9 +129,9 @@ private val GROUPS = listOf(
  * and puts focus back on the row you came from.
  */
 @Composable
-fun SettingsScreen(isTv: Boolean) {
+fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
     // Pages open on top of each other (Addons → Addon store); saved as names so rotation keeps them.
-    var stackNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var stackNames by rememberSaveable { mutableStateOf(start.map { it.name }) }
     val stack = stackNames.map { SettingsPage.valueOf(it) }
     var cameFrom by rememberSaveable { mutableStateOf<String?>(null) }
     var forward by remember { mutableStateOf(true) }
@@ -172,7 +172,7 @@ fun SettingsScreen(isTv: Boolean) {
 @Composable
 private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (SettingsPage) -> Unit) {
     val app = ReelApp.get(LocalContext.current)
-    val sources by app.sources.state.collectAsState()
+    val sources = installedSources(app)
     val playback by app.playbackSettings.state.collectAsState()
     var cacheBytes by remember { mutableLongStateOf(-1L) }
     LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { app.engine.cacheBytes() } }
@@ -223,6 +223,13 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
             }
         }
     }
+}
+
+/** Installed addons, repos and plugins (fixed data in screen renders). */
+@Composable
+internal fun installedSources(app: ReelApp): com.kirtanya.reel.data.SourcesState {
+    val live by app.sources.state.collectAsState()
+    return com.kirtanya.reel.ui.common.LocalRenderData.current?.installed ?: live
 }
 
 /** Material list-group label: sentence case, primary colour. */
@@ -309,7 +316,7 @@ private fun Section(title: String? = null, note: String? = null, content: @Compo
 @Composable
 private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsPage) -> Unit, onBack: () -> Unit) {
     val app = ReelApp.get(LocalContext.current)
-    val sources by app.sources.state.collectAsState()
+    val sources = installedSources(app)
     val playback by app.playbackSettings.state.collectAsState()
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
@@ -412,7 +419,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                 }
                 item {
                     Section("Size") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                             SubtitleSize.entries.forEach { size ->
                                 ReelButton(size.label, { app.playbackSettings.update { it.copy(subtitleSize = size) } }, kind = if (playback.subtitleSize == size) ButtonKind.Primary else ButtonKind.Ghost)
                             }
@@ -438,8 +445,9 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                         sources.addons.forEach { addon ->
                             val m = runCatching { addon.manifest }.getOrNull()
                             ToggleRow(
-                                m?.name ?: addon.url,
-                                listOfNotNull(m?.version?.let { "v$it" }, if (m?.hasSubtitles == true && m.hasStreams != true) "subtitles" else null, m?.description).joinToString(" · ").ifBlank { addon.url },
+                                m?.name ?: (android.net.Uri.parse(addon.url).host ?: addon.url),
+                                if (m == null) "Couldn't read this addon · ${addon.url}"
+                                else listOfNotNull(m.version.let { "v$it" }, if (m.hasSubtitles && !m.hasStreams) "subtitles" else null, m.description).joinToString(" · ").ifBlank { addon.url },
                                 addon.enabled,
                                 onRemove = { app.sources.removeAddon(addon.url); message = "Removed ${m?.name ?: "addon"}" },
                             ) { app.sources.setAddonEnabled(addon.url, !addon.enabled) }
@@ -459,7 +467,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                         Section {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(repo.name, style = Tokens.Type.heading, color = Tokens.Colors.text)
+                                    Text(repo.name, style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     Text(if (repo.builtIn) "Built in · v${repo.version}" else "v${repo.version} · ${repo.url}", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 GlassIconButton(Icons.Rounded.Refresh, "Update ${repo.name}", { run { app.sources.addRepo(repo.url, repo.builtIn); "Updated ${repo.name}" } })
@@ -561,7 +569,7 @@ internal fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemo
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, style = Tokens.Type.label, color = Tokens.Colors.text)
+                Text(title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Switch(

@@ -39,15 +39,20 @@ import com.kirtanya.reel.ui.theme.Tokens
 
 @Composable
 fun rememberTitle(ref: TitleRef): Pair<Load<TitleDetails>, Retry> {
-    val tmdb = ReelApp.get(LocalContext.current).tmdb
-    return rememberLoad(ref) { tmdb.details(ref) }
+    val catalog = com.kirtanya.reel.ui.common.rememberCatalog()
+    return rememberLoad(ref) { catalog.details(ref) }
 }
 
 @Composable
 fun rememberSeason(tvId: Int, season: Int?): Pair<Load<List<Episode>>, Retry> {
-    val tmdb = ReelApp.get(LocalContext.current).tmdb
-    return rememberLoad(tvId to season) { if (season == null) emptyList() else tmdb.season(tvId, season) }
+    val catalog = com.kirtanya.reel.ui.common.rememberCatalog()
+    return rememberLoad(tvId to season) { if (season == null) emptyList() else catalog.season(tvId, season) }
 }
+
+/** Pictures for a title's hero, best first: its backdrop and the textless ones, else the poster. */
+fun heroBackdrops(d: TitleDetails, size: String = "w1280"): List<String> =
+    (listOfNotNull(d.summary.backdropPath) + d.backdrops).distinct().take(5).mapNotNull { TmdbImages.backdrop(it, size) }
+        .ifEmpty { listOfNotNull(TmdbImages.poster(d.summary.posterPath, "w780")) }
 
 /** "2019 · 2h 19m · A · ★ 8.4" */
 fun detailsMeta(d: TitleDetails): String = listOfNotNull(

@@ -32,6 +32,8 @@ fun Modifier.focusCard(
     onFocus: (() -> Unit)? = null,
     /** Long-press (touch) or hold OK (remote). */
     onLongClick: (() -> Unit)? = null,
+    /** Where the lift grows from: bottom-centre for cards with a label underneath, so it never covers it. */
+    origin: androidx.compose.ui.graphics.TransformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center,
     onClick: () -> Unit,
 ): Modifier = composed {
     val interaction = remember { MutableInteractionSource() }
@@ -40,7 +42,7 @@ fun Modifier.focusCard(
     if (onFocus != null) androidx.compose.runtime.LaunchedEffect(focused) { if (focused) onFocus() }
     // Afterglow focus: lift, accent ring and an accent glow (the remote's "you are here").
     this
-        .graphicsLayer { scaleX = s; scaleY = s }
+        .graphicsLayer { scaleX = s; scaleY = s; transformOrigin = origin }
         .then(if (focused) Modifier.shadow(24.dp, shape, ambientColor = Tokens.Colors.accent, spotColor = Tokens.Colors.accent) else Modifier)
         .border(Tokens.Size.focusBorder, if (focused) Tokens.Colors.accentBright else Color.Transparent, shape)
         .clip(shape)

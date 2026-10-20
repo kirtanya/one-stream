@@ -83,6 +83,21 @@ object Tokens {
         val brand: Brush get() = SolidColor(Colors.accent)
         val ring: Brush get() = Brush.linearGradient(listOf(Colors.ringStart, Colors.ringEnd))
         val progress: Brush get() = SolidColor(Colors.accent)
+
+        // Scrims over full-bleed images (the cinematic hero): text sits on the canvas colour, so it
+        // reads in light and dark alike.
+        /** Bottom of a hero: clear at the top, solid canvas where the text sits. */
+        val heroBottom: Brush get() = Brush.verticalGradient(
+            0.30f to Color.Transparent, 0.62f to Colors.canvas.copy(alpha = 0.55f), 0.86f to Colors.canvas.copy(alpha = 0.92f), 1f to Colors.canvas,
+        )
+        /** Top of a hero, behind the status bar and floating buttons. */
+        val heroTop: Brush get() = Brush.verticalGradient(0f to Colors.canvas.copy(alpha = 0.72f), 1f to Color.Transparent)
+        /** Behind a page heading (grids, person): the picture as a dim wash, so any text reads on it. */
+        val backdropDim: Brush get() = Brush.verticalGradient(
+            0f to Colors.canvas.copy(alpha = 0.5f), 0.5f to Colors.canvas.copy(alpha = 0.78f), 1f to Colors.canvas,
+        )
+        /** TV: text sits on the left of the picture. */
+        val heroStart: Brush get() = Brush.horizontalGradient(0f to Colors.canvas, 0.38f to Colors.canvas.copy(alpha = 0.82f), 0.72f to Color.Transparent)
     }
 
     object Space {
@@ -156,8 +171,38 @@ object Tokens {
 
     object Motion {
         const val focusScale = 1.06f
+        /** Posters and stills on TV: a bigger lift, since they're the main thing being picked. */
+        const val posterFocusScale = 1.1f
         const val focusMs = 160
         const val stateMs = 220
         const val ambientMs = 600
+        /** Screen to screen: a cross-fade with a slight zoom. */
+        const val pageMs = 320
+        const val pageZoom = 0.96f
+        /** Hero images: how long each backdrop stays, the cross-fade, and the slow zoom (phone only). */
+        const val slideMs = 8_000
+        const val slideFadeMs = 900
+        const val kenBurnsScale = 1.08f
+    }
+
+    /** The cinematic layer: heroes, title logos, the meta line. */
+    object Cinema {
+        /** Phone hero (Home) and title header, as a share of the screen height, with limits. */
+        const val heroShare = 0.66f
+        val heroMin = 460.dp
+        val heroMax = 620.dp
+        val titleHeader = 440.dp
+        val sourcesHeader = 300.dp
+        /** Title logos (TMDB artwork) are fitted inside this box. */
+        val logoMaxWidthPhone = 260.dp
+        val logoMaxHeightPhone = 96.dp
+        val logoMaxWidthTv = 380.dp
+        val logoMaxHeightTv = 110.dp
+        /** TV Home: the info block above the rows. */
+        val tvInfoHeight = 196.dp
+        /** Netflix-style action tiles on the phone title page (icon over a short label). */
+        val actionTileHeight = 64.dp
+        val thumbWidthPhone = 220.dp
+        val thumbWidthTv = 260.dp
     }
 }

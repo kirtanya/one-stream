@@ -67,7 +67,7 @@ fun SourceRow(
                 )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
-                Text(source.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(releaseName(source.title), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(metaLine(source), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (!fits) Text("Too big to stream on this device", style = Tokens.Type.caption, color = Tokens.Colors.warn)
                 if (source.kind == SourceKind.TORRENT && source.seeders == 0) Text("No one is sharing this right now", style = Tokens.Type.caption, color = Tokens.Colors.warn)
@@ -77,6 +77,14 @@ fun SourceRow(
         else GlassIconButton(Icons.Rounded.Download, "Download", onDownload)
     }
 }
+
+/**
+ * A release name that wraps at its dots and dashes ("Dune.Part.Two.2024.2160p…") instead of
+ * mid-word; only the first line of a multi-line addon description.
+ */
+fun releaseName(title: String): String =
+    title.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim()
+        .replace(".", ".\u200B").replace("_", "_\u200B").replace("-", "-\u200B").replace("[", "\u200B[")
 
 private fun metaLine(s: Source) = listOfNotNull(
     s.provider,

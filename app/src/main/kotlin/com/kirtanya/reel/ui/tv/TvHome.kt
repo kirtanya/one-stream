@@ -1,8 +1,5 @@
 package com.kirtanya.reel.ui.tv
 
-import androidx.compose.material.icons.rounded.Refresh
-
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +8,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,171 +23,218 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.playback.ContinueItem
+import com.kirtanya.reel.core.tmdb.MediaType
+import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
+import com.kirtanya.reel.ui.common.AmbientGlow
+import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.ContinueRow
-import com.kirtanya.reel.ui.common.LoadView
+import com.kirtanya.reel.ui.common.EmptyState
+import com.kirtanya.reel.ui.common.HeroImage
+import com.kirtanya.reel.ui.common.HeroScrims
+import com.kirtanya.reel.ui.common.Load
+import com.kirtanya.reel.ui.common.LoadingBox
+import com.kirtanya.reel.ui.common.MetaLine
+import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.PosterRow
-import com.kirtanya.reel.ui.common.RemoteImage
+import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RequestFocusOnce
+import com.kirtanya.reel.ui.common.ServicesRow
+import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.continueDetail
-import com.kirtanya.reel.ui.common.metaLine
+import com.kirtanya.reel.ui.common.rememberAmbientColor
+import com.kirtanya.reel.ui.common.rememberCatalog
 import com.kirtanya.reel.ui.common.rememberContinueWatching
 import com.kirtanya.reel.ui.common.rememberLoad
+import com.kirtanya.reel.ui.common.rememberWatchlist
+import com.kirtanya.reel.ui.common.summaryParts
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.theme.Tokens
-import androidx.compose.foundation.layout.Row
-import com.kirtanya.reel.ui.common.rememberAmbientColor
-import com.kirtanya.reel.ui.common.ServicesRow
-import com.kirtanya.reel.ui.common.Pill
-import com.kirtanya.reel.ui.common.AmbientGlow
-import com.kirtanya.reel.ui.common.Backdrop
 import kotlinx.coroutines.delay
 
 /** What the big info block and backdrop show for the focused card. [key] identifies the card. */
 private data class HomeInfo(
     val key: String,
+    val ref: TitleRef?,
     val title: String,
-    val meta: String,
+    val rating: Double?,
+    val parts: List<String>,
     val overview: String,
     val backdropPath: String?,
     val posterPath: String?,
-    val pills: List<String> = emptyList(),
+    /** Continue watching: "Up next · S2 E6" / "8 min left". */
+    val badge: String? = null,
 )
 
-private fun TitleSummary.info() = HomeInfo(
-    "poster:$ref", title, metaLine(this), overview, backdropPath, posterPath,
-    listOfNotNull(if (ref.type.name == "TV") "Series" else "Film", year?.toString(), rating?.let { "★ %.1f".format(it) }),
-)
+private fun TitleSummary.info() = HomeInfo("poster:$ref", ref, title, rating, summaryParts(this), overview, backdropPath, posterPath)
 
-private fun ContinueItem.info() = HomeInfo(
-    "continue:${entry.playback.titleKey}", entry.playback.title, continueDetail(this), entry.playback.subtitle.orEmpty(),
-    entry.playback.backdropPath, entry.playback.posterPath, listOf(continueDetail(this)),
-)
+private fun ContinueItem.info(): HomeInfo {
+    val p = entry.playback
+    val ref = p.tmdbId?.let { id -> TitleRef(if (p.tmdbType == "tv") MediaType.TV else MediaType.MOVIE, id) }
+    return HomeInfo(
+        "continue:${p.titleKey}", ref, p.title, null, listOfNotNull(if (p.tmdbType == "tv") "Series" else if (ref != null) "Film" else null, p.year?.toString()),
+        p.subtitle.orEmpty(), p.backdropPath, p.posterPath, badge = continueDetail(this),
+    )
+}
 
 /**
- * Cinematic home: the focused card's backdrop fills the screen, its details sit top-left,
- * Continue watching and rows of posters below. Like One Launcher's TV home.
+ * Cinematic home: the focused card's backdrop fills the screen, its logo and details sit top-left,
+ * Continue watching, My list and rows of posters below.
  */
 @Composable
 fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
-    val tmdb = ReelApp.get(LocalContext.current).tmdb
-    val (load, retry) = rememberLoad(Unit) { tmdb.home() }
+    val catalog = rememberCatalog()
+    val (load, retry) = rememberLoad(Unit) { catalog.home() }
     val continueItems = rememberContinueWatching()
-    LoadView(load, retry, Modifier.padding(top = TvTopBarHeight)) { all ->
-        // TMDB answered but with nothing to show (e.g. a regional hiccup): say so instead of crashing.
-        val rows = all.filter { it.items.isNotEmpty() }
-        if (rows.isEmpty()) {
-            com.kirtanya.reel.ui.common.EmptyState(
-                androidx.compose.material.icons.Icons.Rounded.Refresh, "Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.",
-                Modifier.padding(top = Tokens.Space.xxxl),
-            ) { com.kirtanya.reel.ui.common.ReelButton("Try again", { retry() }, kind = com.kirtanya.reel.ui.common.ButtonKind.Secondary) }
-            return@LoadView
+    val myList = rememberWatchlist()
+    when (load) {
+        Load.Loading -> LoadingBox(Modifier.padding(top = TvTopBarHeight))
+        is Load.Failed -> TvHomeProblem("Couldn't load today's titles", load.message) { retry() }
+        is Load.Ready -> {
+            // TMDB answered but with nothing to show (e.g. a regional hiccup): say so instead of crashing.
+            val rows = load.value.filter { it.items.isNotEmpty() }
+            if (rows.isEmpty()) TvHomeProblem("Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.") { retry() }
+            else TvHomeContent(rows.map { it.title to it.items }, continueItems, myList, onOpen, onOpenDest)
         }
-        val initial = continueItems.firstOrNull()?.info() ?: rows.first().items.first().info()
-        var focused by remember { mutableStateOf(initial) }
-        var backdrop by remember { mutableStateOf(focused.backdropPath) }
-        // Don't reload the big image for every card the remote skips over.
-        LaunchedEffect(focused) {
-            delay(260)
-            backdrop = focused.backdropPath
+    }
+}
+
+@Composable
+private fun TvHomeProblem(title: String, body: String, onRetry: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    RequestFocusOnce(focus)
+    Box(Modifier.fillMaxSize().padding(top = TvTopBarHeight), contentAlignment = Alignment.Center) {
+        EmptyState(Icons.Rounded.Refresh, title, body, Modifier.fillMaxWidth(0.6f)) {
+            ReelButton("Try again", onRetry, Modifier.focusRequester(focus), kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
         }
-        val firstCard = remember { FocusRequester() }
-        val columnState = rememberLazyListState()
-        val continueState = rememberLazyListState()
-        // The first poster row's scroll, so focus can come back to poster 0 after the last Continue card goes.
-        val firstRowState = rememberLazyListState()
-        // First visit: the first card. Coming back (Back from a title): the card you opened, via focusRestorer.
-        val columnFocus = remember { FocusRequester() }
-        RequestFocusOnce(columnFocus)
-        // A Continue watching card was removed (hold OK) or changed: refresh the header and put the
-        // remote's focus back on the first card instead of losing it.
-        LaunchedEffect(continueItems) {
-            if (!focused.key.startsWith("continue:")) return@LaunchedEffect
-            val still = continueItems.firstOrNull { "continue:${it.entry.playback.titleKey}" == focused.key }
-            if (still != null) {
-                focused = still.info()
-            } else {
-                focused = continueItems.firstOrNull()?.info() ?: rows.first().items.first().info()
-                // The first card may have scrolled out (and been disposed): bring it back, then focus it.
-                runCatching { columnState.scrollToItem(0) }
-                if (continueItems.isNotEmpty()) runCatching { continueState.scrollToItem(0) }
-                else runCatching { firstRowState.scrollToItem(0) }
-                repeat(10) {
-                    withFrameNanos { }
-                    // requestFocus() doesn't throw when the node isn't attached; the Boolean overload tells us.
-                    if (runCatching { firstCard.requestFocus(FocusDirection.Enter) }.getOrDefault(false)) return@LaunchedEffect
-                }
+    }
+}
+
+@Composable
+private fun TvHomeContent(
+    rows: List<Pair<String, List<TitleSummary>>>,
+    continueItems: List<ContinueItem>,
+    myList: List<TitleSummary>,
+    onOpen: (TitleSummary) -> Unit,
+    onOpenDest: (Dest) -> Unit,
+) {
+    val catalog = rememberCatalog()
+    val initial = continueItems.firstOrNull()?.info() ?: rows.first().second.first().info()
+    var focused by remember { mutableStateOf(initial) }
+    // The backdrop and logo follow the remote once it settles (not every card it skips over).
+    var settled by remember { mutableStateOf(focused) }
+    LaunchedEffect(focused) {
+        delay(260)
+        settled = focused
+    }
+    val (logo, _) = rememberLoad(settled.ref) { settled.ref?.let { catalog.logo(it) } }
+    val firstCard = remember { FocusRequester() }
+    val columnState = rememberLazyListState()
+    val continueState = rememberLazyListState()
+    // The first poster row's scroll, so focus can come back to poster 0 after the last Continue card goes.
+    val firstRowState = rememberLazyListState()
+    // First visit: the first card. Coming back (Back from a title): the card you opened, via focusRestorer.
+    val columnFocus = remember { FocusRequester() }
+    RequestFocusOnce(columnFocus)
+    // A Continue watching card was removed (hold OK) or changed: refresh the header and put the
+    // remote's focus back on the first card instead of losing it.
+    LaunchedEffect(continueItems) {
+        if (!focused.key.startsWith("continue:")) return@LaunchedEffect
+        val still = continueItems.firstOrNull { "continue:${it.entry.playback.titleKey}" == focused.key }
+        if (still != null) {
+            focused = still.info()
+        } else {
+            focused = continueItems.firstOrNull()?.info() ?: rows.first().second.first().info()
+            // The first card may have scrolled out (and been disposed): bring it back, then focus it.
+            runCatching { columnState.scrollToItem(0) }
+            if (continueItems.isNotEmpty()) runCatching { continueState.scrollToItem(0) }
+            else runCatching { firstRowState.scrollToItem(0) }
+            repeat(10) {
+                withFrameNanos { }
+                // requestFocus() doesn't throw when the node isn't attached; the Boolean overload tells us.
+                if (runCatching { firstCard.requestFocus(FocusDirection.Enter) }.getOrDefault(false)) return@LaunchedEffect
             }
         }
+    }
 
-        val glow by rememberAmbientColor(TmdbImages.poster(focused.posterPath, "w185"))
-        Box(Modifier.fillMaxSize()) {
-            // The focused title fills the room: its backdrop, and light in its colour.
-            Backdrop(TmdbImages.backdrop(backdrop), Modifier.fillMaxSize(), fromLeft = true)
-            AmbientGlow(glow, height = 620.dp, strength = 0.38f)
+    val glow by rememberAmbientColor(TmdbImages.poster(settled.posterPath, "w185"))
+    Box(Modifier.fillMaxSize()) {
+        // The focused title fills the room: its backdrop, light in its colour, the canvas behind the text.
+        HeroImage(listOfNotNull(TmdbImages.backdrop(settled.backdropPath)), Modifier.fillMaxSize(), kenBurns = false)
+        HeroScrims(top = true, start = true, topHeight = TvTopBarHeight + Tokens.Space.xxxl)
+        AmbientGlow(glow, height = 620.dp, strength = 0.3f)
 
-            Column(Modifier.fillMaxSize()) {
-                Spacer(Modifier.height(TvTopBarHeight))
-                Column(
-                    Modifier.fillMaxWidth(0.52f).height(196.dp).padding(horizontal = Tokens.Space.tvSafeH),
-                    verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                        focused.pills.forEachIndexed { i, p -> Pill(p, accent = i == 0 && focused.key.startsWith("continue:"), onGlass = true) }
-                    }
-                    Text(focused.title, style = Tokens.Type.hero, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(focused.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.fillMaxSize()) {
+            Spacer(Modifier.height(TvTopBarHeight))
+            Column(
+                Modifier.fillMaxWidth(0.55f).height(Tokens.Cinema.tvInfoHeight).padding(horizontal = Tokens.Space.tvSafeH),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Space.s, Alignment.Bottom),
+            ) {
+                focused.badge?.let { Pill(it, accent = true) }
+                Box(Modifier.heightIn(min = 40.dp), contentAlignment = Alignment.BottomStart) {
+                    val path = (logo as? Load.Ready)?.value.takeIf { settled.key == focused.key }
+                    TitleLogo(path, focused.title, Tokens.Type.hero, Tokens.Cinema.logoMaxWidthTv, 80.dp, textMaxLines = 1)
                 }
-                LazyColumn(
-                    Modifier.weight(1f).focusRequester(columnFocus).focusRestorer(),
-                    state = columnState,
-                    contentPadding = PaddingValues(bottom = Tokens.Space.tvSafeV),
-                    verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
-                ) {
-                    if (continueItems.isNotEmpty()) {
-                        item(key = "continue") {
-                            ContinueRow(
-                                continueItems,
-                                cardWidth = 240.dp,
-                                sidePadding = Tokens.Space.tvSafeH,
-                                onOpenDest = onOpenDest,
-                                onFocus = { focused = it.info() },
-                                firstFocus = firstCard,
-                                listState = continueState,
-                            )
-                        }
-                    }
-                    itemsIndexed(rows, key = { _, row -> row.title }) { i, row ->
-                        PosterRow(
-                            title = row.title,
-                            items = row.items,
-                            posterWidth = 112.dp,
+                MetaLine(focused.rating, focused.parts, maxLines = 1)
+                if (focused.overview.isNotBlank()) {
+                    Text(focused.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            LazyColumn(
+                Modifier.weight(1f).focusRequester(columnFocus).focusRestorer(),
+                state = columnState,
+                contentPadding = PaddingValues(top = Tokens.Space.l, bottom = Tokens.Space.tvSafeV),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
+            ) {
+                if (continueItems.isNotEmpty()) {
+                    item(key = "continue") {
+                        ContinueRow(
+                            continueItems,
+                            cardWidth = 240.dp,
                             sidePadding = Tokens.Space.tvSafeH,
-                            onOpen = onOpen,
-                            showText = false,
+                            onOpenDest = onOpenDest,
                             onFocus = { focused = it.info() },
-                            firstFocus = if (i == 0 && continueItems.isEmpty()) firstCard else null,
-                            onSeeAll = { onOpenDest(Dest.Collection(row.title, items = row.items)) },
-                            listState = if (i == 0) firstRowState else androidx.compose.foundation.lazy.rememberLazyListState(),
+                            firstFocus = firstCard,
+                            listState = continueState,
                         )
-                        // "On your services" after the first row, like a second hero.
-                        if (i == 0) {
-                            Spacer(Modifier.height(Tokens.Space.l))
-                            ServicesRow(Tokens.Space.tvSafeH, 60.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
-                        }
+                    }
+                }
+                if (myList.isNotEmpty()) {
+                    item(key = "mylist") {
+                        PosterRow(
+                            "My list", myList, posterWidth = 112.dp, sidePadding = Tokens.Space.tvSafeH, onOpen = onOpen, showText = false,
+                            onFocus = { focused = it.info() },
+                            onSeeAll = { onOpenDest(Dest.Collection("My list", items = myList)) },
+                        )
+                    }
+                }
+                itemsIndexed(rows, key = { _, row -> row.first }) { i, (title, items) ->
+                    PosterRow(
+                        title = title,
+                        items = items,
+                        posterWidth = 112.dp,
+                        sidePadding = Tokens.Space.tvSafeH,
+                        onOpen = onOpen,
+                        showText = false,
+                        onFocus = { focused = it.info() },
+                        firstFocus = if (i == 0 && continueItems.isEmpty()) firstCard else null,
+                        onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) },
+                        listState = if (i == 0) firstRowState else rememberLazyListState(),
+                    )
+                    // "On your services" after the first row, like a second hero.
+                    if (i == 0) {
+                        Spacer(Modifier.height(Tokens.Space.l))
+                        ServicesRow(Tokens.Space.tvSafeH, 60.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
                     }
                 }
             }

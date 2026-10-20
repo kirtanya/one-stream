@@ -1,6 +1,7 @@
 package com.kirtanya.reel.ui.phone
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,14 +27,12 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -62,18 +61,20 @@ import com.kirtanya.reel.engine.TorrentPhase
 import com.kirtanya.reel.ui.DownloadsScreen
 import com.kirtanya.reel.ui.common.AddLinkSheet
 import com.kirtanya.reel.ui.common.CollectionScreen
+import com.kirtanya.reel.ui.common.PersonScreen
+import com.kirtanya.reel.ui.common.pageTransition
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.nav.Tab
 import com.kirtanya.reel.ui.nav.rememberNavigator
 import com.kirtanya.reel.ui.settings.SettingsScreen
 import com.kirtanya.reel.ui.sources.SourcesScreen
-import com.kirtanya.reel.ui.theme.AccentState
 import com.kirtanya.reel.ui.theme.Tokens
 
 /**
- * Phone root. Edge-to-edge screens; a floating glass bar (Home · Search · + · Downloads ·
- * Settings) on the main tabs; title, sources and collection pages stack on top full-bleed.
+ * Phone root. Edge-to-edge screens; the navigation bar (Home · Search · Downloads · Settings) on
+ * the main tabs; title, sources, grids and person pages stack on top full-bleed, cross-fading in.
+ * [nav] can be passed in to open a particular screen (screen renders do).
  */
 @Composable
 fun PhoneApp(
@@ -83,8 +84,8 @@ fun PhoneApp(
     onOpenHandled: () -> Unit = {},
     openTab: Tab? = null,
     onTabHandled: () -> Unit = {},
+    nav: com.kirtanya.reel.ui.nav.Navigator = rememberNavigator(),
 ) {
-    val nav = rememberNavigator()
     LaunchedEffect(openDest) {
         openDest?.let { nav.openOrReturn(it); onOpenHandled() }
     }
@@ -96,19 +97,27 @@ fun PhoneApp(
     BackHandler(enabled = nav.stack.isNotEmpty() || nav.tab != Tab.Home) { nav.back() }
     val openTitle: (com.kirtanya.reel.core.tmdb.TitleSummary) -> Unit = { nav.open(Dest.Title(it.ref)) }
 
+    val back: () -> Unit = { nav.back() }
+    val open: (Dest) -> Unit = { nav.open(it) }
+
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-        when (val top = nav.top) {
-            is Dest.Title -> saveable.SaveableStateProvider(top.ref.toString()) {
-                PhoneTitle(top.ref, onBack = { nav.back() }, onPlay = { s, e -> nav.open(Dest.Sources(top.ref, s, e)) })
-            }
-            is Dest.Sources -> SourcesScreen(top.ref, top.season, top.episode, isTv = false, onBack = { nav.back() })
-            is Dest.Collection -> saveable.SaveableStateProvider("collection:${top.title}") { CollectionScreen(top, isTv = false, onBack = { nav.back() }, onOpen = openTitle) }
-            null -> saveable.SaveableStateProvider(nav.tab.name) {
-                when (nav.tab) {
-                    Tab.Home -> PhoneHome(onOpen = openTitle, onOpenDest = { nav.open(it) }, onSearch = { nav.select(Tab.Search) }, onDownloads = { nav.select(Tab.Downloads) })
-                    Tab.Search -> PhoneSearch(onOpen = openTitle)
-                    Tab.Downloads -> DownloadsScreen(isTv = false, onAdd = { showAdd = true })
-                    Tab.Settings -> SettingsScreen(isTv = false)
+        // Screen to screen: a cross-fade with a slight zoom. Each screen keeps its state (scroll,
+        // season, search) while something is on top of it.
+        AnimatedContent(nav.top ?: nav.tab, transitionSpec = { pageTransition() }, label = "screen") { screen ->
+            when (screen) {
+                is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
+                    PhoneTitle(screen.ref, onBack = back, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
+                }
+                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back)
+                is Dest.Collection -> saveable.SaveableStateProvider(collectionKey(screen)) { CollectionScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
+                is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { PersonScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
+                is Tab -> saveable.SaveableStateProvider(screen.name) {
+                    when (screen) {
+                        Tab.Home -> PhoneHome(onOpen = openTitle, onOpenDest = open, onAdd = { showAdd = true })
+                        Tab.Search -> PhoneSearch(onOpen = openTitle, onOpenDest = open)
+                        Tab.Downloads -> DownloadsScreen(isTv = false, onAdd = { showAdd = true })
+                        Tab.Settings -> SettingsScreen(isTv = false)
+                    }
                 }
             }
         }
@@ -122,18 +131,7 @@ fun PhoneApp(
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {
-            Column(horizontalAlignment = Alignment.End) {
-                // Add a magnet / .torrent (Downloads has its own + in the header).
-                if (nav.tab == Tab.Home) {
-                    FloatingActionButton(
-                        onClick = { showAdd = true },
-                        modifier = Modifier.padding(end = Tokens.Space.l, bottom = Tokens.Space.l),
-                        containerColor = Tokens.Colors.accentDeep,
-                        contentColor = AccentState.scheme.onPrimaryContainer,
-                    ) { Icon(Icons.Rounded.Add, contentDescription = "Add a magnet or .torrent") }
-                }
-                BottomBar(selected = nav.tab, onSelect = { nav.select(it) })
-            }
+            BottomBar(selected = nav.tab, onSelect = { nav.select(it) })
         }
     }
 
@@ -149,9 +147,12 @@ fun PhoneApp(
     }
 }
 
+/** Saved-state key for a grid: two genres can share a name (Drama films, Drama shows). */
+internal fun collectionKey(d: Dest.Collection) = "collection:${d.title}:${d.provider?.id}:${d.genre?.id}:${d.genreType}"
+
 /** Material 3 navigation bar: four destinations, a pill behind the selected one. */
 @Composable
-private fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
+internal fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
     val engine = ReelApp.get(LocalContext.current).engine
     val torrents by engine.torrents.collectAsState()
     val downloading = torrents.any { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA }

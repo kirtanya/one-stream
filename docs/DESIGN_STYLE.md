@@ -62,9 +62,23 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
 - **RingAvatar:** primary → tertiary ring.
 - **GradientProgress:** primary on surfaceHighest.
 - **EmptyState:** icon in a tonal circle.
-- **Phone navigation:** Material `NavigationBar` (Home, Search, Downloads, Settings) with a pill indicator, plus a FAB for "Add a magnet / .torrent" on Home.
+- **Phone navigation:** Material `NavigationBar` (Home, Search, Downloads, Settings) with a pill indicator. "Add a magnet / .torrent" is the + in the Home header (no FAB: it covered row titles).
 - **TV navigation:** tabs across the top. The selected tab is a filled primary pill, the rest plain text; focus lifts the tab and adds a ring.
 - **Title page (phone):** a Material top app bar (solid, with the title) appears once the header scrolls away.
+
+### The cinematic layer (`ui/common/Cinema.kt`)
+
+- **Hero:** a full-bleed picture under the status bar (`HeroImage`) with `HeroScrims`: the canvas fades in from the bottom (where the text sits), the top (status bar, floating buttons) and, on TV, the left. Text on a hero is always on the canvas colour, so it reads in light and dark.
+  - Phone Home: the week's trending titles as a swipeable hero (two thirds of the screen, `Tokens.Cinema.heroShare`), pages by itself every 8 s unless you're swiping; the picture drifts at half speed (parallax).
+  - Title pages cycle through the title's backdrops with a slow cross-fade (and a slow zoom on the phone only).
+- **Title logo:** `TitleLogo` shows TMDB's logo artwork instead of the name, fitted in a box (`logoMaxWidth/HeightPhone/Tv`), anchored bottom-start; the name as text when there's none. A logo that wouldn't stand out on the canvas (a white logo in light mode) is drawn in the text colour.
+- **Meta line:** `MetaLine` = "★ 8.2 · 2024 · 2h 46m · UA" (rating in the accent colour). It replaces rows of pills on heroes; it only breaks between parts.
+- **Action tiles (phone title page):** under Play, equal-width icon-over-label tiles: My list, Trailer, Sources, Share.
+- **Trailers:** Trailer opens YouTube; other videos sit in a "Trailers & extras" row.
+- **My list:** the watchlist (synced phone → TV). My list button on the hero and title pages; a "My list" row on Home.
+- **Browse:** genres on Search (two rows of chips that scroll sideways) and on the title page; each opens a grid of the genre's most popular titles that loads more as you scroll. Cast opens a person page (photo, bio, their films and shows).
+- **Motion:** screens cross-fade with a slight zoom (`Motion.pageMs`, `pageZoom`). On TV, posters and stills lift more when focused (`posterFocusScale` 1.1) and glow in the accent colour.
+- **Release names** wrap at dots and dashes (`releaseName`), never mid-word.
 
 ## 4. Screen rules
 
@@ -73,7 +87,8 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
 3. **Resume beats search.** Play resumes with the same source; Sources appears only when there's a choice to make.
 4. **Glass over images, solid on canvas.**
 5. **Compact by default.** Phone: three posters across (104 dp); collection and search grids use three columns. TV: posters 112 dp, collections 7 columns, search 8.
-6. **TV:** focus is always obvious (ring + lift), focus is remembered per row, and there are no touch-only controls.
+6. **TV:** focus is always obvious (ring + lift), focus is remembered per row, and there are no touch-only controls. Everything sits inside the overscan-safe area, the tab bar included (`TvTopBarHeight` = safe margin + button + 8 dp).
+7. **Nothing squeezes:** rows of chips wrap (`FlowRow`) or scroll sideways (`LazyRow`); long names get `maxLines` + ellipsis; a text column next to buttons always has `weight(1f)`. Check at font scale 1.3.
 
 ## 5. Settings
 
@@ -91,4 +106,9 @@ Each row shows where it stands and opens a nested page. Back goes up a level, an
 
 ## 6. Checking layouts without a device
 
-`./gradlew :app:recordRoborazziDebug --tests 'com.kirtanya.reel.ScreenRenders'` renders screens on the Mac (Robolectric + Roborazzi) at phone (360 × 800 dp, light and dark) and TV sizes, into `app/build/screens/`. Network images don't load in renders, so use the phone (USB) for poster-heavy screens.
+`JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew :app:recordRoborazziDebug --tests 'com.kirtanya.reel.ScreenRenders'` renders every screen × state on the Mac (Robolectric + Roborazzi) into `app/build/screens/`:
+
+- `phone/<state>-<dark|light>-<100|130>.png`: 360 × 800 dp, light and dark, font scale 1.0 and 1.3;
+- `tv/<state>.png`: 960 × 540 dp, remote (keyboard) input, so focus rings show.
+
+States include loading, failed, empty, long names, no artwork, many sources / episodes, active and finished downloads. Nothing touches the network: TMDB answers come from `FakeCatalog` (via `LocalCatalog`), downloads / sources / addons from `RenderData` (via `LocalRenderData`), and `FakeArt` paints stand-in posters, backdrops and logos (some bright, to test the scrims).
