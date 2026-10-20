@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -166,5 +168,18 @@ fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifie
         Text(title, style = Tokens.Type.heading, color = Tokens.Colors.text, textAlign = TextAlign.Center)
         Text(body, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, textAlign = TextAlign.Center)
         action?.invoke()
+    }
+}
+
+/** The One Stream app mark (same artwork as the launcher icon), as a rounded tile. */
+@Composable
+fun BrandMark(size: Dp, modifier: Modifier = Modifier) {
+    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.28f))) {
+        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.kirtanya.reel.R.drawable.ic_launcher_bg), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        // The foreground is drawn on a 108 dp canvas with the mark in the middle 66 dp: scale it to fill the tile.
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(com.kirtanya.reel.R.drawable.ic_launcher_fg), null,
+            Modifier.fillMaxSize().graphicsLayer { scaleX = 1.45f; scaleY = 1.45f },
+        )
     }
 }

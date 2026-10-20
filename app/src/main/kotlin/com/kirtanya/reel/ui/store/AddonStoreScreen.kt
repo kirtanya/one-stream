@@ -119,7 +119,7 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
                     else -> Text(
                         buildString {
                             append("${results.size} addons")
-                            if (hidden > 0) append(" · $hidden catalog-only addons hidden (Reel uses streams and subtitles)")
+                            if (hidden > 0) append(" · $hidden catalog-only addons hidden (One Stream uses streams and subtitles)")
                             if (store.failed.isNotEmpty()) append(" · couldn't load: ${store.failed.joinToString()}")
                         },
                         style = Tokens.Type.caption, color = Tokens.Colors.textTertiary,

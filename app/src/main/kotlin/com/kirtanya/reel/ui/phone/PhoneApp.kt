@@ -76,10 +76,20 @@ import com.kirtanya.reel.ui.theme.Tokens
  * Settings) on the main tabs; title, sources and collection pages stack on top full-bleed.
  */
 @Composable
-fun PhoneApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest? = null, onOpenHandled: () -> Unit = {}) {
+fun PhoneApp(
+    incomingMagnet: String?,
+    onIncomingHandled: () -> Unit,
+    openDest: Dest? = null,
+    onOpenHandled: () -> Unit = {},
+    openTab: Tab? = null,
+    onTabHandled: () -> Unit = {},
+) {
     val nav = rememberNavigator()
     LaunchedEffect(openDest) {
         openDest?.let { nav.openOrReturn(it); onOpenHandled() }
+    }
+    LaunchedEffect(openTab) {
+        openTab?.let { nav.select(it); onTabHandled() }
     }
     val saveable = rememberSaveableStateHolder()
     var showAdd by remember { mutableStateOf(false) }

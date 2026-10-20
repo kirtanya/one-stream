@@ -46,7 +46,7 @@ class EngineService : LifecycleService() {
                     active > 0 -> "$active downloading · $rates"
                     else -> "Idle"
                 }
-                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text, streaming = streaming.isNotEmpty()))
             }
         }
     }
@@ -61,16 +61,20 @@ class EngineService : LifecycleService() {
         return START_STICKY
     }
 
-    private fun notification(text: String): Notification {
+    private fun notification(text: String, streaming: Boolean = false): Notification {
+        // Tap: while streaming, back to the app as it was (the player); otherwise the Downloads tab.
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+            this,
+            if (streaming) 2 else 0,
+            if (streaming) MainActivity.resume(this) else MainActivity.openDownloads(this),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val quit = PendingIntent.getService(
             this, 1, Intent(this, EngineService::class.java).setAction(ACTION_QUIT), PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_reel)
-            .setContentTitle("Reel")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

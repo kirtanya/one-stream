@@ -66,7 +66,7 @@ private fun TvSyncContent() {
         return
     }
     Text(
-        "Set up addons and plugins on your phone and they'll appear here. On the phone: Reel → Settings → Phone & TV → Find TVs, then enter this code.",
+        "Set up addons and plugins on your phone and they'll appear here. On the phone: One Stream → Settings → Phone & TV → Find TVs, then enter this code.",
         style = Tokens.Type.body,
         color = Tokens.Colors.textSecondary,
     )
@@ -213,7 +213,7 @@ private fun PhoneSyncContent() {
         found?.let { tvs ->
             if (tvs.isEmpty()) {
                 Text(
-                    "No TV found. Open Reel on the TV (on the same Wi-Fi as this phone), then search again.",
+                    "No TV found. Open One Stream on the TV (on the same Wi-Fi as this phone), then search again.",
                     style = Tokens.Type.caption,
                     color = Tokens.Colors.textTertiary,
                 )

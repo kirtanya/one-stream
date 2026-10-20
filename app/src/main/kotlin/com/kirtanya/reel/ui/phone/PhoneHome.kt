@@ -79,9 +79,11 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onSear
             ) {
                 item(key = "header") {
                     Row(Modifier.statusBarsPadding().padding(start = gutter, end = Tokens.Space.s, top = Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
+                        com.kirtanya.reel.ui.common.BrandMark(36.dp)
+                        androidx.compose.foundation.layout.Spacer(Modifier.width(Tokens.Space.m))
                         Column(Modifier.weight(1f)) {
-                            Text(greeting(), style = Tokens.Type.label, color = Tokens.Colors.textSecondary)
-                            Text("Reel", style = Tokens.Type.display, color = Tokens.Colors.text)
+                            Text(greeting(), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
+                            Text("One Stream", style = Tokens.Type.title, color = Tokens.Colors.text)
                         }
                         GlassIconButton(Icons.Outlined.Search, "Search", onSearch)
                         GlassIconButton(Icons.Outlined.Download, "Downloads", onDownloads)

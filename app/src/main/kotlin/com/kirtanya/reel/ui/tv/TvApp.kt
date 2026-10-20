@@ -50,10 +50,20 @@ val TvTopBarHeight = 64.dp
 
 /** TV root: remote-first. A glass tab bar across the top; title, sources and collections full screen. */
 @Composable
-fun TvApp(incomingMagnet: String?, onIncomingHandled: () -> Unit, openDest: Dest? = null, onOpenHandled: () -> Unit = {}) {
+fun TvApp(
+    incomingMagnet: String?,
+    onIncomingHandled: () -> Unit,
+    openDest: Dest? = null,
+    onOpenHandled: () -> Unit = {},
+    openTab: Tab? = null,
+    onTabHandled: () -> Unit = {},
+) {
     val nav = rememberNavigator()
     LaunchedEffect(openDest) {
         openDest?.let { nav.openOrReturn(it); onOpenHandled() }
+    }
+    LaunchedEffect(openTab) {
+        openTab?.let { nav.select(it); onTabHandled() }
     }
     val activity = LocalContext.current as? Activity
     BackHandler { if (!nav.back()) activity?.finish() }
@@ -89,10 +99,10 @@ private fun TvTopBar(nav: Navigator) {
         Modifier.fillMaxWidth().height(TvTopBarHeight).padding(horizontal = Tokens.Space.tvSafeH).padding(top = Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Wordmark: a small primary dot + "Reel".
-        Box(Modifier.size(10.dp).clip(CircleShape).background(Tokens.Colors.accent))
+        // Wordmark: the One Stream mark + name.
+        com.kirtanya.reel.ui.common.BrandMark(32.dp)
         Spacer(Modifier.width(Tokens.Space.s))
-        Text("Reel", style = Tokens.Type.title, color = Tokens.Colors.text)
+        Text("One Stream", style = Tokens.Type.title, color = Tokens.Colors.text)
         Spacer(Modifier.width(Tokens.Space.xl))
         val shape = RoundedCornerShape(Tokens.Radius.pill)
         Row(

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -69,6 +71,30 @@ class ScreenRenders {
             }
         }
     }
+
+    /** Google TV launcher banner (320 × 180 dp): mark + name. Copied to res/drawable-xhdpi/banner.png. */
+    @Test @Config(qualifiers = "w320dp-h180dp-land-night-xhdpi")
+    fun brandBanner() = render("brand-banner", 500) {
+        Box(Modifier.fillMaxSize()) {
+            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_bg), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            androidx.compose.foundation.layout.Row(
+                Modifier.fillMaxSize().padding(horizontal = 28.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                com.kirtanya.reel.ui.common.BrandMark(72.dp)
+                androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 16.dp))
+                androidx.compose.material3.Text(
+                    "One Stream",
+                    style = Tokens.Type.hero.copy(fontSize = 34.sp, lineHeight = 38.sp),
+                    color = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+        }
+    }
+
+    /** The logo at 512 px, for docs. */
+    @Test @Config(qualifiers = "w256dp-h256dp-night-xhdpi")
+    fun brandLogo() = render("brand-logo", 500) { com.kirtanya.reel.ui.common.BrandMark(256.dp) }
 
     companion object {
         /** Pixel 8 as the user has it: 1080 × 2400 px, display size raised to 480 dpi → 360 × 800 dp. */

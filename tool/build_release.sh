@@ -10,6 +10,6 @@ export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
 version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
 out="$HOME/Desktop/APKs"
 mkdir -p "$out"
-cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "$out/Reel-$version-phone.apk"
-cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "$out/Reel-$version-tv.apk"
-ls -lh "$out"/Reel-"$version"-*.apk
+cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "$out/OneStream-$version-phone.apk"
+cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "$out/OneStream-$version-tv.apk"
+ls -lh "$out"/OneStream-"$version"-*.apk

@@ -31,6 +31,8 @@ import com.kirtanya.reel.ui.theme.Tokens
 class MainActivity : ComponentActivity() {
     private var incomingMagnet by mutableStateOf<String?>(null)
     private var openDest by mutableStateOf<Dest?>(null)
+    /** A tab to switch to (the downloads notification opens Downloads). */
+    private var openTab by mutableStateOf<com.kirtanya.reel.ui.nav.Tab?>(null)
     /** An addon / plugin-repo link opened from a website or shared in: asks before adding. */
     private var incomingSourceLink by mutableStateOf<String?>(null)
 
@@ -66,9 +68,9 @@ class MainActivity : ComponentActivity() {
             ReelTheme {
                 Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
                     if (isTv) {
-                        TvApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null })
+                        TvApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null }, openTab = openTab, onTabHandled = { openTab = null })
                     } else {
-                        PhoneApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null })
+                        PhoneApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null }, openTab = openTab, onTabHandled = { openTab = null })
                     }
                     incomingSourceLink?.let { link ->
                         androidx.compose.runtime.key(link) { AddSourceLinkDialog(link, isTv = isTv, onDone = { incomingSourceLink = null }) }
@@ -85,6 +87,10 @@ class MainActivity : ComponentActivity() {
 
     /** magnet: links from a browser, addon Install links (stremio://), or text shared from another app. */
     private fun handleIntent(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_DOWNLOADS) {
+            openTab = com.kirtanya.reel.ui.nav.Tab.Downloads
+            return
+        }
         intent?.getIntExtra(EXTRA_OPEN_ID, -1)?.takeIf { it > 0 }?.let { id ->
             val type = if (intent.getStringExtra(EXTRA_OPEN_TYPE) == "tv") MediaType.TV else MediaType.MOVIE
             val season = intent.getIntExtra(EXTRA_OPEN_SEASON, -1).takeIf { it >= 0 }
@@ -103,7 +109,7 @@ class MainActivity : ComponentActivity() {
                 return
             }
             if (intent?.data?.scheme.equals("stremio", ignoreCase = true)) {
-                android.widget.Toast.makeText(this, "That stremio:// link isn't an addon Reel can add", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(this, "That stremio:// link isn't an addon One Stream can add", android.widget.Toast.LENGTH_SHORT).show()
                 return
             }
         }
@@ -112,7 +118,21 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val ACTION_OPEN_DOWNLOADS = "com.kirtanya.reel.OPEN_DOWNLOADS"
         private const val EXTRA_FORCE_TV = "forceTv"
+
+        /** Opens the app on its Downloads tab (the downloads notification). */
+        fun openDownloads(context: android.content.Context): Intent =
+            Intent(context, MainActivity::class.java)
+                .setAction(ACTION_OPEN_DOWNLOADS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+        /** Brings the app back as it was (e.g. to the player while streaming): the launcher's own intent. */
+        fun resume(context: android.content.Context): Intent =
+            Intent(context, MainActivity::class.java)
+                .setAction(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         private const val EXTRA_OPEN_TYPE = "openType"
         private const val EXTRA_OPEN_ID = "openId"
         private const val EXTRA_OPEN_SEASON = "openSeason"

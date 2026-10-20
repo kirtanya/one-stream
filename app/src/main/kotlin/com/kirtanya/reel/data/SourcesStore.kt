@@ -121,7 +121,7 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
         val body = get(url)
         return when (SourceLinks.detectKind(body)) {
             LinkKind.ADDON -> StremioAddon.parseManifest(body).let { m ->
-                if (!m.hasStreams && !m.hasSubtitles) throw SourceSetupException("${m.name} doesn't provide streams or subtitles, so Reel can't use it")
+                if (!m.hasStreams && !m.hasSubtitles) throw SourceSetupException("${m.name} doesn't provide streams or subtitles, so One Stream can't use it")
                 val what = listOfNotNull(if (m.hasStreams) "streams" else null, if (m.hasSubtitles) "subtitles" else null).joinToString(" + ")
                 LinkPreview(url, LinkKind.ADDON, m.name, listOfNotNull("Stremio addon · $what", m.description).joinToString("\n"), body)
             }

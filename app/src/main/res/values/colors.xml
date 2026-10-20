@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Mirrors Tokens.Colors for XML-only places (window background, icon). -->
-    <color name="reel_bg">#FF0D0E11</color>
-    <color name="reel_accent">#FF8BF0A8</color>
+    <!-- Window background before Compose draws (launch): light; values-night has the dark one. -->
+    <color name="reel_bg">#FFF8F9FF</color>
 </resources>

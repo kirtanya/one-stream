@@ -200,7 +200,7 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
         SettingsPage.Plugins -> "${sources.plugins.count { it.enabled }} of ${sources.plugins.size} plugins on"
         SettingsPage.PhoneTv -> devices
         SettingsPage.Storage -> if (cacheBytes < 0) "Stream cache" else "Stream cache · ${formatBytes(cacheBytes)}"
-        SettingsPage.About -> "Reel ${BuildConfig.VERSION_NAME}"
+        SettingsPage.About -> "One Stream ${BuildConfig.VERSION_NAME}"
     }
 
     val requesters = remember { SettingsPage.entries.associateWith { FocusRequester() } }
@@ -337,7 +337,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
     if (isTv) RequestFocusOnce(first)
 
     val subtitle = when (page) {
-        SettingsPage.Appearance -> "Light or dark, Reel's colour, and whether it follows what you're watching."
+        SettingsPage.Appearance -> "Light or dark, the app's colour, and whether it follows what you're watching."
         SettingsPage.Addons -> "Stremio addons answer “where can I play this?”."
         SettingsPage.Plugins -> "Plugin repositories (Nuvio format) run small scripts on this device to find sources."
         SettingsPage.PhoneTv -> if (isTv) "Get addons and plugins from your phone, so you never type on the TV." else "Set sources up once on the phone; your TV gets them too."
@@ -374,7 +374,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                     }
                 }
                 item {
-                    Section(note = "Off: Reel always uses the colour above.") {
+                    Section(note = "Off: One Stream always uses the colour above.") {
                         ToggleRow(
                             "Match what's on screen",
                             "The whole screen takes the colours of the film or show you're looking at.",
@@ -500,9 +500,9 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
 
             SettingsPage.About -> item {
                 Section {
-                    Text("Reel ${BuildConfig.VERSION_NAME}", style = Tokens.Type.heading, color = Tokens.Colors.text, modifier = Modifier.focusCard(scale = 1f) {})
+                    Text("One Stream ${BuildConfig.VERSION_NAME}", style = Tokens.Type.heading, color = Tokens.Colors.text, modifier = Modifier.focusCard(scale = 1f) {})
                     Text(
-                        "Reel ships only legal sources (open movies and public-domain films). Addons and plugins you add are your choice — " +
+                        "One Stream ships only legal sources (open movies and public-domain films). Addons and plugins you add are your choice — " +
                             "streaming or downloading content you don't have rights to is illegal in most countries.",
                         style = Tokens.Type.body, color = Tokens.Colors.textSecondary,
                     )
