@@ -115,6 +115,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private var stoppedSinceHandoff = false
 
     private lateinit var playerView: PlayerView
+    /** Cinema mode: the glow in the bars around the video. */
+    private lateinit var ambient: AmbientGlow
     /** TV only: the bottom-strip controls (PlayerView's own controller is off there). */
     private var tvControls: TvControls? = null
     /** Phone only: our controls and gestures (PlayerView's controller is off everywhere). */
@@ -302,6 +304,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         playerView.player = exo
         tvControls?.attach(exo)
         phoneControls?.attach(exo)
+        ambient.attach(exo)
         applySubtitlePrefs(exo)
         exo.addListener(listener)
         val item = MediaItem.Builder()
@@ -772,6 +775,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     override fun onDestroy() {
+        if (::ambient.isInitialized) ambient.release()
         statsJob?.cancel()
         progressJob?.cancel()
         player?.removeListener(listener)
@@ -998,6 +1002,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun buildLayout(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(PlayerColors.VIDEO_BACKGROUND) }
         val tv = isTelevision()
+        val cinema = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Cinema mode", { prefs.cinemaMode }) { on ->
+            app.playbackSettings.update { it.copy(cinemaMode = on) }
+            ambient.enabled = on
+        }
         playerView = PlayerView(this).apply {
             keepScreenOn = true
             // No centre spinner: a small chip at the top right says it (TV and phone).
@@ -1009,6 +1017,12 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 isFocusableInTouchMode = true
             }
         }
+        // Cinema mode: the glow sits under the video; the player view itself stays see-through so
+        // the bars show it (the video surface still covers the middle).
+        playerView.setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+        playerView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        ambient = AmbientGlow(playerView).apply { enabled = prefs.cinemaMode }
+        root.addView(ambient.view, FrameLayout.LayoutParams(-1, -1))
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         if (tv) {
             tvControls = TvControls(
@@ -1021,7 +1035,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 },
                 hasNext = { nextReady != null },
                 onNext = { playNext() },
-            ).also { root.addView(it.view, FrameLayout.LayoutParams(-1, -1)) }
+            ).also {
+                it.setToggles(listOf(cinema))
+                root.addView(it.view, FrameLayout.LayoutParams(-1, -1))
+            }
             buildTvChips(root)
             buildErrorPanel(root)
             return root
@@ -1043,6 +1060,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             nextLabel = { nextReady?.let { (n, _) -> n.episode?.label?.let { "Next · $it" } ?: "Next episode" } },
             onNext = { playNext() },
         )
+        phoneControls?.setToggles(listOf(cinema))
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))
         // The same small chips as the TV, under the top bar on the right.
         buildTvChips(root, topMarginDp = 64)

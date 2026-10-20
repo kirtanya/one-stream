@@ -15,6 +15,8 @@ data class PlaybackPrefs(
     /** ISO 639-1 code to show subtitles in, or null for off. */
     val subtitleLanguage: String? = null,
     val subtitleSize: SubtitleSize = SubtitleSize.MEDIUM,
+    /** Cinema mode: the bars around a video glow with its colours (player/AmbientGlow). */
+    val cinemaMode: Boolean = true,
 )
 
 /** Player preferences (SharedPreferences: small, read once per playback). */
@@ -30,6 +32,7 @@ class PlaybackSettings(context: Context) {
             putBoolean("autoplayNext", next.autoplayNext)
             putString("subtitleLanguage", next.subtitleLanguage)
             putString("subtitleSize", next.subtitleSize.name)
+            putBoolean("cinemaMode", next.cinemaMode)
         }
     }
 
@@ -37,6 +40,7 @@ class PlaybackSettings(context: Context) {
         autoplayNext = prefs.getBoolean("autoplayNext", true),
         subtitleLanguage = prefs.getString("subtitleLanguage", null),
         subtitleSize = runCatching { SubtitleSize.valueOf(prefs.getString("subtitleSize", null)!!) }.getOrDefault(SubtitleSize.MEDIUM),
+        cinemaMode = prefs.getBoolean("cinemaMode", true),
     )
 
     companion object {

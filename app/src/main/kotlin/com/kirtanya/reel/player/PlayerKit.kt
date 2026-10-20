@@ -287,6 +287,9 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     }
 }
 
+/** An on/off row in the settings panel. */
+internal class PanelToggle(val icon: Int, val label: String, val isOn: () -> Boolean, val set: (Boolean) -> Unit)
+
 /** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
 internal const val REPORT_ROW = "Report a problem"
 
@@ -321,6 +324,9 @@ internal class SettingsPanel(
     private var submenu: String? = null
     val open get() = panel.visibility == View.VISIBLE
 
+    /** On/off rows after Speed (e.g. Cinema mode): OK flips them in place. */
+    var toggles: List<PanelToggle> = emptyList()
+
     fun show(section: String? = null) {
         panel.visibility = View.VISIBLE
         panel.alpha = 0f
@@ -353,6 +359,13 @@ internal class SettingsPanel(
             list.addView(row(R.drawable.ic_pl_volume, "Audio", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
         }
         list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
+        for (t in toggles) {
+            list.addView(row(t.icon, t.label, if (t.isOn()) "On" else "Off", t.label) {
+                t.set(!t.isOn())
+                buildMain()
+                list.findViewWithTag<View>(t.label)?.requestFocus()
+            })
+        }
         for ((label, action) in extras()) {
             val icon = if (label == REPORT_ROW) R.drawable.ic_pl_report else R.drawable.ic_pl_external
             list.addView(row(icon, label, null, null) { onExtra(); action() })

@@ -81,6 +81,9 @@ internal class PhoneControls(
     private val rightBubble = bubble()
     private val settingsPanel = SettingsPanel(ctx, font, { player }, extraSettings, onExtra = { closePanel() })
 
+    /** On/off rows in the settings panel (Cinema mode). */
+    fun setToggles(list: List<PanelToggle>) { settingsPanel.toggles = list }
+
     private val centre = LinearLayout(ctx)
     private var locked = false
     private var zoomed = false

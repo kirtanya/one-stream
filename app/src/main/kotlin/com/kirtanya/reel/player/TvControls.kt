@@ -65,6 +65,9 @@ internal class TvControls(
     private val seek = SeekStrip(context, font(true))
     private val settingsPanel = SettingsPanel(context, font, { player }, extraSettings, onExtra = { hide() }, minRowDp = 44)
 
+    /** On/off rows in the settings panel (Cinema mode). */
+    fun setToggles(list: List<PanelToggle>) { settingsPanel.toggles = list }
+
     private var fg = PlayerColors.FOREGROUND
     private var colorAnim: ValueAnimator? = null
     private var swallowUp: Int? = null

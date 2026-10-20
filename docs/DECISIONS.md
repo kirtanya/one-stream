@@ -5,6 +5,18 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Cinema mode (bars glow with the video) + TV strip redesign**
+Decision: when a video leaves black bars (≥ 3 % of the screen), the bars glow with the picture's own
+colours, like YouTube's ambient mode. How: PixelCopy a 48×27 copy of the frame every 700 ms while
+playing, blur (3 box passes ≈ Gaussian) and dim to 55 % in `core/playback/Ambient` (tested), stretch it
+over the whole screen under a see-through PlayerView, crossfade 600 ms. Chosen over a second live,
+blurred video (ExoPlayer renders to one surface; a TextureView + RenderEffect copy would cost the 32-bit
+TV's GPU every frame) and over a single average colour (flat; the user asked for colours from the
+picture). A video that fills the screen, a paused one, or DRM (copy refused) costs nothing. On by
+default; Settings panel → Cinema mode (PlaybackPrefs.cinemaMode). Same day, at the user's request, the
+TV strip became: hairline seek bar on the bottom edge, times above its ends, title + ends-at left, all
+controls right at one size, all 40 dp from the edges (0.7.11–0.7.12).
+
 **2026-10-20 · Automated device round (machine-first step 4)**
 Decision: `tool/device_round.sh` verifies a build on the TV and phone the way today's hand test did:
 install, play the legal Tears of Steel sample, drive the player (TV: D-pad strip, scrub, settings;
