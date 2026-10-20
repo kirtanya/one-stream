@@ -10,3 +10,8 @@
 # QuickJS (plugin sandbox): native code calls back into these classes by name.
 -keep class com.dokar.quickjs.** { *; }
 -dontwarn com.dokar.quickjs.**
+
+# Personal app, read only by Claude: keep real class / method names so crash, freeze and ANR
+# reports (docs/MACHINE_FIRST_PLAN.md step 1) are readable without a mapping file. R8 still
+# shrinks and optimizes.
+-dontobfuscate
