@@ -118,3 +118,10 @@ tv/title-show | text "A hotel night manager is recruited to i…" | 2.96:1, need
 tv/title-show | text "Season 7" | 4.15:1, needs 4.5:1 (#EAE1D8 on #7D674C, 14 sp)
 tv/title-show | text "Season 8" | 4.19:1, needs 4.5:1 (#EAE1D8 on #7D664C, 14 sp)
 tv/title-show | text "Specials" | 4.23:1, needs 4.5:1 (#EAE1D8 on #7B664B, 14 sp)
+# 2026-10-21, user's OK: the TV player strip is always white (never switches to black), so very bright pictures fall below the ratio by design.
+player/tv-bright | text "Spider-Man: Into the Spider-Verse" | 1.24:1, needs 3.0:1 (#FFFFFF on #E9E7DE, 20 sp)
+player/tv-bright | text "Ends at 10:42 PM" | 1.14:1, needs 4.5:1 (#F7F6F5 on #EBE8DD, 13 sp)
+player/tv-bright | text "10" | 1.23:1, needs 4.5:1 (#FFFFFF on #EBE8DD, 8 sp)
+player/tv-bright | text "10" | 1.23:1, needs 4.5:1 (#FFFFFF on #EBE8DD, 8 sp)
+player/tv-bright | text "45:12" | 1.21:1, needs 4.5:1 (#FFFFFF on #EFE9DA, 14 sp)
+player/tv-bright | text "−1:11:48" | 1.21:1, needs 4.5:1 (#FFFFFF on #EFE9DB, 14 sp)

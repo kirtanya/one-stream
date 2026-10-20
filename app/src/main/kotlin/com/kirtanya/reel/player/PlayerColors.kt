@@ -3,14 +3,14 @@ package com.kirtanya.reel.player
 /**
  * Every colour the player's View-based controls draw (the player's token file; docs/DESIGN_STYLE.md
  * "Player: overlays sit on video"). Controls sit on any picture, so they are light on dark: white
- * marks and text, black shades, translucent glass. The TV strip switches between [FOREGROUND] and
- * [STRIP_DARK] with the picture (TvControls). Surfaces that take the accent use Tokens.Night.
+ * marks and text, black shades, translucent glass. The TV strip is always [FOREGROUND] with a small
+ * [CONTROL_SHADOW] (TvControls). Surfaces that take the accent use Tokens.Night.
  * Nothing else in player/ writes a colour literal (the design-rules scan enforces it).
  */
 internal object PlayerColors {
     /** Icons, text, seek bar and focus rings on video. */
     const val FOREGROUND = 0xFFFFFFFF.toInt()
-    /** The TV strip over bright pictures: near-black, within 5 % of black's contrast, softer on the eye. */
+    /** Near-black for dark marks on white (the seek bubble's time, the phone play disc's icon). */
     const val STRIP_DARK = 0xFF0B0B0C.toInt()
     /** Behind the video (letterbox). */
     const val VIDEO_BACKGROUND = 0xFF000000.toInt()
@@ -39,9 +39,9 @@ internal object PlayerColors {
     /** A row under focus (TV) or a finger (phone). */
     const val ROW_HIGHLIGHT = 0x29FFFFFF
 
-    // TV strip text glow: dark under dark text, light under white text.
-    const val STRIP_GLOW_UNDER_DARK = 0x59FFFFFF
-    const val STRIP_GLOW_UNDER_LIGHT = 0x80000000.toInt()
+    /** TV strip: the small, tight shadow under its white text and icons (never a halo). */
+    const val CONTROL_SHADOW = 0x66000000
+
 
     // Subtitles: white on a 60 % black box, with a black drop shadow.
     const val SUBTITLE_TEXT = 0xFFFFFFFF.toInt()

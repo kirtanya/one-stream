@@ -60,16 +60,16 @@ class PlayerDesignRules {
     }
 
     @Test @Config(sdk = [34], qualifiers = TV)
-    fun tvOnBrightPicture() = tv("player/tv-bright", PlayerScenes.BRIGHT, TvControls.DARK, panel = false)
+    fun tvOnBrightPicture() = tv("player/tv-bright", PlayerScenes.BRIGHT, panel = false)
 
     @Test @Config(sdk = [34], qualifiers = TV)
-    fun tvOnDarkPicture() = tv("player/tv-dark", PlayerScenes.DARK, Color.WHITE, panel = false)
+    fun tvOnDarkPicture() = tv("player/tv-dark", PlayerScenes.DARK, panel = false)
 
     @Test @Config(sdk = [34], qualifiers = TV)
-    fun tvSettings() = tv("player/tv-settings", PlayerScenes.MID, Color.WHITE, panel = true)
+    fun tvSettings() = tv("player/tv-settings", PlayerScenes.MID, panel = true)
 
-    private fun tv(where: String, picture: IntArray, color: Int, panel: Boolean) {
-        val scene = PlayerScenes.tv(picture, color, panel)
+    private fun tv(where: String, picture: IntArray, panel: Boolean) {
+        val scene = PlayerScenes.tv(picture, panel)
         // The strip refreshes from the (empty) player while time passes: keep it mid-film.
         check(where, ViewChecks(scene.root, where), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
         scene.release()

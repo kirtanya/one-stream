@@ -1,18 +1,12 @@
 package com.kirtanya.reel.player
 
-import android.animation.ArgbEvaluator
-import android.animation.ValueAnimator
-import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.Rect
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.PixelCopy
-import android.view.SurfaceView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -30,9 +24,8 @@ import kotlin.math.pow
  *  - above that, the title and "ends at" on the left, and every control on the right — back 10 s,
  *    play / pause, forward 10 s, next episode (when there is one), subtitles, settings — all the
  *    same size: no button stands out.
- * Settings opens a panel above the controls. The strip has no background of its own, so its colour follows the picture behind it:
- * the pixels under it are sampled (PixelCopy, twice a second while it shows) and it turns white or
- * near-black, whichever keeps the higher contrast against the busiest part.
+ * Settings opens a panel above the controls. Everything is white with a small, tight shadow under it
+ * (the user's choice: it never switches to black, and the shadow never spreads into a halo).
  */
 internal class TvControls(
     private val playerView: PlayerView,
@@ -68,8 +61,6 @@ internal class TvControls(
     /** On/off rows in the settings panel (Cinema mode). */
     fun setToggles(list: List<PanelToggle>) { settingsPanel.toggles = list }
 
-    private var fg = PlayerColors.FOREGROUND
-    private var colorAnim: ValueAnimator? = null
     private var swallowUp: Int? = null
 
     val visible get() = view.visibility == View.VISIBLE
@@ -135,7 +126,7 @@ internal class TvControls(
         view.addView(settingsPanel.panel, FrameLayout.LayoutParams(context.dp(340), -2, Gravity.BOTTOM or Gravity.END).apply {
             setMargins(0, context.dp(24), context.dp(EDGE), context.dp(EDGE + 104))
         })
-        applyColor(fg)
+        applyLook()
     }
 
     fun attach(p: Player) {
@@ -160,14 +151,6 @@ internal class TvControls(
             main.postDelayed(this, 500)
         }
     }
-    private val sampler = object : Runnable {
-        override fun run() {
-            if (!visible) return
-            sample()
-            main.postDelayed(this, 500)
-        }
-    }
-
     fun show(focus: View? = play) {
         if (!visible) {
             view.visibility = View.VISIBLE
@@ -178,7 +161,6 @@ internal class TvControls(
             block.animate().translationY(0f).setDuration(180).start()
             refresh()
             main.removeCallbacks(tick); main.post(tick)
-            main.removeCallbacks(sampler); main.post(sampler)
         }
         if (focus != null && !panelOpen && view.findFocus() == null) focus.requestFocus()
         touch()
@@ -189,7 +171,6 @@ internal class TvControls(
         view.visibility = View.GONE
         main.removeCallbacks(hideRunnable)
         main.removeCallbacks(tick)
-        main.removeCallbacks(sampler)
         playerView.requestFocus()
     }
 
@@ -310,89 +291,21 @@ internal class TvControls(
         touch()
     }
 
-    // ---------------------------------------------------------------- adaptive contrast
+    // ---------------------------------------------------------------- look
 
-    /**
-     * Samples the picture under the strip. Parts of the strip outside the video (letterbox) are
-     * black. White and near-black are scored by the contrast they keep against the worst 10 % of
-     * the sampled pixels; the strip only switches when the other colour is clearly better.
-     */
-    private fun sample() {
-        val sv = playerView.videoSurfaceView as? SurfaceView
-        if (sv == null || sv.holder.surface?.isValid != true || bar.width == 0 || sv.width == 0) { decide(floatArrayOf(0f)); return }
-        val barLoc = IntArray(2).also { bar.getLocationOnScreen(it) }
-        val svLoc = IntArray(2).also { sv.getLocationOnScreen(it) }
-        val barRect = Rect(barLoc[0], barLoc[1], barLoc[0] + bar.width, barLoc[1] + bar.height)
-        val svRect = Rect(svLoc[0], svLoc[1], svLoc[0] + sv.width, svLoc[1] + sv.height)
-        val inter = Rect()
-        if (!inter.setIntersect(barRect, svRect)) { decide(floatArrayOf(0f)); return }
-        val outside = 1f - (inter.width().toFloat() * inter.height()) / (barRect.width().toFloat() * barRect.height())
-        inter.offset(-svLoc[0], -svLoc[1])
-        val bmp = Bitmap.createBitmap(64, 12, Bitmap.Config.ARGB_8888)
-        try {
-            PixelCopy.request(sv, inter, bmp, { result ->
-                if (result == PixelCopy.SUCCESS) {
-                    val px = IntArray(bmp.width * bmp.height)
-                    bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
-                    val black = (px.size * outside / (1f - outside).coerceAtLeast(0.05f)).toInt().coerceAtMost(px.size * 4)
-                    val lum = FloatArray(px.size + black)
-                    for (i in px.indices) lum[i] = luminance(px[i])
-                    decide(lum)
-                }
-                // DRM / tunnelled video can't be copied: keep the current colour.
-                bmp.recycle()
-            }, main)
-        } catch (_: IllegalArgumentException) {
-            bmp.recycle()
-        }
-    }
-
-    internal fun decide(lum: FloatArray) {
-        fun worst(fgLum: Float): Float {
-            // Contrast against every pixel; the 10th percentile is what the busiest part of the picture leaves.
-            val c = FloatArray(lum.size) { contrast(fgLum, lum[it]) }
-            c.sort()
-            return c[(c.size * 0.1f).toInt().coerceIn(0, c.size - 1)]
-        }
-        val white = worst(1f)
-        val dark = worst(luminance(DARK))
-        val currentIsWhite = target == PlayerColors.FOREGROUND
-        val next = when {
-            currentIsWhite && dark > white * 1.3f -> DARK
-            !currentIsWhite && white > dark * 1.3f -> PlayerColors.FOREGROUND
-            else -> target
-        }
-        if (next != target) animateTo(next)
-    }
-
-    /** The colour the strip is (or is animating to). */
-    internal var target = PlayerColors.FOREGROUND
-        private set
-
-    private fun animateTo(color: Int) {
-        target = color
-        colorAnim?.cancel()
-        colorAnim = ValueAnimator.ofObject(ArgbEvaluator(), fg, color).apply {
-            duration = 220
-            addUpdateListener { paint(it.animatedValue as Int) }
-            start()
-        }
-    }
-
-    internal fun applyColor(c: Int) {
-        target = c
-        colorAnim?.cancel()
-        paint(c)
-    }
-
-    private fun paint(c: Int) {
-        fg = c
-        val shadow = if (luminance(c) > 0.5f) PlayerColors.STRIP_GLOW_UNDER_LIGHT else PlayerColors.STRIP_GLOW_UNDER_DARK
+    /** White text and icons, each with the same small shadow (CONTROL_SHADOW, 1.5 dp blur, 1 dp down). */
+    private fun applyLook() {
+        val c = PlayerColors.FOREGROUND
         for (t in listOf(titleView, metaView, elapsed, remaining)) {
             t.setTextColor(if (t === metaView) withAlpha(c, 0xD9) else c)
-            t.setShadowLayer(context.dpf(6f), 0f, 0f, shadow)
+            t.setShadowLayer(context.dpf(1.5f), 0f, context.dpf(1f), PlayerColors.CONTROL_SHADOW)
         }
-        for (b in listOf(play, rew, ffwd, next, subs, settings)) b.tint(c)
+        for (b in listOf(play, rew, ffwd, next, subs, settings)) {
+            b.tint(c)
+            b.addShadow(PlayerColors.CONTROL_SHADOW)
+        }
+        rew.shadowNumber(PlayerColors.CONTROL_SHADOW)
+        ffwd.shadowNumber(PlayerColors.CONTROL_SHADOW)
         seek.tint(c)
     }
 
@@ -424,6 +337,5 @@ internal class TvControls(
             return 0.2126f * ch(Color.red(argb)) + 0.7152f * ch(Color.green(argb)) + 0.0722f * ch(Color.blue(argb))
         }
 
-        fun contrast(a: Float, b: Float) = (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
     }
 }

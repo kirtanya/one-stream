@@ -5,6 +5,13 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · TV player controls always white**
+Decision: the TV strip no longer samples the picture to switch between white and near-black; it is
+always white with a small, tight shadow (CONTROL_SHADOW 40 % black, 1.5 dp blur, 1 dp down; icons get a
+blurred copy behind them) — the user wants consistent white controls and no halo. Trade-off accepted by
+the user: on very bright pictures the text falls below the contrast rule; those six `player/tv-bright`
+cases were added to the contrast baseline with the user's OK (0.8.2).
+
 **2026-10-21 · Cinema mode (bars glow with the video) + TV strip redesign**
 Decision: when a video leaves black bars (≥ 3 % of the screen), the bars glow with the picture's own
 colours, like YouTube's ambient mode. How: PixelCopy a 48×27 copy of the frame every 700 ms while
@@ -12,8 +19,12 @@ playing, blur (3 box passes ≈ Gaussian) and dim to 55 % in `core/playback/Ambi
 over the whole screen under a see-through PlayerView, crossfade 600 ms. Chosen over a second live,
 blurred video (ExoPlayer renders to one surface; a TextureView + RenderEffect copy would cost the 32-bit
 TV's GPU every frame) and over a single average colour (flat; the user asked for colours from the
-picture). A video that fills the screen, a paused one, or DRM (copy refused) costs nothing. On by
-default; Settings panel → Cinema mode (PlaybackPrefs.cinemaMode). Same day, at the user's request, the
+picture). A video that fills the screen, a paused one, or DRM (copy refused) costs nothing.
+Revised the same night (0.8.1) after the user found 0.8.0 "too much colour": like YouTube, light now
+spills out of the picture — the blurred copy is drawn a little larger than the video (grown by the
+widest bar) and each bar fades on an ease-out curve from a faint glow at the video edge to black at the
+screen edge (`Ambient.falloff`). Strength in Settings panel → Cinema mode: Off / Subtle (28 % at the
+edge, default) / Medium (45 %) / Strong (65 %) (PlaybackPrefs.cinemaGlow). Same day, at the user's request, the
 TV strip became: hairline seek bar on the bottom edge, times above its ends, title + ends-at left, all
 controls right at one size, all 40 dp from the edges (0.7.11–0.7.12).
 

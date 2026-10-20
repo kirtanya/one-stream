@@ -1002,9 +1002,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun buildLayout(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(PlayerColors.VIDEO_BACKGROUND) }
         val tv = isTelevision()
-        val cinema = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Cinema mode", { prefs.cinemaMode }) { on ->
-            app.playbackSettings.update { it.copy(cinemaMode = on) }
-            ambient.enabled = on
+        val levels = com.kirtanya.reel.core.playback.Ambient.Level.entries
+        val cinema = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Cinema mode", levels.map { it.label }, { prefs.cinemaGlow.ordinal }) { i ->
+            app.playbackSettings.update { it.copy(cinemaGlow = levels[i]) }
+            ambient.level = levels[i]
         }
         playerView = PlayerView(this).apply {
             keepScreenOn = true
@@ -1021,8 +1022,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         // the bars show it (the video surface still covers the middle).
         playerView.setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
         playerView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        ambient = AmbientGlow(playerView).apply { enabled = prefs.cinemaMode }
-        root.addView(ambient.view, FrameLayout.LayoutParams(-1, -1))
+        ambient = AmbientGlow(playerView).apply { level = prefs.cinemaGlow }
+        root.addView(ambient, FrameLayout.LayoutParams(-1, -1))
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         if (tv) {
             tvControls = TvControls(

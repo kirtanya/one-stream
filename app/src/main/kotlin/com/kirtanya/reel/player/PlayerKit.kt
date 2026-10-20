@@ -71,7 +71,30 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
         background = if (inset > 0) android.graphics.drawable.InsetDrawable(states, inset) else states
     }
 
-    fun setIcon(res: Int) = image.setImageResource(res)
+    fun setIcon(res: Int) {
+        image.setImageResource(res)
+        shadow?.setImageResource(res)
+    }
+
+    private var shadow: ImageView? = null
+
+    /**
+     * A small shadow just under the icon (TV strip on video): the same icon in [color], [dyDp] lower,
+     * blurred by [blurDp] — tight to the icon's shape, no halo around the button.
+     */
+    fun addShadow(color: Int, blurDp: Float = 1.5f, dyDp: Float = 1f) {
+        if (shadow != null) return
+        val lp = image.layoutParams as LayoutParams
+        shadow = ImageView(context).apply {
+            setImageDrawable(image.drawable?.constantState?.newDrawable()?.mutate())
+            imageTintList = ColorStateList.valueOf(color)
+            translationY = context.dpf(dyDp)
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                setRenderEffect(android.graphics.RenderEffect.createBlurEffect(context.dpf(blurDp), context.dpf(blurDp), android.graphics.Shader.TileMode.DECAL))
+            }
+        }
+        addView(shadow, 0, LayoutParams(lp.width, lp.height, lp.gravity))
+    }
 }
 
 /** The main button: a filled disc in the foreground colour with the icon cut out of it. */
@@ -109,6 +132,9 @@ internal class SkipButton(context: Context, forward: Boolean, seconds: Int, size
         super.tint(c)
         @Suppress("SENSELESS_COMPARISON") if (number != null) number.setTextColor(c)
     }
+
+    /** The number inside the arrow gets the same small shadow as the icon. */
+    fun shadowNumber(color: Int) = number.setShadowLayer(context.dpf(1.5f), 0f, context.dpf(1f), color)
 }
 
 /**
@@ -287,8 +313,8 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     }
 }
 
-/** An on/off row in the settings panel. */
-internal class PanelToggle(val icon: Int, val label: String, val isOn: () -> Boolean, val set: (Boolean) -> Unit)
+/** A settings-panel row that steps through [values] (index [current]) on each OK / tap. */
+internal class PanelToggle(val icon: Int, val label: String, val values: List<String>, val current: () -> Int, val set: (Int) -> Unit)
 
 /** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
 internal const val REPORT_ROW = "Report a problem"
@@ -324,7 +350,7 @@ internal class SettingsPanel(
     private var submenu: String? = null
     val open get() = panel.visibility == View.VISIBLE
 
-    /** On/off rows after Speed (e.g. Cinema mode): OK flips them in place. */
+    /** Rows after Speed that step through a few values in place on OK (e.g. Cinema mode). */
     var toggles: List<PanelToggle> = emptyList()
 
     fun show(section: String? = null) {
@@ -360,8 +386,8 @@ internal class SettingsPanel(
         }
         list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
         for (t in toggles) {
-            list.addView(row(t.icon, t.label, if (t.isOn()) "On" else "Off", t.label) {
-                t.set(!t.isOn())
+            list.addView(row(t.icon, t.label, t.values[t.current()], t.label) {
+                t.set((t.current() + 1) % t.values.size)
                 buildMain()
                 list.findViewWithTag<View>(t.label)?.requestFocus()
             })

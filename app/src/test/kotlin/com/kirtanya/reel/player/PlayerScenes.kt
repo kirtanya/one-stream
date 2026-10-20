@@ -53,8 +53,8 @@ internal object PlayerScenes {
         return scene
     }
 
-    /** TV strip over a picture [picture] (top → bottom), in the colour the sampler would pick for it. */
-    fun tv(picture: IntArray, color: Int, panel: Boolean = false): Tv {
+    /** TV strip over a picture [picture] (top → bottom); always white with its small shadow. */
+    fun tv(picture: IntArray, panel: Boolean = false): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
         root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, picture)
@@ -68,8 +68,6 @@ internal object PlayerScenes {
         c.show()
         if (panel) c.openPanel()
         ShadowLooper.idleMainLooper()
-        // No video surface here: set the colour the sampler would pick for this picture.
-        c.applyColor(color)
         val scene = Tv(root, c, exo)
         scene.midFilm()
         return scene

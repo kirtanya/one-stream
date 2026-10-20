@@ -9,8 +9,36 @@ object Ambient {
     /** Bars smaller than this share of the screen aren't worth a glow (a near-fit video). */
     const val MIN_BAR_SHARE = 0.03f
 
-    /** How much of the colour the glow keeps (the rest is black): soft, behind the picture. */
-    const val BRIGHTNESS = 0.55f
+    /** How much of the colour the glow keeps before the falloff (the falloff does the dimming). */
+    const val BRIGHTNESS = 1f
+
+    /** Cinema mode strength: how bright the glow is right at the video's edge (it fades to 0 at the screen edge). */
+    enum class Level(val label: String, val edge: Float) {
+        OFF("Off", 0f), SUBTLE("Subtle", 0.28f), MEDIUM("Medium", 0.45f), STRONG("Strong", 0.65f);
+
+        companion object {
+            fun of(name: String?) = entries.firstOrNull { it.name == name } ?: SUBTLE
+        }
+    }
+
+    /** A black shade over the glow along one bar: [colors] (ARGB) at [positions] 0 (video edge) … 1 (screen edge). */
+    class Shade(val colors: IntArray, val positions: FloatArray)
+
+    /**
+     * The fade across a bar, as black laid over the glow: at the video's edge the glow shows at
+     * [Level.edge] brightness, then dies away on an ease-out curve (light thins quickly near its
+     * source, then lingers faintly) to nothing at the screen's edge.
+     */
+    fun falloff(level: Level, steps: Int = 8): Shade {
+        val positions = FloatArray(steps + 1) { it / steps.toFloat() }
+        val colors = IntArray(steps + 1) { i ->
+            val t = positions[i]
+            val glow = level.edge * (1f - t) * (1f - t) // brightness left at t
+            val black = (1f - glow).coerceIn(0f, 1f)
+            ((black * 255).toInt() shl 24) // black with that alpha
+        }
+        return Shade(colors, positions)
+    }
 
     /**
      * Whether a video of [videoW]×[videoH] fitted (not cropped) into a [viewW]×[viewH] screen leaves

@@ -31,4 +31,16 @@ class AmbientTest {
         val dim = Ambient.glow(IntArray(w * h) { 0xFFC8C8C8.toInt() }, w, h, brightness = 0.5f)
         assertEquals(100, dim[0] and 0xFF, "dimmed to half")
     }
+
+    @Test fun glowFadesFromTheVideoEdgeToNothing() {
+        val s = Ambient.falloff(Ambient.Level.SUBTLE)
+        val alpha = s.colors.map { it ushr 24 }
+        assertEquals(0f, s.positions.first()); assertEquals(1f, s.positions.last())
+        assertEquals(255, alpha.last(), "fully black at the screen edge")
+        assertTrue(alpha.first() in 175..190, "subtle: ~28 % glow at the video edge, got ${alpha.first()}")
+        assertTrue(alpha.zipWithNext().all { (a, b) -> b >= a }, "only ever darker going out: $alpha")
+        assertTrue(Ambient.falloff(Ambient.Level.STRONG).colors.first() ushr 24 < alpha.first(), "strong glows brighter")
+        assertTrue(Ambient.falloff(Ambient.Level.OFF).colors.all { it ushr 24 == 255 }, "off: black")
+        assertEquals(Ambient.Level.SUBTLE, Ambient.Level.of(null), "subtle by default")
+    }
 }
