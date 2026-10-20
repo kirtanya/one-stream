@@ -2,17 +2,26 @@ package com.kirtanya.reel.server
 
 import android.util.Log
 import com.kirtanya.reel.core.stream.ByteRange
+import com.kirtanya.reel.core.stream.ReaderKind
+import com.kirtanya.reel.core.stream.StreamGoneException
+import com.kirtanya.reel.core.stream.TorrentStreamRef
 import com.kirtanya.reel.engine.StreamInfo
+import com.kirtanya.reel.engine.StreamReader
 import com.kirtanya.reel.engine.TorrentEngine
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
-import java.io.RandomAccessFile
+import java.net.Socket
 
 /**
- * Serves prepared streams on http://127.0.0.1:{port}/s/{infoHash}/{fileIndex} with Range
- * support, so ExoPlayer (or an external player) can play a torrent while it downloads.
+ * Serves prepared streams to **external** players (VLC, MX…) on
+ * http://127.0.0.1:{port}/s/{key}/{fileIndex}/{token} with Range support. The in-app player
+ * reads directly (TorrentDataSource), with no HTTP hop.
+ *
+ * Each connection's socket is bound to its reader, which probes it while waiting for a piece,
+ * so a player that seeks or closes is noticed within about a second instead of keeping a stale
+ * read-ahead window alive. Responses close the connection, so an aborted body ends at once.
  */
 class LocalStreamServer(private val engine: TorrentEngine) : NanoHTTPD("127.0.0.1", 0) {
 
@@ -20,16 +29,32 @@ class LocalStreamServer(private val engine: TorrentEngine) : NanoHTTPD("127.0.0.
         if (!isAlive) start(SOCKET_READ_TIMEOUT, true)
     }
 
+    /** Legacy entry point (ReelApp still builds one lazily but never uses it). */
     fun urlFor(info: StreamInfo): String {
         ensureStarted()
-        return "http://127.0.0.1:$listeningPort/s/${info.infoHash}/${info.file.index}"
+        return "http://127.0.0.1:$listeningPort/s/${info.infoHash}/${info.file.index}/${info.token}"
     }
+
+    override fun createClientHandler(finalAccept: Socket, inputStream: InputStream): ClientHandler =
+        object : ClientHandler(inputStream, finalAccept) {
+            override fun run() {
+                CURRENT_SOCKET.set(finalAccept)
+                try {
+                    super.run()
+                } finally {
+                    CURRENT_SOCKET.remove()
+                }
+            }
+        }
+
+    override fun useGzipWhenAccepted(r: Response?): Boolean = false
 
     override fun serve(session: IHTTPSession): Response {
         val parts = session.uri.trim('/').split('/')
-        if (parts.size != 3 || parts[0] != "s") return notFound()
-        val info = engine.streamInfo(parts[1])?.takeIf { it.file.index == parts[2].toIntOrNull() }
-            ?: return notFound()
+        if (parts.size != 4 || parts[0] != "s") return notFound()
+        val idx = parts[2].toIntOrNull() ?: return notFound()
+        val token = parts[3].toLongOrNull() ?: return notFound()
+        val info = engine.streamInfo(parts[1])?.takeIf { it.file.index == idx && it.token == token } ?: return notFound()
 
         val size = info.file.size
         val rangeHeader = session.headers["range"]
@@ -37,34 +62,34 @@ class LocalStreamServer(private val engine: TorrentEngine) : NanoHTTPD("127.0.0.
             ?: return newFixedLengthResponse(Response.Status.RANGE_NOT_SATISFIABLE, MIME_PLAINTEXT, "")
                 .apply { addHeader("Content-Range", "bytes */$size") }
 
-        val body: InputStream = if (session.method == Method.HEAD) ByteArrayInputStream(ByteArray(0)) else PieceInputStream(engine, info, range)
+        val body: InputStream = if (session.method == Method.HEAD) {
+            ByteArrayInputStream(ByteArray(0))
+        } else {
+            val reader = try {
+                engine.openReader(TorrentStreamRef(info.infoHash, idx, token, info.file.name), range.start, ReaderKind.HTTP, CURRENT_SOCKET.get())
+            } catch (e: StreamGoneException) {
+                return notFound()
+            }
+            ReaderInputStream(reader, range.start, range.endInclusive)
+        }
         val status = if (rangeHeader == null) Response.Status.OK else Response.Status.PARTIAL_CONTENT
         return newFixedLengthResponse(status, info.mimeType, body, range.length).apply {
             addHeader("Accept-Ranges", "bytes")
             if (rangeHeader != null) addHeader("Content-Range", "bytes ${range.start}-${range.endInclusive}/$size")
+            closeConnection(true)
         }
     }
 
-    private fun notFound() = newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not found")
+    private fun notFound() = newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not found").apply { closeConnection(true) }
+
+    companion object {
+        private val CURRENT_SOCKET = ThreadLocal<Socket?>()
+    }
 }
 
-/**
- * Reads one byte range of a torrent file, blocking on each piece until libtorrent has it.
- * Every instance is a "reader" the engine plans deadlines for.
- */
-private class PieceInputStream(
-    private val engine: TorrentEngine,
-    private val info: StreamInfo,
-    range: ByteRange,
-) : InputStream() {
-    private val hash = info.infoHash
-    private val span = info.span
-    private var pos = range.start
-    private val end = range.endInclusive
-    private val readerId = engine.openReader(hash, pos)
-    private var file: RandomAccessFile? = null
-    /** Exclusive file position up to which data is known to be on disk. */
-    private var readableUntil = -1L
+/** An [InputStream] over one byte range of a [StreamReader]. */
+private class ReaderInputStream(private val reader: StreamReader, start: Long, private val end: Long) : InputStream() {
+    private var pos = start
     @Volatile private var closed = false
 
     override fun read(): Int {
@@ -76,39 +101,16 @@ private class PieceInputStream(
         if (closed) throw IOException("closed")
         if (pos > end) return -1
         if (len == 0) return 0
-        if (pos >= readableUntil) waitForPieceAt(pos)
-        val raf = file ?: openFile().also { file = it }
-        val count = minOf(len.toLong(), readableUntil - pos, end - pos + 1).toInt()
-        raf.seek(pos)
-        val n = raf.read(b, off, count)
-        if (n < 0) throw IOException("unexpected end of file")
+        val n = reader.read(pos, b, off, minOf(len.toLong(), end - pos + 1).toInt())
+        if (n < 0) return -1
         pos += n
         return n
-    }
-
-    private fun waitForPieceAt(filePos: Long) {
-        val piece = span.pieceOf(filePos)
-        engine.readerAt(hash, readerId, filePos)
-        while (!engine.awaitPieceBlocking(hash, piece, 2_000)) {
-            if (closed || !engine.isStreaming(hash)) throw IOException("stream stopped")
-        }
-        val pieceEndInTorrent = (piece + 1).toLong() * span.pieceLength
-        readableUntil = minOf(pieceEndInTorrent - span.offset, span.size)
-    }
-
-    private fun openFile(): RandomAccessFile {
-        repeat(50) {
-            if (info.path.isFile) return RandomAccessFile(info.path, "r")
-            Thread.sleep(100)
-        }
-        throw IOException("file not created: ${info.path}")
     }
 
     override fun close() {
         if (closed) return
         closed = true
-        runCatching { file?.close() }
-        engine.closeReader(hash, readerId)
-        Log.d("ReelServer", "reader $readerId closed at $pos")
+        reader.close()
+        Log.d("ReelServer", "reader ${reader.core.id} closed at $pos")
     }
 }

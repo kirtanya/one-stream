@@ -160,7 +160,10 @@ class PlayerActivity : ComponentActivity() {
                 }
                 // Torrents spend seconds finding peers, so subtitles are usually ready by now;
                 // don't hold a direct link up for long.
-                val tracks = withTimeoutOrNull(if (source.kind == SourceKind.TORRENT) 1_500L else 2_500L) { subtitles.await() }
+                // Wait (briefly) only when a subtitle language is wanted; otherwise don't hold the start up.
+                val wantSubs = prefs.subtitleLanguage != null ||
+                    (getSystemService(CAPTIONING_SERVICE) as? android.view.accessibility.CaptioningManager)?.isEnabled == true
+                val tracks = if (wantSubs) withTimeoutOrNull(400L) { subtitles.await() } else null
                 if (tracks == null) subtitles.cancel()
                 val fromSource = source.subtitles.map {
                     it.copy(language = Subtitles.normalizeLanguage(it.language), format = it.format ?: Subtitles.formatOf(it.url))
@@ -188,7 +191,8 @@ class PlayerActivity : ComponentActivity() {
         val info = engine.startStream(magnet, source.fileIdx, source.filename, tapMs)
         hash = info.infoHash
         preparedStream = info
-        return app.streamServer.urlFor(info)
+        // In-app reads go straight to the engine (no HTTP hop); the flag keeps the old path for diagnosis.
+        return if (com.kirtanya.reel.engine.EngineFlags.inapp) info.uri else engine.httpUrlFor(info)
     }
 
     /** Subtitles from subtitle addons (needs an IMDb id); [] when there's nothing to ask. */
@@ -205,22 +209,55 @@ class PlayerActivity : ComponentActivity() {
 
     private fun play(url: String, subtitles: List<SubtitleTrack>, resumeAtMs: Long) {
         streamUrl = url
-        val loadControl = DefaultLoadControl.Builder()
-            // Torrent streams start slower than HTTP; keep a healthy buffer once rolling.
-            .setBufferDurationsMs(15_000, 60_000, 2_500, 5_000)
-            .build()
+        val torrent = playback.source.kind == SourceKind.TORRENT
+        val tv = isTelevision()
+        val loadControl = if (torrent) {
+            // Reads can't time out any more, so pull continuously (min = max) and keep a back buffer
+            // sized by bitrate so short rewinds never touch the disk (docs/STREAMING_V2.md §6.2).
+            val rate = com.kirtanya.reel.core.stream.PlayerBuffers.rate(
+                preparedStream?.file?.size ?: playback.source.sizeBytes,
+                app.history.get(playback.key)?.durationMs?.takeIf { it > 0 },
+                playback.source.quality.resolution?.let { "${it}p" },
+            )
+            val form = if (tv) com.kirtanya.reel.core.stream.FormFactor.TV else com.kirtanya.reel.core.stream.FormFactor.PHONE
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(if (tv) 30_000 else 50_000, if (tv) 30_000 else 50_000, 2_000, 5_000)
+                .apply { if (tv) setTargetBufferBytes(64 * 1024 * 1024) }
+                .setBackBuffer(com.kirtanya.reel.core.stream.PlayerBuffers.backBufferMs(form, rate), true)
+                .build()
+        } else {
+            DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 60_000, 2_500, 5_000).build()
+        }
         // Some direct sources need headers (Referer, User-Agent…) on every request.
         // Every request of the stream gets them (playlists, CDN segments, redirects), but they're
         // never sent to third-party subtitle hosts.
         val headers = playback.source.headers
         val subtitleUrls = subtitles.map { it.url }.toSet()
-        val http = ResolvingDataSource.Factory(DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)) { spec ->
+        // Direct links over the app's OkHttp (connection reuse, HTTP/2); never the torrent scheme.
+        val okhttp = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(
+            app.http.newBuilder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .retryOnConnectionFailure(false)
+                .build(),
+        )
+        val http = ResolvingDataSource.Factory(okhttp) { spec ->
             if (headers.isNotEmpty() && spec.uri.toString() !in subtitleUrls) spec.withAdditionalHeaders(headers) else spec
         }
+        val other = if (url.startsWith("http://127.0.0.1")) {
+            // Diagnostic loopback mode (EngineFlags.inapp = 0): long read timeout.
+            DefaultDataSource.Factory(this, DefaultHttpDataSource.Factory().setReadTimeoutMs(60_000))
+        } else {
+            DefaultDataSource.Factory(this, http)
+        }
+        val sources = ReelDataSourceFactory(TorrentDataSource.Factory(app.engine), other)
         val exo = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(sources).setLoadErrorHandlingPolicy(ReelLoadErrorPolicy()))
             .build()
+        exo.setWakeMode(C.WAKE_MODE_NETWORK)
+        // Land on a keyframe: no decoding up to an exact frame (slow on the TV's 4K HEVC).
+        exo.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
         player = exo
         playerView.player = exo
         applySubtitlePrefs(exo)
@@ -244,6 +281,7 @@ class PlayerActivity : ComponentActivity() {
             when (state) {
                 Player.STATE_READY -> {
                     status.visibility = View.GONE
+                    directRetries = 0
                     stats { s ->
                         s.ready(now())
                         s.bufferingEnd(now())
@@ -260,6 +298,11 @@ class PlayerActivity : ComponentActivity() {
                     else if (nextCard.visibility == View.VISIBLE) nextPlay.requestFocus()
                 }
             }
+        }
+
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            val d = player?.duration ?: return
+            if (d != C.TIME_UNSET && d > 0) preparedStream?.let { app.engine.setStreamDuration(it, d) }
         }
 
         override fun onRenderedFirstFrame() {
@@ -288,8 +331,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            if (error.errorCode in 2000..2999) stats { it.fatalSlowError() }
-            showError("This device can't play this file (${error.errorCodeName}).")
+            handlePlayerError(error)
         }
     }
 
@@ -514,7 +556,14 @@ class PlayerActivity : ComponentActivity() {
             val step = (if (held > 2_000) 30_000L else 10_000L) * (if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
             val end = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
             val target = (exo.currentPosition + step).coerceIn(0, end)
-            exo.seekTo(target)
+            if (step < 0) {
+                // Backward: the keyframe before the target (CLOSEST_SYNC could land after it), then back.
+                exo.setSeekParameters(androidx.media3.exoplayer.SeekParameters.PREVIOUS_SYNC)
+                exo.seekTo(target)
+                exo.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
+            } else {
+                exo.seekTo(target)
+            }
             flashStatus((if (step > 0) "+" else "−") + "${kotlin.math.abs(step) / 1000} s · " + formatTime(target))
             return true
         }
@@ -566,15 +615,23 @@ class PlayerActivity : ComponentActivity() {
         hideNextCard()
         errorText.text = text
         errorPanel.visibility = View.VISIBLE
-        errorExternal.visibility = if (streamUrl != null) View.VISIBLE else View.GONE
+        errorExternal.visibility = if (preparedStream != null || (playback.source.kind == SourceKind.DIRECT && streamUrl != null)) View.VISIBLE else View.GONE
         errorSources.visibility = if (playback.tmdbId != null) View.VISIBLE else View.GONE
         (if (errorSources.visibility == View.VISIBLE) errorSources else errorPanel.getChildAt(errorPanel.childCount - 1)).requestFocus()
     }
 
-    /** Hands the same URL to VLC / MX / Just Player. Our stream server keeps serving. */
+    /**
+     * Hands the stream to VLC / MX / Just Player. Torrents get the engine's HTTP URL (the in-app
+     * player reads directly, which other apps can't); direct links keep their own URL.
+     */
     private fun openExternal() {
-        val url = streamUrl ?: return
-        val mime = hash?.let { app.engine.streamInfo(it)?.mimeType } ?: "video/*"
+        val torrentInfo = preparedStream
+        val url = when {
+            torrentInfo != null -> app.engine.httpUrlFor(torrentInfo)
+            playback.source.kind == SourceKind.DIRECT -> streamUrl
+            else -> null
+        } ?: return
+        val mime = torrentInfo?.mimeType ?: "video/*"
         externalHandoff = true
         stoppedSinceHandoff = false
         startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), mime), "Open with"))
@@ -592,6 +649,12 @@ class PlayerActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         hash?.let { app.engine.resumeStream(it, preparedStream) }
+        // We stopped the player in onStop: reload from the same position (from disk, quickly).
+        // After a real hand-off to another player, stay idle; its play button prepares again.
+        val exo = player
+        if (exo != null && exo.playbackState == Player.STATE_IDLE && streamUrl != null && errorPanel.visibility != View.VISIBLE &&
+            !(externalHandoff && stoppedSinceHandoff)
+        ) exo.prepare()
     }
 
     override fun onResume() {
@@ -608,11 +671,12 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        saveProgress()
+        // Stop (not just pause): ends the loader and closes our reader, keeping the item and position.
+        player?.stop()
         if (externalHandoff) stoppedSinceHandoff = true
         // In the background: stop fetching the torrent (an external player keeps it running).
-        else hash?.let { app.engine.suspendStream(it, preparedStream) }
-        saveProgress()
-        player?.pause()
+        else if (!isFinishing && !leavingForNext) hash?.let { app.engine.suspendStream(it, preparedStream) }
         if (nextCard.visibility == View.VISIBLE) {
             nextCardPending = true
             hideNextCard()
@@ -647,6 +711,59 @@ class PlayerActivity : ComponentActivity() {
     private val accent get() = Tokens.Night.accent.toArgb()
     private val glassColor get() = Tokens.Night.glass.toArgb()
     private val hairline get() = Tokens.Night.hairline.toArgb()
+
+    private var directRetries = 0
+
+    /** What a playback error means for the user (docs/STREAMING_V2.md §6.3). */
+    private fun handlePlayerError(error: PlaybackException) {
+        val exo = player
+        var cause: Throwable? = error.cause
+        var gone: com.kirtanya.reel.core.stream.StreamGoneException? = null
+        var engineError: com.kirtanya.reel.core.stream.StreamErrorException? = null
+        var httpCode: Int? = null
+        var failedUri: String? = null
+        while (cause != null) {
+            when (cause) {
+                is com.kirtanya.reel.core.stream.StreamGoneException -> gone = cause
+                is com.kirtanya.reel.core.stream.StreamErrorException -> engineError = cause
+                is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException -> { httpCode = cause.responseCode; failedUri = cause.dataSpec.uri.toString() }
+                is androidx.media3.datasource.HttpDataSource.HttpDataSourceException -> failedUri = failedUri ?: cause.dataSpec.uri.toString()
+            }
+            cause = cause.cause
+        }
+        // A dead subtitle link must never stop the film: drop it and carry on.
+        val subtitleUris = exo?.currentMediaItem?.localConfiguration?.subtitleConfigurations?.map { it.uri.toString() }.orEmpty()
+        if (exo != null && failedUri != null && failedUri in subtitleUris) {
+            val item = exo.currentMediaItem!!
+            val kept = item.localConfiguration!!.subtitleConfigurations.filter { it.uri.toString() != failedUri }
+            val pos = exo.currentPosition
+            exo.setMediaItem(item.buildUpon().setSubtitleConfigurations(kept).build(), pos)
+            exo.prepare()
+            Log.i(TAG, "dropped a broken subtitle track")
+            return
+        }
+        when {
+            engineError != null -> showError(engineError.message ?: "This stream stopped")
+            gone != null -> if (!isFinishing && !leavingForNext) showError("This stream stopped.")
+            playback.source.kind == SourceKind.DIRECT && error.errorCode in 2000..2999 -> {
+                if (httpCode == 403 || httpCode == 410) {
+                    showError("This link has expired. Try another source.")
+                } else if (exo != null && directRetries < 4) {
+                    // A network blip: reconnect from the same position with a growing backoff.
+                    val wait = 1_000L shl directRetries++
+                    showStatus("Reconnecting…")
+                    lifecycleScope.launch { delay(wait); player?.prepare() }
+                } else {
+                    showError("Couldn't reach this link. Check your connection or try another source.")
+                }
+            }
+            error.errorCode in 2000..2999 -> {
+                stats { it.fatalSlowError() }
+                showError("This stream stopped (${error.errorCodeName}).")
+            }
+            else -> showError("This device can't play this file (${error.errorCodeName}).")
+        }
+    }
 
     // ReelStats (docs/STREAMING_V2.md §11): the engine's per-stream counters, fed from player events.
     private fun now() = android.os.SystemClock.elapsedRealtime()

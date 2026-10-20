@@ -15,6 +15,14 @@ import com.kirtanya.reel.core.stream.FileChoice
 import com.kirtanya.reel.core.stream.FileSpan
 import com.kirtanya.reel.core.stream.FormFactor
 import com.kirtanya.reel.core.stream.PieceDeadline
+import com.kirtanya.reel.core.stream.PieceGate
+import com.kirtanya.reel.core.stream.ReaderKind
+import com.kirtanya.reel.core.stream.ReaderListener
+import com.kirtanya.reel.core.stream.StreamErrorException
+import com.kirtanya.reel.core.stream.StreamErrorKind
+import com.kirtanya.reel.core.stream.StreamGoneException
+import com.kirtanya.reel.core.stream.StreamReaderCore
+import com.kirtanya.reel.core.stream.TorrentStreamRef
 import com.kirtanya.reel.core.stream.RestoreFlags
 import com.kirtanya.reel.core.stream.RestoreMeta
 import com.kirtanya.reel.core.stream.RestorePolicy
@@ -41,7 +49,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -105,7 +112,15 @@ class TorrentEngine(private val context: Context) {
     private val stalls = ConcurrentHashMap<String, Int>()
     /** One per torrent; completed by METADATA_RECEIVED. Waiters never remove it (lost-wakeup fix). */
     private val metadataWaiters = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
-    private val pieceWaiters = ConcurrentHashMap<String, ConcurrentHashMap<Int, CompletableDeferred<Unit>>>()
+    /** Per torrent: which pieces readers may read, and where they wait for more (docs/STREAMING_V2.md §5.1). */
+    private val gates = ConcurrentHashMap<String, PieceGate>()
+    /** PIECE_FINISHED for a torrent whose gate doesn't exist yet (magnet before metadata). */
+    private val preGate = ConcurrentHashMap<String, java.util.concurrent.ConcurrentLinkedQueue<Int>>()
+    private val filePrioIssued = ConcurrentHashMap<String, Int>()
+    private val tokens = AtomicLong()
+    /** Plans deadlines, polls flushes and runs safety checks, off the reader threads. */
+    private val engineExec = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "reel-engine").apply { isDaemon = true; priority = Thread.NORM_PRIORITY + 1 } }
+    private val server by lazy { com.kirtanya.reel.server.LocalStreamServer(this) }
     private val streams = ConcurrentHashMap<String, ActiveStream>()
     /** Players currently starting a stream on a torrent (hash → count): cache trimming leaves these alone. */
     private val starting = ConcurrentHashMap<String, Int>()
@@ -381,8 +396,9 @@ class TorrentEngine(private val context: Context) {
 
     fun remove(hash: String, deleteFiles: Boolean) {
         val h = find(hash)
-        streams.remove(hash)
-        pieceWaiters.remove(hash)?.values?.forEach { it.cancel() }
+        streams.remove(hash)?.let { release(it, StreamGoneException("This stream was removed")) }
+        gates.remove(hash)?.close(StreamGoneException("This stream was removed"))
+        preGate.remove(hash)
         metadataWaiters.remove(hash)?.cancel()
         errors.remove(hash)
         metas.remove(hash)
@@ -430,8 +446,8 @@ class TorrentEngine(private val context: Context) {
     // ---------------------------------------------------------------- streaming
 
     /**
-     * Waits for metadata, picks the file, focuses the torrent on it and queues the
-     * startup pieces. The local server can serve [StreamInfo] as soon as this returns.
+     * Waits for metadata, picks the file, focuses the torrent on it and queues the startup pieces.
+     * Readers can open [StreamInfo.uri] (in-app) or [httpUrlFor] (external players) once this returns.
      */
     suspend fun prepareStream(hash: String, fileIdx: Int? = null, filenameHint: String? = null): StreamInfo =
         withContext(Dispatchers.IO) {
@@ -448,29 +464,42 @@ class TorrentEngine(private val context: Context) {
             val file = FileChoice.pickStream(files(hash), fileIdx, filenameHint, meta?.intent ?: com.kirtanya.reel.core.stream.FileIntent(), ignored)
                 ?: throw EngineException("This torrent has no files")
 
-            if (mode == TorrentMode.STREAM) {
-                val priorities = Priority.array(Priority.IGNORE, fs.numFiles())
-                priorities[file.index] = Priority.DEFAULT
-                handle.prioritizeFiles(priorities)
-            } else if (handle.filePriority(file.index) == Priority.IGNORE) {
-                handle.filePriority(file.index, Priority.DEFAULT)
+            // Intended file priorities; when they change, readers wait for libtorrent to apply them
+            // (pieces fetched while the file was ignored sit in the part file until then).
+            val current = runCatching { handle.filePriorities().map { it.swig().toInt() } }.getOrDefault(emptyList())
+            val intended = if (mode == TorrentMode.STREAM) List(fs.numFiles()) { if (it == file.index) 4 else 0 }
+                else current.mapIndexed { i, v -> if (i == file.index && v == 0) 4 else v }
+            val changed = intended != current
+            if (changed) {
+                filePrioIssued.merge(hash, 1, Int::plus)
+                handle.prioritizeFiles(Array(intended.size) { Priority.fromSwig(intended[it]) })
             }
+            val gate = ensureGate(hash, handle, info.numPieces())
             val span = FileSpan(fs.fileOffset(file.index), fs.fileSize(file.index), info.pieceLength(), info.numPieces())
+            val token = tokens.incrementAndGet()
             val stream = StreamInfo(
                 infoHash = hash,
                 file = file,
                 span = span,
                 mimeType = mimeTypeFor(file.name),
                 path = File(handle.savePath(), fs.filePath(file.index)),
+                token = token,
+                uri = TorrentStreamRef(hash, file.index, token, file.name).format(),
             )
             metas[hash]?.let { saveMeta(it.copy(streamFileIndex = file.index, lastUsedAt = System.currentTimeMillis())) }
+            val active = ActiveStream(stream, handle, StreamPlanner(span), gate)
+            active.fileReady = !changed
             synchronized(streamLock) {
+                // A previous stream on this torrent (the last episode of a season pack): its readers
+                // fail fast; the torrent and its gate carry on for the new one.
+                streams[hash]?.let { old -> supersede(old) }
                 // Register and resume together: a player stopping at the same moment can't pause us after.
-                streams[hash] = ActiveStream(stream, StreamPlanner(span))
+                streams[hash] = active
                 handle.resume()
             }
-            EngineStats.event(hash, "prepared", mapOf("size" to file.size, "pl" to info.pieceLength(), "pieces" to info.numPieces()))
-            retarget(hash)
+            if (changed) engineExec.schedule({ releaseFileBarrier(active, timedOut = true) }, 1_500, TimeUnit.MILLISECONDS)
+            EngineStats.event(hash, "prepared", mapOf("size" to file.size, "pl" to info.pieceLength(), "pieces" to info.numPieces(), "have" to gate.pieces.count()))
+            kick(active, immediate = true)
             stream
         }
 
@@ -488,9 +517,13 @@ class TorrentEngine(private val context: Context) {
         var prepared = false
         try {
             val cached = find(hash) != null
-            EngineStats.begin(hash, tapMs, mapOf("dev" to formFactor.name.lowercase(), "disk" to disk.name.lowercase(), "warm" to if (cached) "cached" else "cold", "build" to "p1"))
+            EngineStats.begin(hash, tapMs, mapOf("dev" to formFactor.name.lowercase(), "disk" to disk.name.lowercase(), "warm" to if (cached) "cached" else "cold", "build" to "p2", "flags" to EngineFlags.summary()))
             created = addMagnetInternal(magnet, TorrentMode.STREAM, null, null, streamFileIdx = fileIdx).second
-            find(hash)?.let { runCatching { it.forceDHTAnnounce() } }
+            find(hash)?.let { h ->
+                runCatching { h.forceDHTAnnounce() }
+                // A cached stream that was paused: peers are long gone, ask everyone again now.
+                if (cached) runCatching { h.forceReannounce(0, -1, TorrentHandle.IGNORE_MIN_INTERVAL) }
+            }
             return prepareStream(hash, fileIdx, filenameHint).also { prepared = true }
         } finally {
             withContext(NonCancellable) {
@@ -522,6 +555,17 @@ class TorrentEngine(private val context: Context) {
 
     fun isStreaming(hash: String): Boolean = streams.containsKey(hash)
 
+    /** The player's duration is known: size the read-ahead in seconds of video, not a fixed size. */
+    fun setStreamDuration(owner: StreamInfo, durationMs: Long) {
+        val s = streams[owner.infoHash]?.takeIf { it.info === owner } ?: return
+        if (durationMs <= 0) return
+        val rate = owner.file.size * 1000 / durationMs
+        if (s.bytesPerSec == rate) return
+        s.bytesPerSec = rate
+        EngineStats.event(owner.infoHash, "rate", mapOf("B" to rate, "src" to "player"))
+        kick(s, immediate = false)
+    }
+
     /**
      * The player went to the background: stop fetching [owner]'s stream-mode torrent so it doesn't
      * eat bandwidth (e.g. while another app plays). Downloads and other players' streams are untouched.
@@ -538,9 +582,9 @@ class TorrentEngine(private val context: Context) {
         find(hash)
     }
 
-    /** Is any player (ours or an external one) reading [owner]'s stream right now? */
-    fun hasReaders(hash: String, owner: StreamInfo?): Boolean =
-        streams[hash]?.takeIf { owner == null || it.info === owner }?.readers?.isNotEmpty() == true
+    /** Is a player reading [owner]'s stream right now? By default counts external (HTTP) players only. */
+    fun hasReaders(hash: String, owner: StreamInfo?, kind: ReaderKind? = ReaderKind.HTTP): Boolean =
+        streams[hash]?.takeIf { owner == null || it.info === owner }?.readers?.values?.any { kind == null || it.kind == kind } == true
 
     /**
      * Called when a player is done with [owner] (the stream it prepared). If another player has
@@ -553,12 +597,11 @@ class TorrentEngine(private val context: Context) {
             stream = streams[hash] ?: return
             if (owner != null && stream.info !== owner) return
             if (!streams.remove(hash, stream)) return
-            pieceWaiters.remove(hash)?.values?.forEach { it.cancel() }
+            release(stream, StreamGoneException("This stream stopped"))
             metas[hash]?.let { saveMeta(it.copy(lastStoppedAt = System.currentTimeMillis())) }
             val h = find(hash) ?: return
             // Another player is starting this torrent (next episode of a season pack): leave it running.
             if (starting.containsKey(hash) || streams.containsKey(hash)) return
-            h.clearPieceDeadlines()
             if (metas[hash]?.mode == TorrentMode.STREAM) {
                 h.pause()
                 h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
@@ -571,6 +614,15 @@ class TorrentEngine(private val context: Context) {
         scope.launch(Dispatchers.IO) { runCatching { trimCache(DEFAULT_CACHE_BUDGET) } }
     }
 
+    /** Readers of [old] fail fast; its deadlines are cleared (the torrent and gate carry on). */
+    private fun supersede(old: ActiveStream) = release(old, StreamGoneException("superseded"))
+
+    private fun release(s: ActiveStream, reason: java.io.IOException) {
+        s.closedReason = reason
+        s.gate.signalAll()
+        engineExec.execute { clearPlan(s) }
+    }
+
     /**
      * For a stream handed to an external player: keep serving while it reads, and stop once no
      * player has read anything for [idleMs] (the external app was closed).
@@ -581,7 +633,7 @@ class TorrentEngine(private val context: Context) {
                 delay(60_000)
                 val s = streams[hash] ?: return@launch
                 if (owner != null && s.info !== owner) return@launch
-                if (s.readers.isEmpty() && System.currentTimeMillis() - s.lastActivityAt > idleMs) {
+                if (s.readers.values.none { it.kind == ReaderKind.HTTP } && System.currentTimeMillis() - s.lastActivityAt > idleMs) {
                     Log.i(TAG, "external player idle; stopping ${s.info.file.name}")
                     stopStream(hash, owner)
                     return@launch
@@ -590,61 +642,209 @@ class TorrentEngine(private val context: Context) {
         }
     }
 
-    fun openReader(hash: String, filePos: Long): Long {
+    /** URL an external player (VLC, MX…) can play [info] from, served by the engine's local server. */
+    fun httpUrlFor(info: StreamInfo): String = server.urlFor(info)
+
+    /**
+     * Opens a reader on a prepared stream at [position]. Reads block until their piece is on disk
+     * and fail only when interrupted, stopped, superseded, or (HTTP) when the client goes away.
+     */
+    fun openReader(ref: TorrentStreamRef, position: Long, kind: ReaderKind, socket: java.net.Socket? = null): StreamReader {
+        val s = streams[ref.key]?.takeIf { it.info.token == ref.token && it.info.file.index == ref.fileIndex }
+            ?: throw StreamGoneException("This stream is no longer available")
+        s.closedReason?.let { throw it }
         val id = readerIds.incrementAndGet()
-        streams[hash]?.let { it.readers[id] = filePos; it.lastActivityAt = System.currentTimeMillis() }
-        retarget(hash)
-        return id
-    }
-
-    /** The reader moved to [filePos]; re-plans deadlines when it enters a new piece. */
-    fun readerAt(hash: String, readerId: Long, filePos: Long) {
-        val stream = streams[hash] ?: return
-        stream.lastActivityAt = System.currentTimeMillis()
-        val old = stream.readers.put(readerId, filePos)
-        if (old == null || stream.info.span.pieceOf(old) != stream.info.span.pieceOf(filePos)) retarget(hash)
-    }
-
-    fun closeReader(hash: String, readerId: Long) {
-        val stream = streams[hash] ?: return
-        stream.readers.remove(readerId) ?: return
-        stream.lastActivityAt = System.currentTimeMillis()
-        retarget(hash)
-    }
-
-    /** Re-sets piece deadlines: startup pieces (until fetched) plus a window ahead of every reader. */
-    private fun retarget(hash: String) {
-        val stream = streams[hash] ?: return
-        val h = find(hash) ?: return
-        synchronized(stream) {
-            val wanted = LinkedHashMap<Int, Int>()
-            fun addAll(list: List<PieceDeadline>) = list.forEach { (piece, ms) ->
-                if (!h.havePiece(piece)) wanted.merge(piece, ms, ::minOf)
+        val core = StreamReaderCore(
+            id = id,
+            kind = kind,
+            span = s.info.span,
+            gate = s.gate,
+            opener = { openFile(s) },
+            fileReady = { s.fileReady },
+            alive = { s.closedReason?.let { throw it } },
+            probe = socket?.let { sock -> socketProbe(sock) },
+            listener = readerListener(s),
+        )
+        core.position = position
+        s.readers[id] = core
+        s.lastActivityAt = System.currentTimeMillis()
+        s.lastClosedAt = 0
+        kick(s, immediate = true)
+        return StreamReader(core, s.info.file.size) {
+            core.close()
+            if (s.readers.remove(id) != null) {
+                s.lastActivityAt = System.currentTimeMillis()
+                s.lastClosedPos = core.position
+                s.lastClosedAt = EngineStats.now()
+                // Keep the closed reader's window briefly: ExoPlayer closes and reopens on every
+                // extractor seek, and the deadlines shouldn't flap.
+                engineExec.schedule({ kick(s, immediate = true) }, GHOST_MS, TimeUnit.MILLISECONDS)
             }
-            addAll(stream.planner.startup())
-            val windowBytes = StreamPlanner.windowBytes(null, stream.info.span.pieceLength)
-            stream.readers.values.forEach { addAll(stream.planner.window(it, windowBytes)) }
-            h.clearPieceDeadlines()
-            wanted.forEach { (piece, ms) -> h.setPieceDeadline(piece, ms) }
         }
     }
 
-    /** Suspends until [piece] is downloaded and verified. Returns false on timeout. */
-    suspend fun awaitPiece(hash: String, piece: Int, timeoutMs: Long): Boolean {
-        val h = find(hash) ?: return false
-        if (h.havePiece(piece)) return true
-        val waiters = pieceWaiters.getOrPut(hash) { ConcurrentHashMap() }
-        val waiter = waiters.getOrPut(piece) { CompletableDeferred() }
-        if (h.havePiece(piece)) {
-            waiter.complete(Unit)
-            waiters.remove(piece, waiter)
-            return true
+    private fun openFile(s: ActiveStream): java.io.RandomAccessFile {
+        repeat(2) { attempt ->
+            if (s.info.path.isFile) return java.io.RandomAccessFile(s.info.path, "r")
+            if (attempt == 0) Thread.sleep(1_000)
         }
-        return withTimeoutOrNull(timeoutMs) { waiter.await() } != null
+        throw StreamErrorException(StreamErrorKind.FILE_ERROR, "The video file isn't on disk")
     }
 
-    fun awaitPieceBlocking(hash: String, piece: Int, timeoutMs: Long): Boolean =
-        runBlocking { awaitPiece(hash, piece, timeoutMs) }
+    /** HTTP readers: notices within ~1 s that the external player hung up (seek, close). */
+    private fun socketProbe(sock: java.net.Socket): () -> Unit {
+        var last = 0L
+        return {
+            val now = EngineStats.now()
+            if (now - last >= 1_000) {
+                last = now
+                val old = runCatching { sock.soTimeout }.getOrDefault(0)
+                try {
+                    sock.soTimeout = 1
+                    if (sock.getInputStream().read() < 0) throw StreamGoneException("client left")
+                } catch (e: java.net.SocketTimeoutException) {
+                    // alive
+                } catch (e: StreamGoneException) {
+                    throw e
+                } catch (e: java.io.IOException) {
+                    throw StreamGoneException("client left")
+                } finally {
+                    runCatching { sock.soTimeout = old }
+                }
+            }
+        }
+    }
+
+    private fun readerListener(s: ActiveStream) = object : ReaderListener {
+        override fun onBlocked(piece: Int) = kick(s, immediate = true)
+
+        override fun onUnblocked(piece: Int, waitedMs: Long) {
+            if (waitedMs >= 200) {
+                EngineStats.of(s.info.infoHash)?.readerWait(waitedMs)
+                EngineStats.event(s.info.infoHash, "wait", mapOf("p" to piece, "ms" to waitedMs, "fileReady" to if (s.fileReady) 1 else 0))
+            }
+        }
+
+        override fun onPieceCrossed(position: Long) {
+            EngineStats.of(s.info.infoHash)?.let { st -> if (st.firstByteAt == null) { st.firstByte(EngineStats.now()); EngineStats.event(s.info.infoHash, "byte1", mapOf("pos" to position)) } }
+            kick(s, immediate = false)
+        }
+
+        override fun needFlush(piece: Int) {
+            if (s.flushPolls.add(piece)) engineExec.execute { pollFlush(s, piece, 0) }
+        }
+
+        override fun longBlock(piece: Int) {
+            engineExec.execute {
+                // Safety net: libtorrent has it but we never heard (a missed alert). Should not happen.
+                if (!s.gate.pieces.has(piece) && runCatching { s.handle.havePiece(piece) }.getOrDefault(false)) {
+                    s.gate.markVerified(piece)
+                    EngineStats.event(s.info.infoHash, "missedWake", mapOf("p" to piece))
+                }
+            }
+        }
+    }
+
+    /** mmap backend: a verified piece may still be writing; poll until it leaves the download queue. */
+    private fun pollFlush(s: ActiveStream, piece: Int, attempt: Int) {
+        val inQueue = runCatching { s.handle.getDownloadQueue().any { it.pieceIndex() == piece } }.getOrDefault(false)
+        if (!inQueue || attempt >= 24) {
+            s.gate.markFlushed(piece)
+            s.flushPolls.remove(piece)
+            return
+        }
+        val delayMs = when (attempt) { 0 -> 20L; 1 -> 50L; else -> 100L }
+        engineExec.schedule({ pollFlush(s, piece, attempt + 1) }, delayMs, TimeUnit.MILLISECONDS)
+    }
+
+    /** FILE_PRIO arrived (or 1.5 s passed): the stream's file priorities are in force, readers may go. */
+    private fun releaseFileBarrier(s: ActiveStream, timedOut: Boolean) {
+        if (s.fileReady) return
+        if (timedOut) {
+            val intended = s.info.file.index
+            val ok = runCatching { s.handle.filePriority(intended) != Priority.IGNORE }.getOrDefault(true)
+            if (!ok) { engineExec.schedule({ releaseFileBarrier(s, true) }, 500, TimeUnit.MILLISECONDS); return }
+        }
+        s.fileReady = true
+        s.gate.signalAll()
+        kick(s, immediate = true)
+    }
+
+    private fun kick(s: ActiveStream, immediate: Boolean) {
+        if (immediate) {
+            runCatching { engineExec.execute { replan(s) } }
+            return
+        }
+        if (s.pending.compareAndSet(false, true)) runCatching { engineExec.schedule({ replan(s) }, 250, TimeUnit.MILLISECONDS) }
+    }
+
+    /**
+     * Interim scheduler (docs/STREAMING_V2.md §12, phase 2): startup pieces plus a read-ahead window
+     * sized in seconds of video, applied incrementally. New deadlines are set before departed ones
+     * are reset, and the deadline list is never cleared while streaming, so libtorrent keeps its
+     * in-flight requests instead of cancelling and re-requesting them on every piece.
+     */
+    private fun replan(s: ActiveStream) {
+        s.pending.set(false)
+        if (s.closedReason != null || streams[s.info.infoHash] !== s) return
+        val gate = s.gate
+        val wanted = LinkedHashMap<Int, Int>()
+        fun add(list: List<PieceDeadline>) = list.forEach { (p, ms) -> if (!gate.pieces.has(p)) wanted.merge(p, ms, ::minOf) }
+        add(s.planner.startup())
+        val window = StreamPlanner.windowBytes(s.bytesPerSec, s.info.span.pieceLength)
+        val positions = s.readers.values.map { it.position }.toMutableList()
+        if (s.lastClosedAt > 0 && EngineStats.now() - s.lastClosedAt < GHOST_MS) positions += s.lastClosedPos
+        positions.forEach { add(s.planner.window(it, window)) }
+        s.readers.values.forEach { r -> r.blockedPiece.takeIf { it >= 0 && !gate.pieces.has(it) }?.let { wanted[it] = 0 } }
+
+        val h = s.handle
+        var sets = 0
+        for ((p, ms) in wanted) {
+            val old = s.applied[p]
+            if (old == null || (ms == 0 && old != 0) || kotlin.math.abs(old - ms) > 1_000) {
+                runCatching { h.setPieceDeadline(p, ms) }
+                s.applied[p] = ms
+                sets++
+            }
+        }
+        val gone = s.applied.keys.filter { it !in wanted }
+        for (p in gone) {
+            s.applied.remove(p)
+            // Had pieces leave libtorrent's list by themselves; others go back to normal priority
+            // (a reset leaves them at 1, below the rest of the file).
+            if (!gate.pieces.has(p)) runCatching { h.resetPieceDeadline(p); h.piecePriority(p, Priority.DEFAULT) }
+        }
+        if (sets > 0 || gone.isNotEmpty()) s.lastPlanAt = EngineStats.now()
+    }
+
+    /** Stream over: drop its deadlines and put its pieces back at normal priority (no leftover 1s). */
+    private fun clearPlan(s: ActiveStream) {
+        val h = s.handle
+        runCatching { h.clearPieceDeadlines() }
+        val gate = s.gate
+        s.applied.keys.filter { !gate.pieces.has(it) }.forEach { p -> runCatching { h.piecePriority(p, Priority.DEFAULT) } }
+        s.applied.clear()
+    }
+
+    /** One gate per torrent, created once metadata is known and seeded from libtorrent's bitfield. */
+    private fun ensureGate(key: String, h: TorrentHandle, numPieces: Int): PieceGate {
+        gates[key]?.takeIf { it.numPieces == numPieces && !it.isClosed }?.let { return it }
+        val gate = PieceGate(numPieces, needsFlush = disk == DiskBackend.MMAP)
+        gates[key] = gate
+        seed(gate, h)
+        preGate.remove(key)?.forEach { gate.markVerified(it) }
+        gate.signalAll()
+        return gate
+    }
+
+    private fun seed(gate: PieceGate, h: TorrentHandle) {
+        runCatching {
+            val bf = h.status(TorrentHandle.QUERY_PIECES).pieces()
+            val n = minOf(bf.size(), gate.numPieces)
+            for (p in 0 until n) if (bf.getBit(p)) gate.seedVerified(p)
+        }
+        gate.signalAll()
+    }
 
     /**
      * Waits for metadata. The deferred is registered before checking, re-checked every second with
@@ -707,6 +907,8 @@ class TorrentEngine(private val context: Context) {
             AlertType.TORRENT_ERROR.swig(),
             AlertType.FILE_ERROR.swig(),
             AlertType.PERFORMANCE.swig(),
+            AlertType.TORRENT_CHECKED.swig(),
+            AlertType.FILE_PRIO.swig(),
         )
 
         override fun alert(alert: Alert<*>) {
@@ -724,7 +926,9 @@ class TorrentEngine(private val context: Context) {
                 val a = alert as PieceFinishedAlert
                 val key = a.handle().key()
                 val piece = a.pieceIndex()
-                pieceWaiters[key]?.remove(piece)?.complete(Unit)
+                val gate = gates[key]
+                if (gate != null) gate.markVerified(piece)
+                else preGate.getOrPut(key) { java.util.concurrent.ConcurrentLinkedQueue() }.let { q -> if (q.size < 4096) q.add(piece) }
                 EngineStats.of(key)?.let { s -> if (s.firstPieceAt == null) { s.firstPiece(EngineStats.now()); EngineStats.event(key, "piece1", mapOf("p" to piece)) } }
             }
             AlertType.METADATA_RECEIVED -> {
@@ -748,6 +952,16 @@ class TorrentEngine(private val context: Context) {
             }
             AlertType.SAVE_RESUME_DATA_FAILED -> countDownFinal((alert as TorrentAlert<*>).handle().key())
             AlertType.TORRENT_FINISHED -> (alert as TorrentAlert<*>).handle().saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+            AlertType.TORRENT_CHECKED -> {
+                // Pieces loaded from resume data: make sure the gate knows every one.
+                val h = (alert as TorrentAlert<*>).handle()
+                val key = h.key()
+                gates[key]?.let { g -> engineExec.execute { seed(g, h) } }
+            }
+            AlertType.FILE_PRIO -> {
+                val key = (alert as TorrentAlert<*>).handle().key()
+                streams[key]?.let { st -> engineExec.execute { releaseFileBarrier(st, timedOut = false) } }
+            }
             AlertType.TORRENT_ERROR -> {
                 val a = alert as TorrentErrorAlert
                 errors[a.handle().key()] = a.error().message
@@ -927,15 +1141,30 @@ class TorrentEngine(private val context: Context) {
     private fun find(hash: String): TorrentHandle? =
         runCatching { handles.findTorrent(Sha1Hash.parseHex(hash)) }.getOrNull()?.takeIf { it.isValid }
 
-    private class ActiveStream(val info: StreamInfo, val planner: StreamPlanner) {
-        /** Each open HTTP connection from the player → its current file position. */
-        val readers = ConcurrentHashMap<Long, Long>()
+    private class ActiveStream(val info: StreamInfo, val handle: TorrentHandle, val planner: StreamPlanner, val gate: PieceGate) {
+        /** Open readers (in-app player, external players, bench). */
+        val readers = ConcurrentHashMap<Long, StreamReaderCore>()
         @Volatile var lastActivityAt: Long = System.currentTimeMillis()
+        /** Set when the stream stops or is superseded: every reader fails with it. */
+        @Volatile var closedReason: java.io.IOException? = null
+        /** False while new file priorities are being applied (pieces may still be in the part file). */
+        @Volatile var fileReady = true
+        /** Media bytes per second (from the player's duration) for read-ahead sizing. */
+        @Volatile var bytesPerSec: Long? = null
+        @Volatile var lastClosedPos = 0L
+        @Volatile var lastClosedAt = 0L
+        @Volatile var lastPlanAt = 0L
+        val pending = java.util.concurrent.atomic.AtomicBoolean(false)
+        val flushPolls: MutableSet<Int> = ConcurrentHashMap.newKeySet()
+        /** Deadlines we've set (piece → ms); engine thread only. */
+        val applied = HashMap<Int, Int>()
     }
 
     companion object {
         private const val TAG = "ReelEngine"
         private const val METADATA_TIMEOUT_MS = 90_000L
+        /** A closed reader's window is kept this long (ExoPlayer reopens after extractor seeks). */
+        private const val GHOST_MS = 1_500L
         /** Only a marker now: the real budget comes from [CachePolicy] for this device. */
         const val DEFAULT_CACHE_BUDGET = -1L
 

@@ -93,6 +93,29 @@ data class StreamInfo(
     val mimeType: String,
     /** Where libtorrent writes this file on disk. */
     val path: java.io.File,
+    /** Unique per prepared stream; a superseded one's readers fail fast. */
+    val token: Long = 0L,
+    /** The in-app player's URI: reel-torrent://<key>/<file>/<token>/<name>. */
+    val uri: String = "",
 )
+
+/**
+ * One open reader on a prepared stream. [read] blocks until the data is on disk; it fails only
+ * when interrupted (seek), when the stream stops, or when the client leaves. Close it on the thread
+ * that read from it.
+ */
+class StreamReader internal constructor(
+    val core: com.kirtanya.reel.core.stream.StreamReaderCore,
+    val size: Long,
+    private val onClose: () -> Unit,
+) : java.io.Closeable {
+    @Volatile private var closed = false
+    fun read(pos: Long, buf: ByteArray, off: Int, len: Int): Int = core.read(pos, buf, off, len)
+    override fun close() {
+        if (closed) return
+        closed = true
+        onClose()
+    }
+}
 
 class EngineException(message: String) : Exception(message)
