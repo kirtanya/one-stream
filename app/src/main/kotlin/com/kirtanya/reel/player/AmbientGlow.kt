@@ -19,10 +19,10 @@ import com.kirtanya.reel.core.playback.Ambient
 
 /**
  * Cinema mode: light seems to spill out of the picture into the black bars, like YouTube's ambient
- * mode. A tiny copy of the frame (PixelCopy, 48×27) is blurred ([Ambient.glow]) and drawn as a
- * slightly larger picture behind the video, so each bar continues the edge it touches; then every
- * bar fades from [Ambient.Level.edge] brightness at the video's edge to black at the screen's edge
- * ([Ambient.falloff]). New copies crossfade in. Runs only while playing with bars on screen; a video
+ * mode. A tiny copy of the frame (PixelCopy, 64×36) is blurred ([Ambient.glow]); each bar shows the
+ * blurred strip of the picture next to it, mirrored outward so it starts in the boundary's own colours
+ * ([drawBars]); then every bar fades from [Ambient.Level.edge] brightness at the video's edge to black
+ * at the screen's edge ([Ambient.falloff]). New copies crossfade in. Runs only while playing with bars on screen; a video
  * that fills the screen costs nothing. DRM pictures can't be copied: the bars stay black.
  */
 internal class AmbientGlow(private val playerView: PlayerView) : View(playerView.context) {
@@ -37,6 +37,7 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
     private val shade = Paint()
     private val video = Rect()
     private val dst = RectF()
+    private val srcRect = Rect()
 
     /** How strong the glow is (Off = plain black bars). */
     var level = Ambient.Level.SUBTLE
@@ -74,8 +75,23 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
         main.post(tick)
     }
 
+    /** Renders only: a fixed frame and video position, no player. */
+    private var previewVideo: Rect? = null
+    internal fun preview(frame: Bitmap, videoAt: Rect) {
+        previewVideo = Rect(videoAt)
+        val px = IntArray(frame.width * frame.height)
+        frame.getPixels(px, 0, frame.width, 0, 0, frame.width, frame.height)
+        val glow = Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
+        glow.setPixels(Ambient.glow(px, frame.width, frame.height, brightness = 1f), 0, frame.width, 0, 0, frame.width, frame.height)
+        current = glow
+        previous = null
+        mix = 1f
+        invalidate()
+    }
+
     /** Where the video is, in this view's coordinates; false when there are no bars to fill. */
     private fun videoRect(): Boolean {
+        previewVideo?.let { video.set(it); return true }
         val sv = playerView.videoSurfaceView as? SurfaceView ?: return false
         if (!Ambient.hasBars(sv.width, sv.height, width, height)) return false
         val a = IntArray(2).also { sv.getLocationInWindow(it) }
@@ -126,31 +142,66 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
     override fun onDraw(canvas: Canvas) {
         val cur = current ?: return
         if (level == Ambient.Level.OFF || !videoRect()) return
-        // The picture, a little larger than the video: grown by the widest bar on every side, so the
-        // edge rows / columns land in the bars right next to where they are in the video.
-        val grow = maxOf(video.left, width - video.right, video.top, height - video.bottom).toFloat()
-        dst.set(video.left - grow, video.top - grow, video.right + grow, video.bottom + grow)
-        previous?.let { prev ->
-            if (mix < 1f) { bitmapPaint.alpha = 255; canvas.drawBitmap(prev, null, dst, bitmapPaint) }
-        }
-        bitmapPaint.alpha = if (previous == null || mix >= 1f) 255 else (255 * mix).toInt()
-        canvas.drawBitmap(cur, null, dst, bitmapPaint)
+        val prev = previous?.takeIf { mix < 1f }
+        if (prev != null) drawBars(canvas, prev, 255)
+        drawBars(canvas, cur, if (prev == null) 255 else (255 * mix).toInt())
         // Each bar: black over the glow, from (1 − edge) at the video to fully black at the screen edge.
         val stops = Ambient.falloff(level)
-        fun bar(left: Int, top: Int, right: Int, bottom: Int, x0: Float, y0: Float, x1: Float, y1: Float) {
+        fun shadeBar(left: Int, top: Int, right: Int, bottom: Int, x0: Float, y0: Float, x1: Float, y1: Float) {
             if (right <= left || bottom <= top) return
             shade.shader = LinearGradient(x0, y0, x1, y1, stops.colors, stops.positions, Shader.TileMode.CLAMP)
             canvas.drawRect(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat(), shade)
         }
-        bar(0, 0, width, video.top, 0f, video.top.toFloat(), 0f, 0f) // above
-        bar(0, video.bottom, width, height, 0f, video.bottom.toFloat(), 0f, height.toFloat()) // below
-        bar(0, video.top, video.left, video.bottom, video.left.toFloat(), 0f, 0f, 0f) // left
-        bar(video.right, video.top, width, video.bottom, video.right.toFloat(), 0f, width.toFloat(), 0f) // right
+        shadeBar(0, 0, width, video.top, 0f, video.top.toFloat(), 0f, 0f) // above
+        shadeBar(0, video.bottom, width, height, 0f, video.bottom.toFloat(), 0f, height.toFloat()) // below
+        shadeBar(0, video.top, video.left, video.bottom, video.left.toFloat(), 0f, 0f, 0f) // left
+        shadeBar(video.right, video.top, width, video.bottom, video.right.toFloat(), 0f, width.toFloat(), 0f) // right
+    }
+
+    /**
+     * Fills each bar from the strip of the picture next to it ([Ambient.EDGE_SHARE] of the frame:
+     * bottom rows for the bar below, top rows above, side columns at the sides), mirrored outward so
+     * the row / column touching the video is the video's own edge — the glow starts in the colours
+     * right at the boundary and carries them out.
+     */
+    private fun drawBars(canvas: Canvas, frame: Bitmap, alpha: Int) {
+        bitmapPaint.alpha = alpha
+        val fw = frame.width
+        val fh = frame.height
+        val rows = (fh * Ambient.EDGE_SHARE).toInt().coerceAtLeast(1)
+        val cols = (fw * Ambient.EDGE_SHARE).toInt().coerceAtLeast(1)
+        fun mirrored(src: Rect, l: Float, t: Float, r: Float, b: Float, sx: Float, sy: Float, px: Float, py: Float) {
+            canvas.save()
+            canvas.scale(sx, sy, px, py)
+            dst.set(l, t, r, b)
+            canvas.drawBitmap(frame, src, dst, bitmapPaint)
+            canvas.restore()
+        }
+        val top = video.top.toFloat()
+        val bottom = video.bottom.toFloat()
+        val left = video.left.toFloat()
+        val right = video.right.toFloat()
+        if (video.top > 0) { // above: rows 0…25 %, row 0 against the video
+            srcRect.set(0, 0, fw, rows)
+            mirrored(srcRect, left, top, right, top + video.top, 1f, -1f, 0f, top)
+        }
+        if (video.bottom < height) { // below: rows 75…100 %, the last row against the video
+            srcRect.set(0, fh - rows, fw, fh)
+            mirrored(srcRect, left, bottom - (height - video.bottom), right, bottom, 1f, -1f, 0f, bottom)
+        }
+        if (video.left > 0) { // left: columns 0…25 %
+            srcRect.set(0, 0, cols, fh)
+            mirrored(srcRect, left, top, left + video.left, bottom, -1f, 1f, left, 0f)
+        }
+        if (video.right < width) { // right: columns 75…100 %
+            srcRect.set(fw - cols, 0, fw, fh)
+            mirrored(srcRect, right - (width - video.right), top, right, bottom, -1f, 1f, right, 0f)
+        }
     }
 
     private companion object {
-        const val W = 48
-        const val H = 27
+        const val W = 64
+        const val H = 36
         const val INTERVAL_MS = 700L
         const val FADE_MS = 600L
     }

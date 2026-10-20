@@ -37,7 +37,8 @@ class AmbientTest {
         val alpha = s.colors.map { it ushr 24 }
         assertEquals(0f, s.positions.first()); assertEquals(1f, s.positions.last())
         assertEquals(255, alpha.last(), "fully black at the screen edge")
-        assertTrue(alpha.first() in 175..190, "subtle: ~28 % glow at the video edge, got ${alpha.first()}")
+        assertTrue(alpha.first() in 135..145, "subtle: ~45 % glow at the video edge, got ${alpha.first()}")
+        assertTrue(alpha[s.positions.size / 2] < 235, "still glowing halfway out (soft source), got ${alpha[s.positions.size / 2]}")
         assertTrue(alpha.zipWithNext().all { (a, b) -> b >= a }, "only ever darker going out: $alpha")
         assertTrue(Ambient.falloff(Ambient.Level.STRONG).colors.first() ushr 24 < alpha.first(), "strong glows brighter")
         assertTrue(Ambient.falloff(Ambient.Level.OFF).colors.all { it ushr 24 == 255 }, "off: black")

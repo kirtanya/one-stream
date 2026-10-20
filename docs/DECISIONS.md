@@ -23,7 +23,13 @@ picture). A video that fills the screen, a paused one, or DRM (copy refused) cos
 Revised the same night (0.8.1) after the user found 0.8.0 "too much colour": like YouTube, light now
 spills out of the picture — the blurred copy is drawn a little larger than the video (grown by the
 widest bar) and each bar fades on an ease-out curve from a faint glow at the video edge to black at the
-screen edge (`Ambient.falloff`). Strength in Settings panel → Cinema mode: Off / Subtle (28 % at the
+screen edge (`Ambient.falloff`). 0.8.3: the user saw the glow not matching the video's boundary (a
+whole-frame enlargement put mid-picture colours next to the edge). Now each bar shows the blurred 25 %
+strip of the picture next to it (`Ambient.EDGE_SHARE`), mirrored outward, so the glow starts in the
+boundary's own colours (render test `AmbientGlowRender`). Checked on real frames (the user asked; TV
+screenshots, run locally via AMBIENT_FRAME, never committed): the square ease-out died within a few
+pixels on mostly dark frames, so the fade is now a Gaussian (σ 0.42 of the bar) reaching 0 at the screen
+edge, and the levels are Subtle 45 % / Medium 65 % / Strong 85 % at the video edge. Strength in Settings panel → Cinema mode: Off / Subtle (28 % at the
 edge, default) / Medium (45 %) / Strong (65 %) (PlaybackPrefs.cinemaGlow). Same day, at the user's request, the
 TV strip became: hairline seek bar on the bottom edge, times above its ends, title + ends-at left, all
 controls right at one size, all 40 dp from the edges (0.7.11–0.7.12).
