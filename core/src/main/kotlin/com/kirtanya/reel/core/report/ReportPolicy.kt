@@ -23,6 +23,9 @@ data class ReportEntry(
 object ReportPolicy {
     const val MAX_COUNT = 40
     const val MAX_BYTES = 80L * 1024 * 1024
+    /** The TV has ~1.7 GB free and screenshots there are full-HD: keep less. */
+    const val TV_MAX_COUNT = 20
+    const val TV_MAX_BYTES = 20L * 1024 * 1024
     const val AUTO_WINDOW_MS = 10 * 60_000L
     const val CRASH = "crash"
 

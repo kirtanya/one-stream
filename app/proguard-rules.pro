@@ -11,7 +11,5 @@
 -keep class com.dokar.quickjs.** { *; }
 -dontwarn com.dokar.quickjs.**
 
-# Personal app, read only by Claude: keep real class / method names so crash, freeze and ANR
-# reports (docs/MACHINE_FIRST_PLAN.md step 1) are readable without a mapping file. R8 still
-# shrinks and optimizes.
--dontobfuscate
+# Short names keep the app small; tool/build_release.sh keeps each version's mapping in mappings/
+# and tool/pull_reports.sh turns report stacks back into real names (docs/DECISIONS.md).

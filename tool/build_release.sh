@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
 
 # The user's design rules first (CLAUDE.md "Design rules"): a new violation stops the release.
-if ! tool/check_design.sh; then
+if ! tool/check_design.sh --if-changed; then
     echo "Release stopped: design rules failed (see above)." >&2
     exit 1
 fi
@@ -19,3 +19,6 @@ mkdir -p "$out"
 cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "$out/OneStream-$version-phone.apk"
 cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "$out/OneStream-$version-tv.apk"
 ls -lh "$out"/OneStream-"$version"-*.apk
+# The decoder for this version's short names: report stacks are translated with it on the Mac.
+mkdir -p mappings
+cp app/build/outputs/mapping/release/mapping.txt "mappings/OneStream-$version.txt"

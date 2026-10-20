@@ -12,12 +12,12 @@ turns that into a working loop. Each step names the Claude **effort** to switch 
 | 2 | **Session rules**: `CLAUDE.md` in the repo (specs first, why-comments, every fix gets a test, telemetry on slow paths, delete unused code, legal sources only, no P2P off the home network) + a decision log `docs/DECISIONS.md` | **Medium** | Small; makes every future session behave the same way |
 | 3 | **Your design rules as automatic checks**: 48 dp touch areas, contrast, no clipping at 360 dp, tokens only (no hard-coded colours), TV focus always visible; run on every screen render, fail the build when broken | **High** | Design quality is enforced forever without you checking |
 | 4 | **Automated device round**: one script drives TV + phone (only when idle): open, play a legal sample, seek, pause, PiP, back; collects stats + screenshots; compares with the last release | **High** | Releases are verified like today's test, but repeatable |
-| 5 | **Auto-delivery with rollback**: verified build installs on the TV when idle and on the phone when charging at home; rolls back if crashes / stalls rise | **High** | Removes manual installs; safe because of 1 + 4 |
+| 5 | ~~**Auto-delivery with rollback**~~ *Postponed: saves a minute per release, adds risk.*: verified build installs on the TV when idle and on the phone when charging at home; rolls back if crashes / stalls rise | **High** | Removes manual installs; safe because of 1 + 4 |
 | 6 | **Built for two devices**: measure and tune layouts, buffers, image sizes per device; remove code that only exists for other devices / users | **High** | Speed and simplicity, guided by 1 + 4 numbers |
 | 7 | **Self-tuning streaming**: the engine tries small, bounded variations (buffers, read-ahead, peer limits) and keeps what performs better on your network; source ranking learns which sources start fast for you | **Extra high** | Biggest felt win, but it changes engine behaviour on its own, so it needs the safety net of 1, 4, 5 |
 | 8 | **Learns your habits**: auto subtitle / quality / source preferences; predicts tonight's title and prepares it | **High** | Comfort features once the base is solid |
-| 9 | **Lifecycle as a checked state machine** (player first, engine later): spec page → generated code → automatic path checks | **Extra high** | The machine-first coding experiment, on the part with the most past bugs |
-| 10 | **Review** of 1–9 with a multi-agent workflow, then fixes | **Ultracode**, fixes **High** | One deep check before calling it done |
+| 9 | ~~**Lifecycle as a checked state machine**~~ *Dropped: the machine-style experiment has a negligible payoff (user decision 2026-10-20).* (player first, engine later): spec page → generated code → automatic path checks | **Extra high** | The machine-first coding experiment, on the part with the most past bugs |
+| 10 | **Review** of the steps built with a multi-agent workflow, then fixes | **Ultracode**, fixes **High** | One deep check before calling it done |
 
 ## Step 1 in use: problem reports
 

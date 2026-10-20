@@ -72,6 +72,24 @@ import org.robolectric.annotation.GraphicsMode
 open class ScreenRenders(protected val variant: Variant) {
     @get:Rule val compose = createComposeRule()
 
+    /**
+     * Screens that read the clock (the phone home greeting) must render the same at any hour, or the
+     * design-rule baselines flip ("Good evening" vs "Late-night show?"). Shift the default zone so it is
+     * always 19:xx locally while the test runs.
+     */
+    @org.junit.Before fun pinEvening() {
+        val utcHour = java.time.LocalTime.now(java.time.ZoneOffset.UTC).hour
+        val offset = ((19 - utcHour + 36) % 24) - 12
+        savedZone = java.util.TimeZone.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(java.time.ZoneOffset.ofHours(offset)))
+    }
+
+    @org.junit.After fun restoreZone() {
+        savedZone?.let { java.util.TimeZone.setDefault(it) }
+    }
+
+    private var savedZone: java.util.TimeZone? = null
+
     data class Variant(val dark: Boolean, val fontScale: Float) {
         override fun toString() = (if (dark) "dark" else "light") + "-" + (fontScale * 100).toInt()
     }

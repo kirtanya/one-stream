@@ -419,12 +419,13 @@ class ReportCenter(private val app: ReelApp) {
         }
     }
 
-    /** Old reports go (newest 40, 80 MB at most), and half-written ones from a process that died saving. */
+    /** Old reports go (newest 40 / 80 MB; on the TV 20 / 20 MB), and half-written ones from a process that died saving. */
     private fun cleanup() {
         val root = dir ?: return
         val now = System.currentTimeMillis()
         root.listFiles()?.filter { it.isDirectory && it.name.endsWith(".tmp") && now - it.lastModified() > 10 * 60_000L }?.forEach { it.deleteRecursively() }
-        ReportPolicy.toDelete(entries()).forEach {
+        val limits = if (app.isTv) ReportPolicy.TV_MAX_COUNT to ReportPolicy.TV_MAX_BYTES else ReportPolicy.MAX_COUNT to ReportPolicy.MAX_BYTES
+        ReportPolicy.toDelete(entries(), limits.first, limits.second).forEach {
             File(root, it.name).deleteRecursively()
             Log.i(TAG, "deleted old report ${it.name}")
         }

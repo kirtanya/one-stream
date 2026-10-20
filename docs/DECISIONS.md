@@ -5,6 +5,13 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-20 · Trimmed the machine-first plan; short names again**
+Decision: no "machine-only" code style (the user's call: compilers strip names, so it gives no speed and makes
+Claude worse). Plan step 9 (state-machine experiment) dropped, step 5 (auto-install) postponed. Release
+builds use short names again; mappings are kept per version and report stacks are decoded on the Mac.
+Evidence: `-dontobfuscate` grew the dex 5.77 → 6.41 MB (+0.64 MB) for readability alone; the report
+feature itself is ~0.05 MB. TV keeps at most 20 reports / 20 MB.
+
 **2026-10-20 · Design rules as automatic checks (machine-first step 3)**
 Decision: the user's five design rules (48 dp touch areas on the phone, no clipping at 360 dp, text
 contrast 4.5:1 / 3:1 from 18 sp, tokens only, TV focus always visible) run on every screen render
@@ -24,7 +31,7 @@ Decision: `CLAUDE.md` holds the rules every session follows; this file records d
 Why: nobody reads the code, so sessions must behave the same way and know why things are as they are.
 Evidence: `docs/MACHINE_FIRST_PLAN.md` step 2.
 
-**2026-10-20 · Release builds keep real names (`-dontobfuscate`)**
+**2026-10-20 · Release builds keep real names (`-dontobfuscate`)** — superseded the same day (see above)
 Decision: R8 still shrinks and optimizes, but class / method names stay readable.
 Why: crash, freeze and ANR stacks in problem reports must be readable without a mapping file.
 Evidence: `app/proguard-rules.pro`; ef9df95 (0.7.8).

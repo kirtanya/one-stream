@@ -22,7 +22,10 @@
 - **Telemetry on slow paths:** emit `ReelStats` events through `engine/EngineStats.kt`
   (one key=value line per event, aggregated by `core/stream/StreamStats`) for anything that can be slow.
 - **Delete unused code freely.** Build for exactly these two devices; no code for other devices / users.
-- **Readable release stacks:** `-dontobfuscate` in `app/proguard-rules.pro` is intentional; keep it.
+- **Readable report stacks without a bigger app:** release builds use short names; `tool/build_release.sh`
+  saves each version's decoder in `mappings/` (gitignored) and `tool/pull_reports.sh` writes `stack.decoded.txt` /
+  `logs.decoded.txt`. Read the decoded files. Don't bring back `-dontobfuscate` (+0.6 MB for nothing).
+- **No machine-only code style:** code stays normal, readable Kotlin (the user decided; no speed gain, worse for Claude).
 - Record non-trivial decisions in `docs/DECISIONS.md` (newest first: date, decision, why, evidence).
 
 ## Hard rules

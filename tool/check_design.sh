@@ -11,6 +11,18 @@ export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
 prune=false
 [[ "${1:-}" == "--prune" ]] && prune=true
 
+# --if-changed: skip when nothing the rules look at changed since the last clean pass (it takes minutes).
+stamp=app/build/design-rules.pass
+fingerprint() {
+    find app/src/main/kotlin/com/kirtanya/reel/ui app/src/main/kotlin/com/kirtanya/reel/player \
+        app/src/main/kotlin/com/kirtanya/reel/MainActivity.kt app/src/main/res app/src/test core/src/main/kotlin/com/kirtanya/reel/core/design \
+        -type f -print0 2>/dev/null | sort -z | xargs -0 shasum | shasum | cut -d' ' -f1
+}
+if [[ "${1:-}" == "--if-changed" ]] && [[ -f "$stamp" ]] && [[ "$(cat "$stamp")" == "$(fingerprint)" ]]; then
+    echo "Design rules: nothing they check changed since the last pass, skipped."
+    exit 0
+fi
+
 out=app/build/design-rules
 base=app/src/test/resources/design-baseline
 log=app/build/design-rules.log
@@ -84,4 +96,5 @@ if [[ $gradle -ne 0 || $missing -ne 0 ]]; then
     tail -30 "$log"
     exit 2
 fi
+fingerprint >"$stamp"
 exit 0

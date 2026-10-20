@@ -1113,6 +1113,13 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         minWidth = 0
         minimumWidth = 0
         setPadding(dp(12), dp(4), dp(12), dp(4))
+        if (!isTelevision()) {
+            // Phone: a 48 dp touch area around the same 30 dp pill (transparent bands above and below).
+            background = android.graphics.drawable.InsetDrawable(background, 0, dp(9), 0, dp(9))
+            minHeight = dp(48)
+            minimumHeight = dp(48)
+            setPadding(dp(12), dp(13), dp(12), dp(13))
+        }
     }
 
     private fun buildErrorPanel(root: FrameLayout) {
