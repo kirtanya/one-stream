@@ -4,23 +4,25 @@ package com.kirtanya.reel.core.stream
 data class PieceDeadline(val piece: Int, val deadlineMs: Int)
 
 /**
- * Decides which pieces to ask for, and in what order, while a file is being streamed.
+ * Interim planner (replaced by the zone scheduler in phase 3 of docs/STREAMING_V2.md).
  *
  * - [startup]: the first bytes (container header) and the last bytes (MP4 `moov` / MKV cues
  *   often live at the end) so the player can start and seek.
- * - [window]: a read-ahead window starting at the player's current position. Called again
- *   on every seek or as playback moves forward.
+ * - [window]: a read-ahead window starting at the player's current position.
+ *
+ * Ranges are computed from bytes, so a file that starts or ends part-way through a piece still
+ * gets the head / tail bytes it needs (the old piece-count maths could cover only a few KB).
  */
 class StreamPlanner(
     private val span: FileSpan,
-    private val headBytes: Long = 8L * MB,
-    private val tailBytes: Long = 4L * MB,
+    private val headBytes: Long = 8L * MiB,
+    private val tailBytes: Long = 4L * MiB,
     private val stepMs: Int = 150,
 ) {
     fun startup(): List<PieceDeadline> {
-        val head = span.firstPiece until (span.firstPiece + span.piecesForBytes(headBytes)).coerceAtMost(span.lastPiece + 1)
-        val tailStart = (span.lastPiece - span.piecesForBytes(tailBytes) + 1).coerceAtLeast(span.firstPiece)
-        val tail = tailStart..span.lastPiece
+        if (span.size == 0L) return emptyList()
+        val head = span.piecesForBytes(0, minOf(span.size, headBytes))
+        val tail = span.piecesForBytes(maxOf(0, span.size - tailBytes), span.size)
         val ordered = LinkedHashSet<Int>()
         // Interleave: first head piece, then the tail, then the rest of the head.
         head.firstOrNull()?.let(ordered::add)
@@ -29,27 +31,23 @@ class StreamPlanner(
         return ordered.mapIndexed { i, piece -> PieceDeadline(piece, i * stepMs) }
     }
 
-    /**
-     * Read-ahead window from [filePos]. [windowBytes] is how much to keep ahead of the
-     * playhead (roughly 30–60 s of video).
-     */
+    /** Read-ahead window: every piece holding a byte of [filePos, filePos + windowBytes). */
     fun window(filePos: Long, windowBytes: Long): List<PieceDeadline> {
-        val from = span.pieceOf(filePos)
-        val to = (from + span.piecesForBytes(windowBytes) - 1).coerceAtMost(span.lastPiece)
-        return (from..to).mapIndexed { i, piece -> PieceDeadline(piece, i * stepMs) }
+        if (span.size == 0L) return emptyList()
+        val from = filePos.coerceIn(0, span.size - 1)
+        val pieces = span.piecesForBytes(from, from + windowBytes.coerceAtLeast(1))
+        return pieces.mapIndexed { i, piece -> PieceDeadline(piece, i * stepMs) }
     }
 
     companion object {
-        const val MB = 1024L * 1024L
-
         /**
-         * Read-ahead size from the file's bitrate: about [seconds] of video, kept between
-         * 16 MB and 96 MB. Falls back to 32 MB when the duration is unknown.
+         * Read-ahead size from the media rate: about [seconds] of video, at least 4 pieces and 32 MiB,
+         * capped at [capBytes]. Falls back to 32 MiB when the rate is unknown.
          */
-        fun windowBytes(fileSize: Long, durationSec: Long?, seconds: Int = 45): Long {
-            if (durationSec == null || durationSec <= 0) return 32 * MB
-            val bytesPerSec = fileSize / durationSec
-            return (bytesPerSec * seconds).coerceIn(16 * MB, 96 * MB)
+        fun windowBytes(bytesPerSec: Long?, pieceLength: Int, seconds: Int = 60, capBytes: Long = 512 * MiB): Long {
+            val floor = maxOf(4L * pieceLength, 32 * MiB)
+            if (bytesPerSec == null || bytesPerSec <= 0) return floor.coerceAtMost(capBytes)
+            return (bytesPerSec * seconds).coerceIn(floor.coerceAtMost(capBytes), capBytes)
         }
     }
 }

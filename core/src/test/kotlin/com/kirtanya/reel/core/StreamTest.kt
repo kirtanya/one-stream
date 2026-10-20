@@ -3,7 +3,8 @@ package com.kirtanya.reel.core
 import com.kirtanya.reel.core.stream.ByteRange
 import com.kirtanya.reel.core.stream.FileSpan
 import com.kirtanya.reel.core.stream.StreamPlanner
-import com.kirtanya.reel.core.stream.StreamPlanner.Companion.MB
+import com.kirtanya.reel.core.stream.MB
+import com.kirtanya.reel.core.stream.MiB
 import com.kirtanya.reel.core.stream.TorrentFileEntry
 import com.kirtanya.reel.core.stream.mimeTypeFor
 import com.kirtanya.reel.core.stream.pickStreamFile
@@ -76,13 +77,38 @@ class StreamPlannerTest {
         assertEquals(listOf(0), small.startup().map { it.piece })
     }
 
-    @Test fun windowBytesFromBitrate() {
-        // 4 GB over 2 h ≈ 0.57 MB/s → 45 s ≈ 25 MB.
-        val bytes = StreamPlanner.windowBytes(4L * 1024 * MB, 7200)
-        assertTrue(bytes in 24 * MB..27 * MB)
-        assertEquals(32 * MB, StreamPlanner.windowBytes(4L * 1024 * MB, null))
-        assertEquals(16 * MB, StreamPlanner.windowBytes(100 * MB, 7200))
-        assertEquals(96 * MB, StreamPlanner.windowBytes(80L * 1024 * MB, 3600))
+    @Test fun windowBytesFromRate() {
+        // 0.57 MiB/s × 60 s ≈ 34 MiB (above the 32 MiB floor).
+        val bytes = StreamPlanner.windowBytes(600_000, pieceLength = 1_048_576)
+        assertTrue(bytes in 34 * MB..35 * MB)
+        assertEquals(32 * MB, StreamPlanner.windowBytes(null, pieceLength = 1_048_576))
+        // Low bitrate: the floor, at least 4 pieces.
+        assertEquals(64 * MB, StreamPlanner.windowBytes(100_000, pieceLength = 16 * MiB.toInt()))
+        // 4K remux at 10 MiB/s: 60 s, capped at 512 MiB.
+        assertEquals(512 * MB, StreamPlanner.windowBytes(10 * MiB, pieceLength = 16 * MiB.toInt()))
+    }
+
+    @Test fun unalignedTailCoversTheLastBytes() {
+        // A file that ends 100 KB into its last 4 MiB piece: the tail must reach back into the
+        // previous piece to cover the last 4 MiB.
+        val size = 250L * 4 * MB + 100_000
+        val p = StreamPlanner(FileSpan(0, size, 4 * MiB.toInt(), 251), headBytes = 8 * MB, tailBytes = 4 * MB)
+        assertEquals(listOf(0, 249, 250, 1), p.startup().map { it.piece })
+    }
+
+    @Test fun unalignedHeadCoversTheFirstBytes() {
+        // A second file starting 15.9 MiB into a 16 MiB piece: its first 8 MiB span two pieces.
+        val pl = 16 * MiB.toInt()
+        val span = FileSpan(offset = 15 * MB + 900 * 1024, size = 1000 * MB, pieceLength = pl, numPieces = 70)
+        val p = StreamPlanner(span, headBytes = 8 * MB, tailBytes = 4 * MB)
+        assertEquals(0, p.startup().first().piece)
+        assertTrue(1 in p.startup().map { it.piece })
+    }
+
+    @Test fun emptyFilePlansNothing() {
+        val p = StreamPlanner(FileSpan(0, 0, 1_048_576, 1))
+        assertTrue(p.startup().isEmpty())
+        assertTrue(p.window(0, 10 * MB).isEmpty())
     }
 }
 

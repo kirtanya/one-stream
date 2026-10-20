@@ -90,6 +90,8 @@ class PlayerActivity : ComponentActivity() {
 
     private var player: ExoPlayer? = null
     private var hash: String? = null
+    /** When the user asked to play (ReelStats measures time to first frame from here). */
+    private val tapMs = android.os.SystemClock.elapsedRealtime()
     /** The stream this player prepared; only this one is stopped when we leave. */
     private var preparedStream: com.kirtanya.reel.engine.StreamInfo? = null
     private var streamUrl: String? = null
@@ -183,7 +185,7 @@ class PlayerActivity : ComponentActivity() {
             hash = it
             startStats(it)
         }
-        val info = engine.startStream(magnet, source.fileIdx, source.filename)
+        val info = engine.startStream(magnet, source.fileIdx, source.filename, tapMs)
         hash = info.infoHash
         preparedStream = info
         return app.streamServer.urlFor(info)
@@ -240,14 +242,37 @@ class PlayerActivity : ComponentActivity() {
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
             when (state) {
-                Player.STATE_READY -> status.visibility = View.GONE
-                Player.STATE_BUFFERING -> if (hash != null) status.visibility = View.VISIBLE
+                Player.STATE_READY -> {
+                    status.visibility = View.GONE
+                    stats { s ->
+                        s.ready(now())
+                        s.bufferingEnd(now())
+                        s.readyAfterSeek(now())?.let { ms -> logStat("seek", mapOf("ms" to ms)) }
+                    }
+                }
+                Player.STATE_BUFFERING -> {
+                    if (hash != null) status.visibility = View.VISIBLE
+                    stats { it.bufferingStart(now()) }
+                }
                 Player.STATE_ENDED -> {
                     saveProgress(ended = true)
                     if (nextReady?.second != null && !nextCancelled && prefs.autoplayNext) playNext()
                     else if (nextCard.visibility == View.VISIBLE) nextPlay.requestFocus()
                 }
             }
+        }
+
+        override fun onRenderedFirstFrame() {
+            stats { s ->
+                if (s.firstFrameAt == null) {
+                    s.firstFrame(now())
+                    logStat("ttff", emptyMap())
+                }
+            }
+        }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) stats { it.seek(now()) }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -263,6 +288,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            if (error.errorCode in 2000..2999) stats { it.fatalSlowError() }
             showError("This device can't play this file (${error.errorCodeName}).")
         }
     }
@@ -621,6 +647,15 @@ class PlayerActivity : ComponentActivity() {
     private val accent get() = Tokens.Night.accent.toArgb()
     private val glassColor get() = Tokens.Night.glass.toArgb()
     private val hairline get() = Tokens.Night.hairline.toArgb()
+
+    // ReelStats (docs/STREAMING_V2.md §11): the engine's per-stream counters, fed from player events.
+    private fun now() = android.os.SystemClock.elapsedRealtime()
+    private inline fun stats(block: (com.kirtanya.reel.core.stream.StreamStats) -> Unit) {
+        hash?.let { com.kirtanya.reel.engine.EngineStats.of(it) }?.let(block)
+    }
+    private fun logStat(event: String, fields: Map<String, Any?>) {
+        hash?.let { com.kirtanya.reel.engine.EngineStats.event(it, event, fields) }
+    }
 
     private fun buildLayout(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
