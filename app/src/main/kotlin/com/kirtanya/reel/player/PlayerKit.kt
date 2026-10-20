@@ -313,8 +313,18 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     }
 }
 
-/** A settings-panel row that steps through [values] (index [current]) on each OK / tap. */
-internal class PanelToggle(val icon: Int, val label: String, val values: List<String>, val current: () -> Int, val set: (Int) -> Unit)
+/**
+ * A settings-panel row over [values] (index [current]): each OK / tap steps to the next, or with
+ * [asList] it opens the values as a list to pick from (for more than a few).
+ */
+internal class PanelToggle(
+    val icon: Int,
+    val label: String,
+    val values: List<String>,
+    val current: () -> Int,
+    val asList: Boolean = false,
+    val set: (Int) -> Unit,
+)
 
 /** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
 internal const val REPORT_ROW = "Report a problem"
@@ -387,9 +397,13 @@ internal class SettingsPanel(
         list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
         for (t in toggles) {
             list.addView(row(t.icon, t.label, t.values[t.current()], t.label) {
-                t.set((t.current() + 1) % t.values.size)
-                buildMain()
-                list.findViewWithTag<View>(t.label)?.requestFocus()
+                if (t.asList) {
+                    showList(t)
+                } else {
+                    t.set((t.current() + 1) % t.values.size)
+                    buildMain()
+                    list.findViewWithTag<View>(t.label)?.requestFocus()
+                }
             })
         }
         for ((label, action) in extras()) {
@@ -433,6 +447,15 @@ internal class SettingsPanel(
         for (s in listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)) {
             list.addView(choice(speedLabel(s), kotlin.math.abs(s - now) < 0.01f) { p.setPlaybackSpeed(s); back() })
         }
+        focusSelected()
+    }
+
+    private fun showList(t: PanelToggle) {
+        submenu = t.label
+        list.removeAllViews()
+        list.addView(header(t.label))
+        val now = t.current()
+        for ((i, v) in t.values.withIndex()) list.addView(choice(v, i == now) { t.set(i); back() })
         focusSelected()
     }
 

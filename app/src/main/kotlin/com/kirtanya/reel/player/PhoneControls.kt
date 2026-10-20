@@ -24,7 +24,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
 import androidx.media3.common.Player
-import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.kirtanya.reel.R
 import kotlin.math.abs
@@ -50,6 +49,8 @@ internal class PhoneControls(
     /** "Next episode" when one is ready, else null (the button hides). */
     private val nextLabel: () -> String?,
     private val onNext: () -> Unit,
+    /** Pinch / the fit button picked fill (true) or fit (false): the activity applies and remembers it. */
+    private val onZoom: (Boolean) -> Unit = {},
 ) : FrameLayout(activity) {
     private val ctx: Context = activity
     private val main = Handler(Looper.getMainLooper())
@@ -319,12 +320,18 @@ internal class PhoneControls(
         refresh()
     }
 
+    /** Like YouTube: pinch out (or the fit button) fills the screen by cropping, pinch in fits it again. */
     private fun setZoom(on: Boolean) {
-        zoomed = on
-        playerView.resizeMode = if (on) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
-        fit.contentDescription = if (on) "Fit to screen" else "Zoom to fill"
+        syncZoom(on)
+        onZoom(on)
         showHud(R.drawable.ic_pl_fit, if (on) "Zoom to fill" else "Fit to screen")
         hideHudSoon()
+    }
+
+    /** The Picture setting changed elsewhere (settings panel): the pinch and fit button follow it. */
+    fun syncZoom(on: Boolean) {
+        zoomed = on
+        fit.contentDescription = if (on) "Fit to screen" else "Zoom to fill"
     }
 
     private fun refresh() {

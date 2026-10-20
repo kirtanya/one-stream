@@ -5,6 +5,14 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Picture modes (like VLC / MX Player)**
+Decision: player Settings → Picture picks how the video fills the screen: Fit (default), Fill (crop),
+Stretch, or a forced 16:9 / 4:3 / 21:9 shape for files that report the wrong one (core `PictureMode`;
+Media3 resize modes + the content frame's aspect ratio, re-applied after each video-size change).
+Remembered between videos (PlaybackPrefs.picture). Phone keeps YouTube's gesture — pinch out fills,
+pinch in fits — and the gesture, the fit button and the setting stay in sync. Cinema mode re-checks for
+bars after a change (Fill / Stretch leave none). 0.8.5.
+
 **2026-10-21 · TV player controls always white**
 Decision: the TV strip no longer samples the picture to switch between white and near-black; it is
 always white with a small, tight shadow (CONTROL_SHADOW 40 % black, 1.5 dp blur, 1 dp down; icons get a

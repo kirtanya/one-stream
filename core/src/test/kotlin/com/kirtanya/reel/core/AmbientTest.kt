@@ -44,4 +44,11 @@ class AmbientTest {
         assertTrue(Ambient.falloff(Ambient.Level.OFF).colors.all { it ushr 24 == 255 }, "off: black")
         assertEquals(Ambient.Level.SUBTLE, Ambient.Level.of(null), "subtle by default")
     }
+
+    @Test fun pictureModes() {
+        assertEquals(com.kirtanya.reel.core.playback.PictureMode.FIT, com.kirtanya.reel.core.playback.PictureMode.of(null), "fit by default")
+        assertEquals(com.kirtanya.reel.core.playback.PictureMode.FILL, com.kirtanya.reel.core.playback.PictureMode.of("FILL"))
+        assertEquals(16f / 9f, com.kirtanya.reel.core.playback.PictureMode.WIDE_16_9.ratio)
+        assertEquals(null, com.kirtanya.reel.core.playback.PictureMode.STRETCH.ratio, "stretch keeps no shape")
+    }
 }

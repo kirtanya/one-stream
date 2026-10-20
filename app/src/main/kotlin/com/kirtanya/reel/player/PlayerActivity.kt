@@ -374,6 +374,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
+            // After PlayerView sets the video's own shape: put a forced one (16:9, 4:3…) back.
+            playerView.post { applyPicture() }
             // Phones turn sideways for wide video; TVs are always landscape.
             if (!isTelevision() && videoSize.width > 0 && videoSize.height > 0) {
                 requestedOrientation = if (videoSize.width >= videoSize.height) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -864,6 +866,33 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     override fun reportVideo(): android.view.SurfaceView? =
         if (::playerView.isInitialized) playerView.videoSurfaceView as? android.view.SurfaceView else null
 
+    // ---------------------------------------------------------------- picture (Fit / Fill / Stretch / shapes)
+
+    /** Picks and remembers how the picture fills the screen. */
+    private fun setPicture(mode: com.kirtanya.reel.core.playback.PictureMode) {
+        app.playbackSettings.update { it.copy(picture = mode) }
+        phoneControls?.syncZoom(mode == com.kirtanya.reel.core.playback.PictureMode.FILL)
+        applyPicture(mode)
+    }
+
+    /**
+     * Fit = whole picture with bars; Fill = crop to the screen; Stretch = squeeze to the screen; a
+     * forced shape (16:9, 4:3, 21:9) fits that shape instead of the file's (for files that say the
+     * wrong one). Cinema mode looks for bars again afterwards (Fill / Stretch leave none).
+     */
+    private fun applyPicture(mode: com.kirtanya.reel.core.playback.PictureMode = prefs.picture) {
+        if (!::playerView.isInitialized) return
+        playerView.resizeMode = when (mode) {
+            com.kirtanya.reel.core.playback.PictureMode.FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            com.kirtanya.reel.core.playback.PictureMode.STRETCH -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+            else -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+        val frame = playerView.findViewById<androidx.media3.ui.AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
+        val own = player?.videoSize?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width * it.pixelWidthHeightRatio / it.height }
+        (mode.ratio ?: own)?.let { frame?.setAspectRatio(it) }
+        if (::ambient.isInitialized) playerView.post { ambient.refresh() }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private fun sourceRequest(episode: EpisodeNumber?): SourceRequest? {
@@ -1007,6 +1036,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             app.playbackSettings.update { it.copy(cinemaGlow = levels[i]) }
             ambient.level = levels[i]
         }
+        val modes = com.kirtanya.reel.core.playback.PictureMode.entries
+        val picture = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Picture", modes.map { it.label }, { prefs.picture.ordinal }, asList = true) { i ->
+            setPicture(modes[i])
+        }
         playerView = PlayerView(this).apply {
             keepScreenOn = true
             // No centre spinner: a small chip at the top right says it (TV and phone).
@@ -1023,6 +1056,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         playerView.setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
         playerView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         ambient = AmbientGlow(playerView).apply { level = prefs.cinemaGlow }
+        applyPicture()
         root.addView(ambient, FrameLayout.LayoutParams(-1, -1))
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         if (tv) {
@@ -1037,7 +1071,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 hasNext = { nextReady != null },
                 onNext = { playNext() },
             ).also {
-                it.setToggles(listOf(cinema))
+                it.setToggles(listOf(picture, cinema))
                 root.addView(it.view, FrameLayout.LayoutParams(-1, -1))
             }
             buildTvChips(root)
@@ -1060,8 +1094,12 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             onPip = if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({ enterPip() }) else null,
             nextLabel = { nextReady?.let { (n, _) -> n.episode?.label?.let { "Next · $it" } ?: "Next episode" } },
             onNext = { playNext() },
+            onZoom = { fill ->
+                setPicture(if (fill) com.kirtanya.reel.core.playback.PictureMode.FILL else com.kirtanya.reel.core.playback.PictureMode.FIT)
+            },
         )
-        phoneControls?.setToggles(listOf(cinema))
+        phoneControls?.setToggles(listOf(picture, cinema))
+        phoneControls?.syncZoom(prefs.picture == com.kirtanya.reel.core.playback.PictureMode.FILL)
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))
         // The same small chips as the TV, under the top bar on the right.
         buildTvChips(root, topMarginDp = 64)

@@ -17,6 +17,8 @@ data class PlaybackPrefs(
     val subtitleSize: SubtitleSize = SubtitleSize.MEDIUM,
     /** Cinema mode: how strongly the bars around a video glow with its colours (player/AmbientGlow). */
     val cinemaGlow: com.kirtanya.reel.core.playback.Ambient.Level = com.kirtanya.reel.core.playback.Ambient.Level.SUBTLE,
+    /** How the picture fills the screen (Fit, Fill, Stretch, forced shapes); remembered between videos. */
+    val picture: com.kirtanya.reel.core.playback.PictureMode = com.kirtanya.reel.core.playback.PictureMode.FIT,
 )
 
 /** Player preferences (SharedPreferences: small, read once per playback). */
@@ -33,6 +35,7 @@ class PlaybackSettings(context: Context) {
             putString("subtitleLanguage", next.subtitleLanguage)
             putString("subtitleSize", next.subtitleSize.name)
             putString("cinemaGlow", next.cinemaGlow.name)
+            putString("picture", next.picture.name)
         }
     }
 
@@ -41,6 +44,7 @@ class PlaybackSettings(context: Context) {
         subtitleLanguage = prefs.getString("subtitleLanguage", null),
         subtitleSize = runCatching { SubtitleSize.valueOf(prefs.getString("subtitleSize", null)!!) }.getOrDefault(SubtitleSize.MEDIUM),
         cinemaGlow = com.kirtanya.reel.core.playback.Ambient.Level.of(prefs.getString("cinemaGlow", null)),
+        picture = com.kirtanya.reel.core.playback.PictureMode.of(prefs.getString("picture", null)),
     )
 
     companion object {

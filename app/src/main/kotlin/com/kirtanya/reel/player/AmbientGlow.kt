@@ -59,6 +59,12 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
         })
     }
 
+    /** The picture's size or place changed (Picture setting): look again for bars. */
+    fun refresh() {
+        invalidate()
+        kick()
+    }
+
     fun release() {
         main.removeCallbacks(tick)
         player = null

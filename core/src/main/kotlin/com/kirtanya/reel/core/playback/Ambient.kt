@@ -105,3 +105,22 @@ object Ambient {
         }
     }
 }
+
+/**
+ * How the picture fills the screen (player Settings → Picture), like VLC / MX Player: fit with bars,
+ * fill by cropping, stretch, or a forced shape for files with the wrong one. [ratio] = the forced
+ * width / height, or null to keep the video's own.
+ */
+enum class PictureMode(val label: String, val ratio: Float? = null) {
+    FIT("Fit"),
+    FILL("Fill (crop)"),
+    STRETCH("Stretch"),
+    WIDE_16_9("16:9", 16f / 9f),
+    CLASSIC_4_3("4:3", 4f / 3f),
+    CINEMA_21_9("21:9", 2.35f),
+    ;
+
+    companion object {
+        fun of(name: String?) = entries.firstOrNull { it.name == name } ?: FIT
+    }
+}
