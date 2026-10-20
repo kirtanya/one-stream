@@ -15,15 +15,41 @@ import com.kirtanya.reel.core.launcher.LauncherApi
 import com.kirtanya.reel.core.launcher.LauncherApi.Query
 import com.kirtanya.reel.core.launcher.LauncherCaller
 import com.kirtanya.reel.core.tmdb.TitleRef
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import com.kirtanya.reel.core.launcher.LauncherPage
+import com.kirtanya.reel.core.launcher.SourceTokens
+import com.kirtanya.reel.core.playback.EpisodeNumber
+import com.kirtanya.reel.core.playback.Playback
+import com.kirtanya.reel.core.sources.SourceKind
+import com.kirtanya.reel.core.sources.SourceSearch
+import com.kirtanya.reel.core.tmdb.MediaType
+import com.kirtanya.reel.core.tmdb.TitleDetails
+import com.kirtanya.reel.engine.TorrentMode
+import com.kirtanya.reel.ui.formatBytes
+import com.kirtanya.reel.ui.sources.download
+import com.kirtanya.reel.ui.sources.playbackFor
+import com.kirtanya.reel.ui.sources.rankPrefs
+import com.kirtanya.reel.ui.sources.requestFor
+import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Read-only API for One Launcher (docs/LAUNCHER_API.md). Exported, but every call is checked:
+ * One Launcher's API (docs/LAUNCHER_API.md): queries plus a few actions through call(). Exported, but every call is checked:
  * only One Launcher (package name + its signing certificate, see [LauncherCaller]) may read.
  * The logic lives in core `LauncherApi`; this class only fetches and fills cursors.
  */
+/** Sources handed to One Launcher, by token (this process only); read by MainActivity's play links. */
+object LauncherSources {
+    val tokens = SourceTokens<Playback>()
+}
+
 class LauncherProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
@@ -62,8 +88,149 @@ class LauncherProvider : ContentProvider() {
                     }
                 }?.let(::listOf).orEmpty(),
             )
+            is Query.Details -> {
+                val ref = TitleRef(query.type, query.tmdb)
+                val d = network { app.tmdb.details(ref) }
+                cursor(LauncherPage.DETAILS_COLUMNS, listOfNotNull(d?.let { LauncherPage.detailsRow(it, app.watchlist.contains(ref), app.history.continueWatching()) }))
+            }
+            is Query.Episodes -> cursor(LauncherPage.EPISODE_COLUMNS, network {
+                val d = app.tmdb.details(TitleRef(MediaType.TV, query.tmdb))
+                LauncherPage.episodeRows(
+                    query.tmdb, app.tmdb.season(query.tmdb, query.season), LocalDate.now().toString(), d.lastAired,
+                    history = app.history::get,
+                    bestToken = { s, e -> LauncherSources.tokens.best("tv:${query.tmdb}:s${s}e$e") },
+                )
+            }.orEmpty())
+            is Query.Sources -> cursor(LauncherPage.SOURCE_COLUMNS, sources(app, query))
+            Query.Downloads -> cursor(LauncherPage.DOWNLOAD_COLUMNS, downloads(app))
             Query.Unknown -> rows(emptyList())
         }
+    }
+
+    /**
+     * The Sources screen's own search (every enabled addon + plugin, ranked the same way). Waits
+     * for all of them up to [LauncherPage.SOURCES_TIMEOUT_MS], then answers with what has arrived.
+     * Each source gets a token; its Playback (what the Sources screen would play) is kept for
+     * onestream://play and the download / prepare actions.
+     */
+    private fun sources(app: ReelApp, q: Query.Sources): List<Array<Any?>> {
+        val ref = TitleRef(q.type, q.tmdb)
+        val season = q.season
+        val episode = q.episode
+        val latest = AtomicReference<Pair<TitleDetails, SourceSearch>?>(null)
+        var episodeName: String? = null
+        var still: String? = null
+        val job = app.appScope.launch {
+            runCatching {
+                val d = app.tmdb.details(ref)
+                if (season != null) {
+                    runCatching { app.tmdb.season(q.tmdb, season).firstOrNull { it.number == episode } }.getOrNull()?.let {
+                        episodeName = it.name
+                        still = it.stillPath
+                    }
+                }
+                app.sources.ensureReady()
+                app.aggregator.search(requestFor(d, season, episode), app.sources.providers(), rankPrefs(app, app.isTv)).collect {
+                    latest.set(d to it)
+                    if (it.done) cancel()
+                }
+            }.onFailure { if (it !is kotlinx.coroutines.CancellationException) Log.w(TAG, "launcher sources failed: ${it.message}") }
+        }
+        runBlocking { withTimeoutOrNull(LauncherPage.SOURCES_TIMEOUT_MS) { job.join() } }
+        job.cancel()
+        val (d, search) = latest.get() ?: return emptyList()
+        val epNumber = if (season != null && episode != null) EpisodeNumber(season, episode) else null
+        val ranked = search.sources
+        val tokens = ranked.map { LauncherSources.tokens.put(playbackFor(d, epNumber, episodeName, still, it)) }
+        val best = LauncherPage.best(ranked)
+        LauncherSources.tokens.setBest(requestFor(d, season, episode).key, best?.let { tokens[ranked.indexOf(it)] })
+        return LauncherPage.sourceRows(ranked, tokens, ref, season, episode)
+    }
+
+    /** Downloads (not the stream cache) while the engine runs; it starts with the app, a stream or a download. */
+    private fun downloads(app: ReelApp): List<Array<Any?>> =
+        app.engineIfCreated?.torrents?.value.orEmpty().filter { it.mode == TorrentMode.DOWNLOAD }.map { t ->
+            LauncherPage.downloadRow(
+                t.infoHash,
+                t.name.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: t.infoHash.take(8),
+                if (t.wantedBytes > 0) "${formatBytes(t.doneBytes)} of ${formatBytes(t.wantedBytes)}" else null,
+                t.progress,
+                LauncherPage.downloadState(t.phase.name, t.userPaused, t.error != null),
+                t.wantedBytes,
+            )
+        }
+
+    /** Actions; every one answers {ok, message} and none throws for bad input. */
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+        checkCaller()
+        val token = Binder.clearCallingIdentity()
+        try {
+            val (ok, message) = runCatching { act(method, extras) }.getOrElse { false to (it.message ?: "Something went wrong") }
+            return Bundle().apply {
+                putBoolean("ok", ok)
+                putString("message", message)
+            }
+        } finally {
+            Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun act(method: String, extras: Bundle?): Pair<Boolean, String?> {
+        val app = ReelApp.get(context!!)
+        fun playback(): Playback? = extras?.getString("token")?.let(LauncherSources.tokens::get)
+        return when (method) {
+            LauncherPage.WATCHLIST_ADD -> {
+                val ref = LauncherPage.titleRef(extras?.get("type"), extras?.get("tmdb")) ?: return false to "Needs type and tmdb"
+                val d = network { app.tmdb.details(ref) } ?: return false to "Couldn't reach TMDB"
+                app.watchlist.add(d.summary)
+                true to null
+            }
+            LauncherPage.WATCHLIST_REMOVE -> {
+                val ref = LauncherPage.titleRef(extras?.get("type"), extras?.get("tmdb")) ?: return false to "Needs type and tmdb"
+                app.watchlist.remove(ref)
+                true to null
+            }
+            LauncherPage.DOWNLOAD -> {
+                val p = playback() ?: return false to "Unknown source; search again"
+                if (!LauncherPage.downloadable(p.source)) return false to "This source can't be downloaded"
+                // The app's own Download button (it shows a toast, so on the main thread).
+                Handler(Looper.getMainLooper()).post { download(app, p.source, p.displayTitle) }
+                true to "Downloading “${p.displayTitle}”"
+            }
+            LauncherPage.PREPARE -> {
+                val p = playback() ?: return false to "Unknown source; search again"
+                when (p.source.kind) {
+                    SourceKind.TORRENT -> {
+                        val magnet = p.source.magnetUri() ?: return false to "This source has no magnet link"
+                        app.appScope.launch {
+                            runCatching {
+                                // The player's own start (stream mode, startup pieces first); no player attached.
+                                // Nobody plays it → it stops like a stream an external player left (stopWhenIdle).
+                                val info = app.engine.startStream(magnet, p.source.fileIdx, p.source.filename)
+                                app.engine.stopWhenIdle(info.infoHash, info, LauncherPage.PREPARE_IDLE_MS)
+                            }.onFailure { Log.w(TAG, "prepare failed: ${it.message}") }
+                        }
+                        true to "Preparing"
+                    }
+                    SourceKind.DIRECT -> true to "Direct links start straight away"
+                    SourceKind.EXTERNAL -> false to "This source opens another app"
+                }
+            }
+            LauncherPage.CANCEL_DOWNLOAD -> {
+                val key = extras?.getString("key") ?: return false to "Needs key"
+                val engine = app.engineIfCreated ?: return false to "No such download"
+                val t = engine.snapshot(key)?.takeIf { it.mode == TorrentMode.DOWNLOAD } ?: return false to "No such download"
+                // What the Downloads tab's Delete does.
+                engine.remove(t.infoHash, deleteFiles = true)
+                true to null
+            }
+            else -> false to "Unknown action $method"
+        }
+    }
+
+    private fun cursor(columns: List<String>, list: List<Array<Any?>>) = MatrixCursor(columns.toTypedArray(), list.size).apply {
+        list.forEach { addRow(it) }
     }
 
     private fun rows(list: List<LauncherApi.Row>) = MatrixCursor(LauncherApi.COLUMNS.toTypedArray(), list.size).apply {
@@ -75,10 +242,10 @@ class LauncherProvider : ContentProvider() {
      * can't be interrupted by a timeout around it); the binder thread waits at most
      * [LauncherApi.NETWORK_TIMEOUT_MS] and gives up — null, so the launcher gets an empty cursor.
      */
-    private fun <T> network(block: suspend () -> T): T? {
+    private fun <T> network(timeoutMs: Long = LauncherApi.NETWORK_TIMEOUT_MS, block: suspend () -> T): T? {
         val app = ReelApp.get(context!!)
         val job = app.appScope.async { runCatching { block() }.onFailure { Log.w(TAG, "launcher query failed: ${it.message}") }.getOrNull() }
-        return runBlocking { withTimeoutOrNull(LauncherApi.NETWORK_TIMEOUT_MS) { job.await() } }
+        return runBlocking { withTimeoutOrNull(timeoutMs) { job.await() } }
             .also { if (job.isActive) job.cancel() }
     }
 

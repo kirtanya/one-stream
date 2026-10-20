@@ -5,6 +5,22 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · One Launcher API part 2 (the title page in the launcher)**
+Decision: the provider also serves details / episodes / sources / downloads and takes actions through
+`call()` (watchlist add/remove, download, prepare, cancel_download); `onestream://play` opens the player
+with a source the provider found. Sources are the Sources screen's own search (same providers, ranker
+and Best match); each gets a random 24-hex token mapped in memory (LRU 500) to the Playback the Sources
+screen would build — unguessable, so only a caller that passed the certificate check can play one; a
+token from an earlier process falls back to the title page. `onestream://play?torrent=` only plays a
+download the engine already has (any app can send a link; it must not start new P2P).
+"prepare" = the player's own `startStream` without a player (stream mode, startup pieces queued by the
+normal scheduler), then `stopWhenIdle(5 min)` — the same stop an external-player stream gets — so a
+prepare nobody plays pauses itself and stays in the stream cache (trimmed as usual); a later Play
+reuses the pieces (prepareStream supersedes the idle stream, so the idle watcher stands down). No new
+engine code path. `/downloads` never starts the engine (a launcher query mustn't start P2P), so it is
+empty until One Stream's engine runs. Languages are read from release text (flags, names, ENG/HIN…),
+since sources carry no language field.
+
 **2026-10-21 · One Launcher API (provider + onestream:// links)**
 Decision: One Stream answers the user's own launcher locally: an exported ContentProvider
 `com.kirtanya.reel.launcher` (info / search / continue / watchlist / title) and `onestream://` links

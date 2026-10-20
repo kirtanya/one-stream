@@ -102,6 +102,8 @@ data class TitleDetails(
     val genreList: List<Genre> = emptyList(),
     /** Extra textless backdrops (for a slideshow behind the title). */
     val backdrops: List<String> = emptyList(),
+    /** TMDB status: "Released", "Returning Series", "Ended"… */
+    val status: String? = null,
 ) {
     val trailer: Video? get() = videos.firstOrNull { it.isTrailer }
 }

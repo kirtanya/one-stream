@@ -146,6 +146,20 @@ class MainActivity : ComponentActivity() {
                     LauncherApi.titleOf(link.key)?.let { openDest = Dest.Title(it) }
                 }
             }
+            is LauncherLink.Play -> {
+                // Only a download the engine already has: any app can send this link, and it must not start new P2P.
+                val download = link.torrent?.let { ReelApp.get(this).engineIfCreated?.snapshot(it) }
+                val playback = link.token?.let(com.kirtanya.reel.data.LauncherSources.tokens::get)
+                when {
+                    // Exactly what picking it on the Sources screen does.
+                    playback != null -> com.kirtanya.reel.ui.sources.play(this, playback)
+                    download != null -> startActivity(com.kirtanya.reel.player.PlayerActivity.forTorrent(this, download.infoHash, download.name))
+                    // A download the engine hasn't loaded yet (cold start): the Downloads tab.
+                    link.torrent != null -> openTab = com.kirtanya.reel.ui.nav.Tab.Downloads
+                    // The token died with an earlier process: the title page instead.
+                    else -> com.kirtanya.reel.core.launcher.LauncherPage.playFallback(link, tokenKnown = false)?.let { openDest = Dest.Title(it) }
+                }
+            }
             null -> Unit
         }
     }

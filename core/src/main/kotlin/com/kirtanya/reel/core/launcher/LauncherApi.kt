@@ -40,6 +40,11 @@ object LauncherApi {
         data class Watchlist(val limit: Int) : Query
         /** By TMDB id when given, else by IMDb id (TMDB find). */
         data class Title(val type: MediaType, val imdb: String?, val tmdb: Int?) : Query
+        /** The launcher's own title page (part 2): see [LauncherPage]. */
+        data class Details(val type: MediaType, val tmdb: Int) : Query
+        data class Episodes(val tmdb: Int, val season: Int) : Query
+        data class Sources(val type: MediaType, val tmdb: Int, val season: Int?, val episode: Int?) : Query
+        data object Downloads : Query
         data object Unknown : Query
     }
 
@@ -57,9 +62,33 @@ object LauncherApi {
                 val tmdb = param("tmdb")?.trim()?.toIntOrNull()?.takeIf { it > 0 }
                 if (imdb == null && tmdb == null) Query.Unknown else Query.Title(type, imdb, tmdb)
             }
+            "details" -> {
+                val type = mediaType(param("type")) ?: return Query.Unknown
+                Query.Details(type, positive(param("tmdb")) ?: return Query.Unknown)
+            }
+            "episodes" -> {
+                val tmdb = positive(param("tmdb")) ?: return Query.Unknown
+                val season = param("season")?.trim()?.toIntOrNull()?.takeIf { it >= 0 } ?: return Query.Unknown
+                Query.Episodes(tmdb, season)
+            }
+            "sources" -> {
+                val type = mediaType(param("type")) ?: return Query.Unknown
+                val tmdb = positive(param("tmdb")) ?: return Query.Unknown
+                val season = param("season")?.trim()?.toIntOrNull()?.takeIf { it >= 0 }
+                val episode = param("episode")?.trim()?.toIntOrNull()?.takeIf { it > 0 }
+                when {
+                    type == MediaType.MOVIE -> Query.Sources(type, tmdb, null, null)
+                    // A show's sources are always for one episode.
+                    season == null || episode == null -> Query.Unknown
+                    else -> Query.Sources(type, tmdb, season, episode)
+                }
+            }
+            "downloads" -> Query.Downloads
             else -> Query.Unknown
         }
     }
+
+    private fun positive(s: String?) = s?.trim()?.toIntOrNull()?.takeIf { it > 0 }
 
     fun mediaType(s: String?): MediaType? = when (s?.trim()?.lowercase()) {
         "movie" -> MediaType.MOVIE

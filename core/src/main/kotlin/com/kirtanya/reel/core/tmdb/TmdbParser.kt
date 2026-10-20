@@ -70,6 +70,7 @@ object TmdbParser {
                 CastMember(co.str("name") ?: return@mapNotNull null, co.str("character")?.takeIf { it.isNotBlank() }, co.str("profile_path"), co.int("id"))
             },
             seasons = seasons,
+            status = o.str("status")?.takeIf { it.isNotBlank() },
             imdbId = (o.obj("external_ids")?.str("imdb_id") ?: o.str("imdb_id"))?.takeIf { it.startsWith("tt") },
             providers = providers(o.obj("watch/providers"), region),
             lastAired = lastAiredRegular(o),
