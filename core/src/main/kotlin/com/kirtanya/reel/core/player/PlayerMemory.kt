@@ -5,8 +5,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * Audio / subtitle delay for one title (titleKey: a film, or a whole show so the next episode keeps it).
- * The shared per-title store (core/playback/TitlePrefs, data/TitlePrefsStore, owned by the data
- * session) has no delay fields, so the player keeps these here; DECISIONS.md proposes moving them there.
+ * Stored in the shared TitlePrefs since f44f8cc; [PlayerMemory.delays] only holds what older builds saved
+ * here until PlayerStore moves it over (once).
  */
 @Serializable
 data class TitleDelays(

@@ -16,12 +16,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * The player's own small store, on this device only:
  *  - [options]: app-wide player settings (Settings → Playback countdown and seek step; night mode and
  *    voice boost from the player's panel), SharedPreferences "player_options";
- *  - [memory]: per-title audio / subtitle delays and per-show learned intro / credits
- *    (files/player_memory.json).
- * Per-title tracks, picture and speed live in the shared TitlePrefsStore (app.titlePrefs).
+ *  - [memory]: per-show learned intro / credits (files/player_memory.json).
+ * Per-title tracks, picture, speed and the audio / subtitle delays live in the shared TitlePrefsStore
+ * (app.titlePrefs); delays saved here before it had them are moved there once.
  * A process-wide singleton ([get]) so the Settings page and the player share one state.
  */
-class PlayerStore private constructor(context: Context) {
+class PlayerStore private constructor(private val context: Context) {
     private val prefs = context.getSharedPreferences("player_options", Context.MODE_PRIVATE)
     private val file = File(context.filesDir, "player_memory.json")
     /** Writes off the main thread, in order. */
@@ -50,9 +50,35 @@ class PlayerStore private constructor(context: Context) {
         voiceBoost = prefs.getBoolean("voiceBoost", false),
     ).valid()
 
-    fun delays(titleKey: String): TitleDelays = memory.delays(titleKey)
+    private val titlePrefs get() = com.kirtanya.reel.ReelApp.get(context).titlePrefs
 
-    fun updateDelays(titleKey: String, change: (TitleDelays) -> TitleDelays) = save { it.withDelays(titleKey, System.currentTimeMillis(), change) }
+    fun delays(titleKey: String): TitleDelays {
+        moveDelaysOnce()
+        val p = titlePrefs.get(titleKey) ?: return TitleDelays()
+        return TitleDelays(audioDelayMs = p.audioDelayMs ?: 0, subtitleDelayMs = p.subtitleDelayMs ?: 0)
+    }
+
+    fun updateDelays(titleKey: String, change: (TitleDelays) -> TitleDelays) {
+        val next = change(delays(titleKey))
+        titlePrefs.update(titleKey) {
+            it.copy(audioDelayMs = next.audioDelayMs.takeIf { ms -> ms != 0 }, subtitleDelayMs = next.subtitleDelayMs.takeIf { ms -> ms != 0 })
+        }
+    }
+
+    /** Delays saved in player_memory.json before TitlePrefs had fields for them: moved over once. */
+    @Synchronized
+    private fun moveDelaysOnce() {
+        val old = memory.delays.takeIf { it.isNotEmpty() } ?: return
+        old.forEach { (key, d) ->
+            titlePrefs.update(key) {
+                it.copy(
+                    audioDelayMs = it.audioDelayMs ?: d.audioDelayMs.takeIf { ms -> ms != 0 },
+                    subtitleDelayMs = it.subtitleDelayMs ?: d.subtitleDelayMs.takeIf { ms -> ms != 0 },
+                )
+            }
+        }
+        save { it.copy(delays = emptyMap()) }
+    }
 
     fun show(titleKey: String): ShowSkips? = memory.shows[titleKey]
 
