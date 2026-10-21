@@ -19,13 +19,19 @@ data class CacheEntry(
 object CachePolicy {
     fun hardFloor(formFactor: FormFactor): Long = if (formFactor == FormFactor.TV) 1 * GiB else 2 * GiB
 
-    /** Budget for cached streams given the free space and the cache's current size. */
-    fun budget(formFactor: FormFactor, free: Long, cache: Long): Long {
+    /**
+     * Budget for cached streams given the free space and the cache's current size. [limit] is the user's
+     * "Stream cache limit" (null = automatic): it replaces the automatic size but never eats the free-space
+     * reserve (docs/STREAMING_V2.md §8.3 C).
+     */
+    fun budget(formFactor: FormFactor, free: Long, cache: Long, limit: Long? = null): Long {
         val total = free + cache
-        return when (formFactor) {
-            FormFactor.PHONE -> minOf((total * 15 / 100).coerceIn(5 * GiB, 20 * GiB), total - 2 * GiB)
-            FormFactor.TV -> minOf(4 * GiB, total - (3 * GiB) / 2)
-        }.coerceAtLeast(0)
+        val reserve = if (formFactor == FormFactor.TV) (3 * GiB) / 2 else 2 * GiB
+        val auto = when (formFactor) {
+            FormFactor.PHONE -> (total * 15 / 100).coerceIn(5 * GiB, 20 * GiB)
+            FormFactor.TV -> 4 * GiB
+        }
+        return minOf(limit?.coerceAtLeast(0) ?: auto, total - reserve).coerceAtLeast(0)
     }
 
     /**

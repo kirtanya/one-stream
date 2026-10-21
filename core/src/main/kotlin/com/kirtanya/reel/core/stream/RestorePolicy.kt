@@ -11,6 +11,10 @@ data class RestoreMeta(
     val pausedForSpace: Boolean = false,
     val pausedForStream: Boolean = false,
     val wasAutoManaged: Boolean? = null,
+    /** The overnight window held it when the app stopped (docs/STREAMING_V2.md §8.3 A). */
+    val pausedForNight: Boolean = false,
+    /** The overnight window holds it now (evaluated at restore). */
+    val nightHold: Boolean = false,
 )
 
 /**
@@ -25,8 +29,10 @@ object RestorePolicy {
         val f = saved.copy(sequential = false)
         return when {
             meta.userPaused || meta.seedingDone || meta.pausedForSpace -> f.copy(autoManaged = false, paused = true)
-            // The app died while a stream had paused this download: give it back to the queue.
-            meta.pausedForStream -> f.copy(autoManaged = true, paused = false)
+            // Outside the overnight window: no traffic from the first moment, whatever it was doing before.
+            meta.nightHold -> f.copy(autoManaged = false, paused = true)
+            // The app died while a stream (or the night window, now open) had paused this download: back to the queue.
+            meta.pausedForStream || meta.pausedForNight -> f.copy(autoManaged = true, paused = false)
             meta.wasAutoManaged != null ->
                 if (meta.wasAutoManaged) f.copy(autoManaged = true, paused = false) else f.copy(autoManaged = false)
             // Queue-paused (auto-managed + paused) comes back queued: the queue decides.

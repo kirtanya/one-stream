@@ -1300,6 +1300,50 @@ Left at the defaults on purpose: `mixed_mode_algorithm`, `auto_sequential`, `str
 - Per-torrent `swig().set_max_connections`: prewarm and hedge candidates 40 phone / 20 TV, lifted to −1 (unlimited) when consumed by `startStream` or on a hedge win. RestorePolicy also resets it (9.2).
 - Trackers: `DEFAULT_TRACKERS` is added for `.torrent` files only when `!TorrentInfo.isPrivate()`.
 
+### 8.3 Download rules (addendum 2026-10-22, roadmap A engine items)
+
+Per-device settings in the engine-owned `engine/DownloadRulesStore` (SharedPreferences `download_rules`):
+`DownloadRules(night = NightWindow(enabled = false, startHour = 1, endHour = 7), watchCap = WatchCap.AUTO)`.
+Pure logic in `core/stream/DownloadRules.kt` (`NightRule`, `WatchGovernor`); tests `DownloadRulesTest`.
+
+**A. Overnight window (`NightRule`).**
+- In window: local minute-of-day in `[start, end)`, wrapping midnight when `start > end`; `start == end` = all day.
+- *Held* = DOWNLOAD mode ∧ window on ∧ outside it ∧ `!meta.startNow` ∧ not finished ∧ no Starting / Player claim.
+  STREAM torrents are never held. It is an extra condition next to the home-disk P2P rule (`downloadHold`), never a replacement.
+- Hold: `unsetFlags(AUTO_MANAGED)`, `pause()`, `meta.pausedForNight = true` (persisted; not `userPaused`). A user-paused,
+  space-paused or seeding-done torrent is left as it is.
+- Release (inside the window, or the rule turned off): clear `pausedForNight`; if `userPaused` stay paused; else if
+  `downloadHold(key)` stay paused (P2pGate resumes it on an allowed network); else `AUTO_MANAGED` + `resume()` (the queue decides).
+- `resume()` on a held torrent (the user's Resume, P2pGate's release) moves no traffic: it stays paused with `pausedForNight`.
+- `startNow(key)`: `meta.startNow = true` for the torrent's life, `queuePositionTop()` + resume, unless the P2P rule holds it.
+- A claimed (streamed) download is skipped while claimed; after `stopStream` the rule is re-run, so it goes back to waiting.
+- Runs on reel-engine: after restore, every 30 s, on a settings change, after `add` / `stopStream` / Keep, and at the
+  window edges through `AlarmManager.setAndAllowWhileIdle` → `EngineService` (`ACTION_RULES`). Inexact: Doze may delay an edge by minutes.
+- Restart: `RestoreMeta.nightHold` (the rule, evaluated at restore without the finished check) → paused, not auto-managed;
+  `pausedForNight && !nightHold` → back to the queue (like `pausedForStream`).
+- `PARTIAL_WAKE_LOCK "reel:night"` (narrow part of R6): only while the window is on and open and an unclaimed DOWNLOAD
+  torrent is fetching; 10 min timeout re-armed by each run; released otherwise and in `shutdown()`.
+- Snapshot: `waitingForNight`, `notice = "Waiting for night (01:00)"`. The notification says "N waiting for night (01:00)" when nothing else runs.
+- ReelStats: `ev=night state=hold|release n=… win=01-07`, `ev=nightStartNow key=…`.
+
+**B. Speed cap while watching (`WatchGovernor`).** This is the governor of 8.1 for now, with caps instead of the
+GUARD / SHARE pauses on both devices (the user picks the cap); `EngineFlags.govern = 0` turns it off.
+- Watching = some stream not BACKGROUND and (in STARTUP, or in-app `signals.fresh && playing`, or an HTTP reader open,
+  or HTTP activity in the last 10 s).
+- Capped = DOWNLOAD torrents with no Starting / Player claim that are running (DOWNLOADING, METADATA, FINISHED, SEEDING).
+- Total download cap: `K500` 500 KiB/s, `M1` 1 MiB/s, `M2` 2 MiB/s, `AUTO` = max(64 KiB/s, 25 % of `linkPeak`), where
+  `linkPeak` = the highest session payload download rate (sum over torrents) in the last 60 s of 2 s samples.
+  Per torrent = max(16 KiB/s, total / n fetching). Upload per capped torrent 32 KiB/s. Every cap ≥ 1 KiB (0 = unlimited).
+  A per-torrent value is rewritten only when it changes by more than 25 %.
+- Lift: not watching for ≥ 5 s (pause, stop, background) → `setDownloadLimit(0)` + `setUploadLimit(0)` on each capped
+  torrent; a capped torrent that becomes claimed is lifted at once. `OFF` = no caps. Restore already resets limits (9.2).
+- Snapshot notice "Slowed while you watch". ReelStats `ev=gov mode=cap|adjust|lift choice=… cap=… per=… up=… n=… link=…`.
+
+**C. Stream-cache limit.** `CachePolicy.budget(formFactor, free, cache, limit)`: `limit` (from the data session's
+`AutoDownloadSettings.cacheLimitGb`, null = automatic) replaces the automatic size but still leaves the reserve
+(phone 2 GiB, TV 1.5 GiB free): `min(limit, free + cache − reserve)`. Eviction is unchanged (LRU, the two most recently
+stopped protected unless free < hardFloor, claimed never). The engine trims again when the limit changes.
+
 ---
 
 ## 9. Persistence

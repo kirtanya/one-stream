@@ -32,6 +32,10 @@ data class TorrentSnapshot(
     val fileIndex: Int? = null,
     val userPaused: Boolean = false,
     val streaming: Boolean = false,
+    /** Held by "Download only overnight" (docs/STREAMING_V2.md §8.3 A): "Start now" skips the wait. */
+    val waitingForNight: Boolean = false,
+    /** Why the engine holds or slows this torrent ("Waiting for night (01:00)", "Slowed while you watch"). */
+    val notice: String? = null,
 ) {
     val etaSec: Long? get() =
         if (downBps <= 0 || wantedBytes <= doneBytes) null else (wantedBytes - doneBytes) / downBps
@@ -69,6 +73,10 @@ data class TorrentMeta(
     val createdBy: String = "user",
     val lastStoppedAt: Long = 0,
     val savePath: String? = null,
+    /** Paused by the overnight window (§8.3 A); released by it when the window opens. */
+    val pausedForNight: Boolean = false,
+    /** "Start now": the overnight window never holds this torrent again. */
+    val startNow: Boolean = false,
     val schema: Int = 1,
 ) {
     val intent: FileIntent get() = FileIntent(fullTorrent, wantedFiles, wantedHints, streamFileIndex)

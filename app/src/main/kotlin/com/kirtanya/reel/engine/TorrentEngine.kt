@@ -50,6 +50,10 @@ import com.kirtanya.reel.core.stream.RestorePolicy
 import com.kirtanya.reel.core.stream.SessionTuning
 import com.kirtanya.reel.core.stream.TorrentFileEntry
 import com.kirtanya.reel.core.stream.TorrentKey
+import com.kirtanya.reel.core.stream.GiB
+import com.kirtanya.reel.core.stream.NightRule
+import com.kirtanya.reel.core.stream.WatchCap
+import com.kirtanya.reel.core.stream.WatchGovernor
 import com.kirtanya.reel.core.stream.mimeTypeFor
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -67,6 +71,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -151,6 +158,16 @@ class TorrentEngine(private val context: Context) {
     @Volatile private var finalLatch: CountDownLatch? = null
     @Volatile private var lastStateSaveAt = 0L
 
+    /** Overnight window + speed cap while watching (docs/STREAMING_V2.md §8.3). */
+    private val rulesStore by lazy { DownloadRulesStore.get(context) }
+    private val nightAlarm by lazy { NightAlarm(context) }
+    private val governor = WatchGovernor()
+    /** Engine thread only: per capped torrent, the (download, upload) limits last written. */
+    private val capped = HashMap<String, Pair<Long, Long>>()
+    @Volatile private var cappedKeys: Set<String> = emptySet()
+    private var capping = false
+    private var loggedPer = 0L
+
     private val _torrents = MutableStateFlow<List<TorrentSnapshot>>(emptyList())
     val torrents: StateFlow<List<TorrentSnapshot>> = _torrents.asStateFlow()
 
@@ -175,6 +192,7 @@ class TorrentEngine(private val context: Context) {
         restore()
         scope.launch { pollLoop() }
         scope.launch { resumeSaveLoop() }
+        startRules()
         Log.i(TAG, "engine started (32-bit=${!is64}, $formFactor, $disk, flags=${EngineFlags.summary()})")
     }
 
@@ -197,6 +215,7 @@ class TorrentEngine(private val context: Context) {
         runCatching { saveSessionState(blocking = true) }
         io.shutdown()
         runCatching { io.awaitTermination(2, TimeUnit.SECONDS) }
+        nightAlarm.hold(false)
         session.stop()
         started = false
     }
@@ -317,7 +336,10 @@ class TorrentEngine(private val context: Context) {
         params.setSavePath(save.absolutePath)
         var flags = flagsFor(mode, params.getFlags())
         // Home disk P2P rule (docs/HOME_DISK.md §5.3): a download added where it must wait starts paused, with no traffic.
-        if (mode == TorrentMode.DOWNLOAD && downloadHold(hash)) flags = flags.without(TorrentFlags.AUTO_MANAGED).or_(TorrentFlags.PAUSED)
+        // Overnight window (§8.3 A): a new download outside it waits, paused; the window releases it (and asks the P2P rule then).
+        val nightHeld = mode == TorrentMode.DOWNLOAD &&
+            NightRule.holds(rulesStore.rules.value.night, minuteNow(), download = true, startNow = false, finished = false, claimed = false)
+        if (nightHeld || (mode == TorrentMode.DOWNLOAD && downloadHold(hash))) flags = flags.without(TorrentFlags.AUTO_MANAGED).or_(TorrentFlags.PAUSED)
         if (mode == TorrentMode.STREAM && streamFileIdx != null && streamFileIdx >= 0) {
             // Fetch nothing but the chosen file: without this, an abandoned start (Back during
             // "Finding peers…") downloaded the whole torrent once metadata arrived.
@@ -335,7 +357,7 @@ class TorrentEngine(private val context: Context) {
         params.setFlags(flags)
         val meta = TorrentMeta(hash, mode, schema = 2, savePath = save.absolutePath, createdBy = if (mode == TorrentMode.STREAM) "stream" else "user")
             .let { if (mode == TorrentMode.DOWNLOAD) it.withIntent(intent) else it }
-            .copy(pendingFileIntent = mode == TorrentMode.DOWNLOAD && !intent.fullTorrent)
+            .copy(pendingFileIntent = mode == TorrentMode.DOWNLOAD && !intent.fullTorrent, pausedForNight = nightHeld)
         metadataWaiters.getOrPut(hash) { CompletableDeferred() }
         saveMeta(meta)
         val ec = ErrorCode(error_code())
@@ -359,6 +381,8 @@ class TorrentEngine(private val context: Context) {
         val merged = FileChoice.merge(meta.intent, onlyFileIndex, onlyFileHint)
         saveMeta(meta.withIntent(merged).copy(pendingFileIntent = true))
         applyFileIntent(handle)
+        // A finished download that wants one more episode is unfinished again: the overnight window may hold it.
+        kickRules()
     }
 
     /**
@@ -414,13 +438,41 @@ class TorrentEngine(private val context: Context) {
         val h = find(hash) ?: return
         errors.remove(hash)
         runCatching { h.swig().clear_error() }
+        metas[hash]?.let { meta ->
+            // Outside the overnight window a Resume (the user's, or the P2P rule's release) moves no traffic:
+            // the download goes back to waiting for night. "Start now" is the way to run it anyway.
+            if (nightHolds(meta, h)) {
+                h.unsetFlags(TorrentFlags.AUTO_MANAGED)
+                h.pause()
+                saveMeta(meta.copy(userPaused = false, pausedForSpace = false, pausedForNight = true))
+                refreshSnapshotsSoon()
+                return
+            }
+        }
         if (metas[hash]?.mode == TorrentMode.DOWNLOAD) {
             // A queued download the user asks for goes to the front of the queue.
             if (h.getFlags().and_(TorrentFlags.AUTO_MANAGED).non_zero() && h.getFlags().and_(TorrentFlags.PAUSED).non_zero()) h.queuePositionTop()
             h.setFlags(TorrentFlags.AUTO_MANAGED)
         }
         h.resume()
-        metas[hash]?.let { saveMeta(it.copy(userPaused = false, pausedForSpace = false)) }
+        metas[hash]?.let { saveMeta(it.copy(userPaused = false, pausedForSpace = false, pausedForNight = false)) }
+    }
+
+    /**
+     * "Start now" on a download waiting for night (§8.3 A): the window never holds it again. Still obeys the home
+     * disk's P2P rule: on a network where downloads wait, the P2P gate starts it once the network allows.
+     */
+    fun startNow(hash: String) {
+        val h = find(hash) ?: return
+        val meta = metas[hash] ?: return
+        saveMeta(meta.copy(startNow = true, pausedForNight = false, userPaused = false))
+        EngineStats.log("nightStartNow", mapOf("key" to hash.take(12)))
+        if (meta.mode == TorrentMode.DOWNLOAD && downloadHold(hash)) {
+            refreshSnapshotsSoon()
+            return
+        }
+        runCatching { h.queuePositionTop() }
+        resume(hash)
     }
 
     fun remove(hash: String, deleteFiles: Boolean) {
@@ -518,6 +570,8 @@ class TorrentEngine(private val context: Context) {
         val keepIntent = if (intent.fullTorrent || (intent.wantedFiles.isEmpty() && intent.wantedHints.isEmpty())) intent.copy(fullTorrent = true) else intent
         saveMeta(meta.copy(mode = TorrentMode.DOWNLOAD, savePath = downloadsDir().absolutePath, pendingFileIntent = true, keepPending = false, cachePending = false).withIntent(keepIntent))
         applyFileIntent(h)
+        // Now a download: the overnight window applies from here on.
+        kickRules()
     }
 
     fun files(hash: String): List<TorrentFileEntry> {
@@ -781,6 +835,8 @@ class TorrentEngine(private val context: Context) {
             }
         }
         Log.i(TAG, "stream stopped ${stream.info.file.name}")
+        // A download played outside the overnight window goes back to waiting; the cap may lift.
+        kickRules()
         // The first stop after a while also refreshes the saved DHT table.
         if (System.currentTimeMillis() - lastStateSaveAt > 60_000) saveSessionState()
         scope.launch(Dispatchers.IO) { runCatching { trimCache(DEFAULT_CACHE_BUDGET) } }
@@ -1208,7 +1264,7 @@ class TorrentEngine(private val context: Context) {
                 claimed = streams.containsKey(m.infoHash) || starting.containsKey(m.infoHash))
         }
         val cache = entries.sumOf { it.bytes }
-        val budget = if (explicit) 0 else CachePolicy.budget(formFactor, freeBytes, cache)
+        val budget = if (explicit) 0 else CachePolicy.budget(formFactor, freeBytes, cache, cacheLimitBytes())
         val evict = CachePolicy.evict(entries, budget, freeBytes, CachePolicy.hardFloor(formFactor), explicit)
         evict.forEach { key ->
             synchronized(streamLock) {
@@ -1219,11 +1275,150 @@ class TorrentEngine(private val context: Context) {
         if (evict.isNotEmpty()) Log.i(TAG, "cache trimmed ${evict.size} (budget ${budget shr 20} MiB, free ${freeBytes shr 20} MiB)")
     }
 
+    /** Settings → Storage → "Stream cache limit" (the data session's AutoDownloadSettings); null = automatic (§8.3 C). */
+    private fun cacheLimitBytes(): Long? =
+        runCatching { (context.applicationContext as? com.kirtanya.reel.ReelApp)?.autoDownloader?.settings?.value?.cacheLimitGb }.getOrNull()?.let { it * GiB }
+
     /** Bytes held by stream-mode torrents (downloaded pieces, not sparse file lengths). */
     fun cacheBytes(): Long = metas.values.filter { it.mode == TorrentMode.STREAM }.sumOf { streamBytes(it.infoHash) }
 
     /** Everything on disk counts against the cache, including pieces of files no longer wanted. */
     private fun streamBytes(hash: String): Long = find(hash)?.status()?.totalDone() ?: 0L
+
+    // ---------------------------------------------------------------- download rules (§8.3)
+
+    private fun startRules() {
+        // A settings change applies at once (and moves the alarm to the new edge).
+        scope.launch { rulesStore.rules.collect { kickRules() } }
+        (context.applicationContext as? com.kirtanya.reel.ReelApp)?.let { app ->
+            scope.launch(Dispatchers.IO) {
+                app.autoDownloader.settings.map { it.cacheLimitGb }.distinctUntilChanged().drop(1).collect { runCatching { trimCache(DEFAULT_CACHE_BUDGET) } }
+            }
+        }
+        // Wrapped: an exception would cancel a fixed-delay task for good.
+        engineExec.scheduleWithFixedDelay({ runCatching { evaluateNight() }.onFailure { Log.w(TAG, "night rule failed", it) } }, 30, 30, TimeUnit.SECONDS)
+        engineExec.scheduleWithFixedDelay({ runCatching { govern() }.onFailure { Log.w(TAG, "governor failed", it) } }, 2, 2, TimeUnit.SECONDS)
+    }
+
+    /** Re-runs the overnight window on the engine thread (EngineService calls this from the window-edge alarm). */
+    fun evaluateRules() = kickRules()
+
+    private fun kickRules() {
+        if (!started) return
+        runCatching { engineExec.execute { runCatching { evaluateNight() }.onFailure { Log.w(TAG, "night rule failed", it) } } }
+    }
+
+    private fun minuteNow(): Int = java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+
+    private fun claimed(hash: String) = streams.containsKey(hash) || starting.containsKey(hash)
+
+    /** Does the overnight window keep [meta]'s torrent waiting right now? */
+    private fun nightHolds(meta: TorrentMeta, h: TorrentHandle): Boolean {
+        if (meta.mode != TorrentMode.DOWNLOAD || meta.startNow) return false
+        val finished = runCatching { h.status().isFinished }.getOrDefault(false)
+        return NightRule.holds(rulesStore.rules.value.night, minuteNow(), download = true, startNow = false, finished = finished, claimed = claimed(meta.infoHash))
+    }
+
+    /**
+     * Holds DOWNLOAD torrents outside the overnight window and releases them inside it (§8.3 A). Never touches a
+     * claimed (streamed) torrent, the user's own pause, or what the home disk's P2P rule holds. Engine thread.
+     */
+    private fun evaluateNight() {
+        val night = rulesStore.rules.value.night
+        var held = 0
+        var released = 0
+        var fetching = false
+        for (meta in metas.values.toList()) {
+            if (meta.mode != TorrentMode.DOWNLOAD) continue
+            val key = meta.infoHash
+            if (claimed(key)) continue
+            val h = find(key) ?: continue
+            val hold = nightHolds(meta, h)
+            val paused = h.getFlags().and_(TorrentFlags.PAUSED).non_zero()
+            when {
+                hold && !meta.pausedForNight -> {
+                    // Already stopped for its own reason: Resume will find the window closed.
+                    if (meta.userPaused || meta.pausedForSpace || meta.seedingDone) continue
+                    h.unsetFlags(TorrentFlags.AUTO_MANAGED)
+                    h.pause()
+                    saveMeta(meta.copy(pausedForNight = true))
+                    held++
+                }
+                // Running again behind our back (a stream on it ended, the queue): back to waiting.
+                hold && !paused && !meta.userPaused -> { h.unsetFlags(TorrentFlags.AUTO_MANAGED); h.pause() }
+                !hold && meta.pausedForNight -> {
+                    saveMeta(meta.copy(pausedForNight = false))
+                    // The P2P rule's own hook: true = it holds the download (and resumes it on an allowed network).
+                    if (!meta.userPaused && !downloadHold(key)) {
+                        h.setFlags(TorrentFlags.AUTO_MANAGED)
+                        h.resume()
+                    }
+                    released++
+                }
+            }
+            if (!hold && !meta.userPaused && !paused) {
+                val st = runCatching { h.status() }.getOrNull()
+                if (st != null && !st.isFinished) fetching = true
+            }
+        }
+        val win = NightRule.hourLabel(night.startHour).take(2) + "-" + NightRule.hourLabel(night.endHour).take(2)
+        if (held > 0) EngineStats.log("night", mapOf("state" to "hold", "n" to held, "win" to win))
+        if (released > 0) EngineStats.log("night", mapOf("state" to "release", "n" to released, "win" to win))
+        if (held + released > 0) refreshSnapshotsSoon()
+        nightAlarm.schedule(NightRule.nextEdge(night, java.time.ZonedDateTime.now())?.toInstant()?.toEpochMilli())
+        // The CPU stays up only for downloads inside an open window (a phone on the charger overnight).
+        val wake = night.enabled && NightRule.inWindow(night, minuteNow()) && fetching
+        if (wake || nightAlarm.held) nightAlarm.hold(wake)
+    }
+
+    /** A stream someone is watching right now: playing or buffering in the app, starting, or read by another player. */
+    private fun isWatching(s: ActiveStream, now: Long): Boolean {
+        if (s.closedReason != null || s.background) return false
+        if (!s.startupDone) return true
+        // playWhenReady, not isPlaying: a rebuffering player needs the bandwidth most.
+        if (s.signals.fresh(now) && s.signals.playWhenReady) return true
+        if (s.readers.values.any { it.kind == ReaderKind.HTTP }) return true
+        return System.currentTimeMillis() - s.lastHttpActivityAt < 10_000
+    }
+
+    /** Speed cap while watching (§8.3 B), every 2 s on the engine thread. */
+    private fun govern() {
+        val now = EngineStats.now()
+        val choice = if (EngineFlags.govern) rulesStore.rules.value.watchCap else WatchCap.OFF
+        val watching = streams.values.any { isWatching(it, now) }
+        val list = _torrents.value
+        val targets = list.filter { it.mode == TorrentMode.DOWNLOAD && it.phase in CAPPABLE && !claimed(it.infoHash) }
+        val fetching = targets.count { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA }
+        val d = governor.tick(now, watching, list.sumOf { it.downBps.toLong() }, choice, fetching, targets.size)
+        val want = if (d.capping) targets.associate { it.infoHash to (d.perTorrentDown to d.perTorrentUp) } else emptyMap()
+        // Lift first: the cap ended, or the torrent is now played / paused / gone.
+        for (key in capped.keys - want.keys) find(key)?.let { h -> runCatching { h.setDownloadLimit(0); h.setUploadLimit(0) } }
+        capped.keys.retainAll(want.keys)
+        for ((key, lim) in want) {
+            val old = capped[key]
+            if (old != null && !WatchGovernor.changedEnough(old.first, lim.first) && old.second == lim.second) continue
+            val h = find(key) ?: continue
+            runCatching { h.setDownloadLimit(lim.first.toInt()); h.setUploadLimit(lim.second.toInt()) }
+            capped[key] = lim
+        }
+        cappedKeys = capped.keys.toSet()
+        val mode = when {
+            d.capping && !capping -> "cap"
+            !d.capping && capping -> "lift"
+            d.capping && WatchGovernor.changedEnough(loggedPer, d.perTorrentDown) -> "adjust"
+            else -> null
+        }
+        if (mode != null) {
+            EngineStats.log("gov", mapOf("mode" to mode, "choice" to choice.name.lowercase(), "cap" to d.totalDown, "per" to d.perTorrentDown,
+                "up" to d.perTorrentUp, "n" to targets.size, "link" to d.linkPeak))
+            loggedPer = d.perTorrentDown
+        }
+        capping = d.capping
+    }
+
+    private fun refreshSnapshotsSoon() {
+        scope.launch { runCatching { refreshSnapshots() } }
+    }
 
     // ---------------------------------------------------------------- alerts + polling
 
@@ -1378,6 +1573,12 @@ class TorrentEngine(private val context: Context) {
                 fileIndex = meta.streamFileIndex ?: meta.wantedFiles.singleOrNull(),
                 userPaused = meta.userPaused,
                 streaming = streams.containsKey(hash),
+                waitingForNight = meta.pausedForNight && !meta.userPaused,
+                notice = when {
+                    meta.pausedForNight && !meta.userPaused -> NightRule.waitingLabel(rulesStore.rules.value.night)
+                    hash in cappedKeys -> "Slowed while you watch"
+                    else -> null
+                },
             )
         }.sortedByDescending { metas[it.infoHash]?.addedAt ?: 0 }
     }
@@ -1428,6 +1629,8 @@ class TorrentEngine(private val context: Context) {
             runCatching { json.decodeFromString(TorrentMeta.serializer(), String(readAtomic(file) ?: return@mapNotNull null)).migrated() }
                 .onFailure { Log.w(TAG, "meta ${file.name} unreadable", it) }.getOrNull()
         }.sortedBy { it.addedAt }
+        val night = rulesStore.rules.value.night
+        val minute = minuteNow()
         for (meta0 in loaded) {
             runCatching {
                 var meta = meta0
@@ -1450,13 +1653,16 @@ class TorrentEngine(private val context: Context) {
                     }
                 }
                 val saved = params.getFlags()
+                // Finished downloads aren't known yet (no status before add): the first rules run releases those.
+                val nightHold = NightRule.holds(night, minute, meta.mode == TorrentMode.DOWNLOAD, meta.startNow, finished = false, claimed = false)
                 val decided = RestorePolicy.restore(
                     RestoreFlags(
                         autoManaged = saved.and_(TorrentFlags.AUTO_MANAGED).non_zero(),
                         paused = saved.and_(TorrentFlags.PAUSED).non_zero(),
                         sequential = saved.and_(TorrentFlags.SEQUENTIAL_DOWNLOAD).non_zero(),
                     ),
-                    RestoreMeta(meta.mode == TorrentMode.DOWNLOAD, meta.userPaused, meta.seedingDone, meta.pausedForSpace, meta.pausedForStream, meta.wasAutoManaged),
+                    RestoreMeta(meta.mode == TorrentMode.DOWNLOAD, meta.userPaused, meta.seedingDone, meta.pausedForSpace, meta.pausedForStream, meta.wasAutoManaged,
+                        pausedForNight = meta.pausedForNight, nightHold = nightHold),
                 )
                 var flags = saved.without(TorrentFlags.AUTO_MANAGED).without(TorrentFlags.PAUSED).without(TorrentFlags.SEQUENTIAL_DOWNLOAD)
                 if (decided.autoManaged) flags = flags.or_(TorrentFlags.AUTO_MANAGED)
@@ -1470,7 +1676,8 @@ class TorrentEngine(private val context: Context) {
                 params.setUploadLimit(0)
                 params.setMaxConnections(-1)
                 params.piecePriorities(arrayOf<Priority>())
-                meta = meta.copy(pausedForStream = false, wasAutoManaged = null, savePath = meta.savePath ?: params.getSavePath())
+                val heldForNight = nightHold && !meta.userPaused && !meta.seedingDone && !meta.pausedForSpace
+                meta = meta.copy(pausedForStream = false, pausedForNight = heldForNight, wasAutoManaged = null, savePath = meta.savePath ?: params.getSavePath())
                 metas[meta.infoHash] = meta
                 if (meta != meta0) saveMeta(meta)
                 metadataWaiters.getOrPut(meta.infoHash) { CompletableDeferred() }
@@ -1547,6 +1754,8 @@ class TorrentEngine(private val context: Context) {
         private const val GHOST_MS = 1_500L
         /** Only a marker now: the real budget comes from [CachePolicy] for this device. */
         const val DEFAULT_CACHE_BUDGET = -1L
+        /** Phases the watch cap applies to: everything that can move bytes. */
+        private val CAPPABLE = setOf(TorrentPhase.DOWNLOADING, TorrentPhase.METADATA, TorrentPhase.FINISHED, TorrentPhase.SEEDING)
 
         private fun is64Bit() = Build.SUPPORTED_64_BIT_ABIS.isNotEmpty() && android.os.Process.is64Bit()
 

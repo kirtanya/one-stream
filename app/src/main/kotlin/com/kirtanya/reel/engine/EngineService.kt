@@ -43,9 +43,13 @@ class EngineService : LifecycleService() {
                 val down = list.sumOf { it.downBps.toLong() }
                 val up = list.sumOf { it.upBps.toLong() }
                 val rates = "↓ ${formatBytes(down)}/s · ↑ ${formatBytes(up)}/s"
+                // Downloads held by "Download only overnight" (STREAMING_V2 §8.3 A): say why nothing moves.
+                val night = list.filter { it.waitingForNight }
                 val text = when {
                     streaming.isNotEmpty() -> "Streaming ${streaming.first().name} · $rates"
                     active > 0 -> "$active downloading · $rates"
+                    night.isNotEmpty() -> com.kirtanya.reel.ui.plural(night.size, "download") + " " +
+                        (night.first().notice?.replaceFirstChar { it.lowercase() } ?: "waiting for night")
                     else -> "Idle"
                 }
                 getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text, streaming = streaming.isNotEmpty()))
@@ -59,6 +63,8 @@ class EngineService : LifecycleService() {
             quit()
             return START_NOT_STICKY
         }
+        // The overnight window's edge alarm (NightAlarm): flip held downloads now, even after Doze.
+        if (intent?.action == ACTION_RULES) ReelApp.get(this).engineIfCreated?.evaluateRules()
         if (intent?.action == ACTION_CAST_DOWNLOAD) {
             // Re-parsed from the link text: the request crosses into the service as plain data.
             val request = (com.kirtanya.reel.core.launcher.LauncherLink.parse(intent.dataString) as? com.kirtanya.reel.core.launcher.LauncherLink.Cast)?.request
@@ -117,6 +123,7 @@ class EngineService : LifecycleService() {
         private const val NOTIFICATION_ID = 1
         private const val ACTION_QUIT = "com.kirtanya.reel.QUIT"
         private const val ACTION_CAST_DOWNLOAD = "com.kirtanya.reel.CAST_DOWNLOAD"
+        internal const val ACTION_RULES = "com.kirtanya.reel.DOWNLOAD_RULES"
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, EngineService::class.java))
