@@ -64,11 +64,13 @@ fun rememberSourceSearch(req: SourceRequest, isTv: Boolean): Pair<SourceSearch?,
     return state to { searchCache.remove(req.key); attempt++ }
 }
 
-/** TVs have little storage: torrents bigger than the free space can't be streamed there. */
+/**
+ * TVs have little storage: torrents bigger than the free space can't be streamed there. On top: the
+ * user's source preferences for this device (quality cap, never CAM, pinned / blocked providers).
+ */
 fun rankPrefs(context: Context, isTv: Boolean): RankPrefs {
-    if (!isTv) return RankPrefs()
-    val free = StatFs(context.filesDir.path).availableBytes
-    return RankPrefs(maxBytes = (free - (1L shl 30)).coerceAtLeast(0))
+    val base = if (!isTv) RankPrefs() else RankPrefs(maxBytes = (StatFs(context.filesDir.path).availableBytes - (1L shl 30)).coerceAtLeast(0))
+    return com.kirtanya.reel.ReelApp.get(context).sourcePrefs.applyTo(base)
 }
 
 /** Best source to start straight away: first non-external one. */

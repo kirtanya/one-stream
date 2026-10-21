@@ -7,6 +7,14 @@ data class RankPrefs(
     val maxBytes: Long? = null,
     val avoidDolbyVision: Boolean = false,
     val avoidAv1: Boolean = false,
+    /** The user's cap for this device (e.g. 1080 on the TV): anything sharper ranks below everything else. Null = no cap. */
+    val maxResolution: Int? = null,
+    /** Leave out cam / telesync / screener rips entirely. */
+    val neverCam: Boolean = false,
+    /** Provider labels (SourceFacts.providerLabel) the user prefers: ranked first among equals. */
+    val pinned: Set<String> = emptySet(),
+    /** Provider labels the user never wants: left out. */
+    val blocked: Set<String> = emptySet(),
 )
 
 /**
@@ -15,12 +23,17 @@ data class RankPrefs(
  */
 object SourceRanker {
     fun rank(sources: List<Source>, prefs: RankPrefs = RankPrefs()): List<Source> =
-        sources.sortedWith(
+        sources.filter { allowed(it, prefs) }.sortedWith(
             compareByDescending<Source> { score(it, prefs) }
                 // Same score: a smaller direct file starts sooner (a 1.7 GB MP4 beats a 10.7 GB MKV).
                 .thenBy { if (it.kind == SourceKind.DIRECT) it.sizeBytes ?: Long.MAX_VALUE else 0L }
                 .thenBy { it.title },
         )
+
+    /** What the user's source preferences leave out (blocked providers, cam rips when "never CAM"). */
+    fun allowed(s: Source, prefs: RankPrefs): Boolean =
+        (prefs.blocked.isEmpty() || SourceFacts.providerLabel(s.provider) !in prefs.blocked) &&
+            !(prefs.neverCam && s.quality.lowQualityRip)
 
     fun fits(source: Source, prefs: RankPrefs): Boolean =
         source.kind != SourceKind.TORRENT || prefs.maxBytes == null || (source.sizeBytes ?: 0) <= prefs.maxBytes
@@ -36,8 +49,12 @@ object SourceRanker {
         if (prefs.avoidDolbyVision && s.quality.dolbyVision) score -= 80
         if (prefs.avoidAv1 && s.quality.av1) score -= 200
 
-        // Resolution: exact match best, one step either side next, unknown in the middle.
+        // Above the user's cap: still listed, never first.
         val r = s.quality.resolution
+        if (prefs.maxResolution != null && r != null && r > prefs.maxResolution) score -= 400
+        if (prefs.pinned.isNotEmpty() && SourceFacts.providerLabel(s.provider) in prefs.pinned) score += 120
+
+        // Resolution: exact match best, one step either side next, unknown in the middle.
         score += when {
             r == null -> 40.0
             r == prefs.preferredResolution -> 100.0
