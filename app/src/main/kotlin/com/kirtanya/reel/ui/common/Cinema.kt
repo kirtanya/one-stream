@@ -61,12 +61,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -82,7 +79,6 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
-import coil3.toBitmap
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.library.WatchlistItem
 import com.kirtanya.reel.core.tmdb.MediaType
@@ -98,9 +94,9 @@ import kotlinx.coroutines.delay
 
 /**
  * A title's logo artwork (TMDB) in place of its name, fitted inside [maxWidth] × [maxHeight] and
- * anchored bottom-start; the name as text when there's no logo or it fails to load. A logo that
- * wouldn't stand out on this theme's canvas (a white logo in light mode, a dark one in dark mode)
- * is drawn in the text colour instead.
+ * anchored bottom-start, always in its own colours: logos carry their own styling (gradients, 3D,
+ * textures), so it is never recoloured (the user's call, 0.9.1). The name as text when there's no
+ * logo or it fails to load.
  */
 @Composable
 fun TitleLogo(
@@ -119,43 +115,15 @@ fun TitleLogo(
         return
     }
     val context = LocalContext.current
-    val darkCanvas = Tokens.Colors.canvas.luminance() < 0.5f
-    // How light the logo is (null until it has loaded): decides, per theme, whether it needs the text colour.
-    var lightness by remember(logoPath) { mutableStateOf<Float?>(null) }
-    val tint = lightness?.let { if (darkCanvas) it < 0.45f else it > 0.55f }
-    val request = remember(logoPath) { ImageRequest.Builder(context).data(TmdbImages.titleLogo(logoPath)).allowHardware(false).build() }
+    val request = remember(logoPath) { ImageRequest.Builder(context).data(TmdbImages.titleLogo(logoPath)).build() }
     AsyncImage(
         model = request,
         contentDescription = title,
         contentScale = ContentScale.Fit,
         alignment = Alignment.BottomStart,
-        colorFilter = if (tint == true) ColorFilter.tint(Tokens.Colors.text, BlendMode.SrcIn) else null,
-        onState = { state ->
-            when (state) {
-                is AsyncImagePainter.State.Error -> failed = true
-                is AsyncImagePainter.State.Success ->
-                    lightness = runCatching { opaqueLuminance(state.result.image.toBitmap()) }.getOrDefault(0.5f)
-                else -> Unit
-            }
-        },
-        modifier = modifier.width(maxWidth).height(maxHeight).alpha(if (tint == null) 0f else 1f),
+        onState = { state -> if (state is AsyncImagePainter.State.Error) failed = true },
+        modifier = modifier.width(maxWidth).height(maxHeight),
     )
-}
-
-/** Average luminance of a logo's visible pixels (sampled on a small copy). */
-private fun opaqueLuminance(bitmap: android.graphics.Bitmap): Float {
-    val w = 48
-    val h = (bitmap.height * w / bitmap.width.coerceAtLeast(1)).coerceIn(1, 48)
-    val small = android.graphics.Bitmap.createScaledBitmap(bitmap, w, h, true)
-    var sum = 0f
-    var n = 0
-    for (y in 0 until h) for (x in 0 until w) {
-        val p = small.getPixel(x, y)
-        if (android.graphics.Color.alpha(p) < 128) continue
-        sum += Color(p).luminance()
-        n++
-    }
-    return if (n == 0) 1f else sum / n
 }
 
 /**
