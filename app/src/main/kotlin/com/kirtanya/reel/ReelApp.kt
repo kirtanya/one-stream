@@ -44,6 +44,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val history by lazy { WatchHistoryStore(this) }
     val watchlist by lazy { com.kirtanya.reel.data.WatchlistStore(this) }
     val sourceMarks by lazy { com.kirtanya.reel.data.SourceMarksStore(this) }
+    val watched by lazy { com.kirtanya.reel.data.WatchedStore(this, history) }
+    val hidden by lazy { com.kirtanya.reel.data.HiddenStore(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
     /** Which title / episode each download is for (Downloads → Change source). */
     val downloadOrigins by lazy { com.kirtanya.reel.data.DownloadOriginStore(this) }
@@ -57,10 +59,10 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     }
     /** Home disk: settings, Keystore secrets, connection manager, phone requests / TV agent (docs/HOME_DISK.md). */
     val home by lazy { com.kirtanya.reel.homedisk.Home(this) }
-    val tvSync by lazy { com.kirtanya.reel.data.sync.TvSync(this, sources, watchlist) }
+    val tvSync by lazy { com.kirtanya.reel.data.sync.TvSync(this, sources, watchlist, watched, hidden) }
     val phoneSync by lazy {
         val syncHttp = http.newBuilder().readTimeout(2, java.util.concurrent.TimeUnit.MINUTES).build()
-        com.kirtanya.reel.data.sync.PhoneSync(this, sources, watchlist, OkHttpFetcher(syncHttp, null), appScope)
+        com.kirtanya.reel.data.sync.PhoneSync(this, sources, watchlist, watched, hidden, OkHttpFetcher(syncHttp, null), appScope)
     }
 
     override fun onCreate() {
@@ -68,6 +70,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         // First, so a crash anywhere below is reported too.
         reports.install()
         appScope.launch { sources.ensureReady() }
+        // Finishing something in the player ticks it as watched (and so it syncs to the TV).
+        appScope.launch { history.entries.collect { watched.recordHistory(it) } }
         // Before anything can start the engine: the P2P network rule must hold downloads from the first moment.
         home.start()
         if (isTv) tvSync.start() else phoneSync.start()

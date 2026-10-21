@@ -60,6 +60,8 @@ class PhoneSync(
     private val context: Context,
     private val sources: SourcesStore,
     private val watchlist: WatchlistStore,
+    private val watched: com.kirtanya.reel.data.WatchedStore,
+    private val hidden: com.kirtanya.reel.data.HiddenStore,
     http: HttpFetcher,
     private val scope: CoroutineScope,
 ) {
@@ -83,7 +85,7 @@ class PhoneSync(
             sources.ensureReady()
             // Every change to sources or the watchlist (and the current state once) → a push a few seconds
             // later; an unchanged bundle is skipped by hash.
-            merge(sources.state.map { }, watchlist.all.map { }).debounce(3_000).collect { if (_state.value.autoSync) pushAll() }
+            merge(sources.state.map { }, watchlist.all.map { }, watched.all.map { }, hidden.all.map { }).debounce(3_000).collect { if (_state.value.autoSync) pushAll() }
         }
         scope.launch {
             while (isActive) {
@@ -126,7 +128,7 @@ class PhoneSync(
     suspend fun push(tvId: String, force: Boolean = false): String? = pushLock.withLock {
         val tv = _state.value.tvs.firstOrNull { it.tvId == tvId } ?: return@withLock null
         if (tv.needsPairing && !force) return@withLock null
-        val bundle = sources.exportBundle(from = deviceName).copy(watchlist = watchlist.all.value)
+        val bundle = sources.exportBundle(from = deviceName).copy(watchlist = watchlist.all.value, watched = watched.all.value, hidden = hidden.all.value)
         val hash = bundle.copy(from = "").hashCode()
         if (!force && hash == tv.lastHash && tv.lastError == null) return@withLock null
         _state.value = _state.value.copy(syncing = true)

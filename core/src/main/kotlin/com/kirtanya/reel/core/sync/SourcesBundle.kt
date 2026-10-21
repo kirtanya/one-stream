@@ -16,6 +16,10 @@ data class SourcesBundle(
      * titles saved on the TV survive. Null = the sender doesn't sync a watchlist (older app).
      */
     val watchlist: List<WatchlistItem>? = null,
+    /** Watched ticks (films, episodes), merged like the watchlist. Null = an older sender. */
+    val watched: List<com.kirtanya.reel.core.library.WatchedMark>? = null,
+    /** "Not interested" titles, merged like the watchlist. Null = an older sender. */
+    val hidden: List<com.kirtanya.reel.core.library.HiddenTitle>? = null,
 )
 
 @Serializable

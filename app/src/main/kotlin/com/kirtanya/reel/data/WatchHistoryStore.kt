@@ -50,6 +50,16 @@ class WatchHistoryStore(context: Context) {
     /** Forgets one film / episode ([Playback.key]): it starts from the top again. */
     fun markUnwatched(key: String) = update { list -> com.kirtanya.reel.core.playback.WatchMarks.unwatched(list, key) }
 
+    /** The History page: entries grouped by day ("Today", "Yesterday", "Mon 19 Oct"). */
+    fun byDay(now: Long = System.currentTimeMillis()) =
+        com.kirtanya.reel.core.playback.HistoryDays.group(_entries.value, java.time.ZoneId.systemDefault(), now)
+
+    /** Deletes one History row (a film or one episode). Watched ticks stay (WatchedStore). */
+    fun delete(key: String) = markUnwatched(key)
+
+    /** Clears the whole watch history (Continue watching empties too). Watched ticks stay. */
+    fun clear() = update { emptyList() }
+
     /** Removes everything for a film or show from Continue watching. */
     fun removeTitle(titleKey: String) = update { list -> list.filterNot { it.playback.titleKey == titleKey } }
 

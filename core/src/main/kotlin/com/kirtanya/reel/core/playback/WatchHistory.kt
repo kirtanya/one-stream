@@ -34,6 +34,27 @@ sealed interface ContinueItem {
     data class UpNext(override val entry: WatchEntry, val next: EpisodeNumber) : ContinueItem
 }
 
+/** One day of the History page: "Today", "Yesterday", then "Mon 19 Oct" (year added when not this year). */
+data class HistoryDay(val date: java.time.LocalDate, val label: String, val entries: List<WatchEntry>)
+
+object HistoryDays {
+    /** [entries] grouped by the local day they were last watched, newest day first, newest first within a day. */
+    fun group(entries: List<WatchEntry>, zone: java.time.ZoneId, now: Long): List<HistoryDay> {
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        return entries.sortedByDescending { it.updatedAt }
+            .groupBy { java.time.Instant.ofEpochMilli(it.updatedAt).atZone(zone).toLocalDate() }
+            .map { (date, list) -> HistoryDay(date, label(date, today), list) }
+    }
+
+    fun label(date: java.time.LocalDate, today: java.time.LocalDate): String = when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> date.format(
+            java.time.format.DateTimeFormatter.ofPattern(if (date.year == today.year) "EEE d MMM" else "EEE d MMM yyyy", java.util.Locale.ENGLISH),
+        )
+    }
+}
+
 /** "Mark watched" / "Mark unwatched" without playing (the long-press options sheet). */
 object WatchMarks {
     /**

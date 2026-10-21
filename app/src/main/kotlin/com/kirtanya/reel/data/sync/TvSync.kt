@@ -37,7 +37,10 @@ data class TvSyncState(
  * TV side: runs the sync server while Reel's process is alive (kept up by the engine's foreground
  * service) and announces it on the network. Pairing only opens while the Phone & TV card is shown.
  */
-class TvSync(private val context: Context, private val sources: SourcesStore, private val watchlist: WatchlistStore) : SyncHost {
+class TvSync(private val context: Context, private val sources: SourcesStore, private val watchlist: WatchlistStore,
+    private val watched: com.kirtanya.reel.data.WatchedStore,
+    private val hidden: com.kirtanya.reel.data.HiddenStore,
+) : SyncHost {
     private val prefs = context.getSharedPreferences("sync_tv", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
     private val phones = ListSerializer(PairedPhone.serializer())
@@ -97,9 +100,14 @@ class TvSync(private val context: Context, private val sources: SourcesStore, pr
     override suspend fun apply(bundle: SourcesBundle): ApplyResult = applyLock.withLock {
         val result = sources.applyBundle(bundle)
         // The watchlist is merged, not mirrored: titles saved on the TV stay.
-        val changed = bundle.watchlist?.let(watchlist::mergeFrom) ?: 0
-        if (changed == 0) result
-        else result.copy(summary = listOf(result.summary.takeUnless { it == "already up to date" }, "watchlist: $changed changed").filterNotNull().joinToString(", "))
+        // Watched ticks and hidden titles: merged the same way.
+        val changes = listOfNotNull(
+            (bundle.watchlist?.let(watchlist::mergeFrom) ?: 0).takeIf { it > 0 }?.let { "watchlist: $it changed" },
+            (bundle.watched?.let(watched::mergeFrom) ?: 0).takeIf { it > 0 }?.let { "watched: $it changed" },
+            (bundle.hidden?.let(hidden::mergeFrom) ?: 0).takeIf { it > 0 }?.let { "hidden: $it changed" },
+        )
+        if (changes.isEmpty()) result
+        else result.copy(summary = (listOfNotNull(result.summary.takeUnless { it == "already up to date" }) + changes).joinToString(", "))
     }
 
     override fun pairedPhones(): List<PairedPhone> {
