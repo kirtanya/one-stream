@@ -84,6 +84,7 @@ import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.theme.Tokens
 import com.kirtanya.reel.ui.title.PlayAction
 import com.kirtanya.reel.ui.title.heroBackdrops
+import com.kirtanya.reel.ui.title.EpisodeOptions
 import com.kirtanya.reel.ui.title.rememberEpisodeProgress
 import com.kirtanya.reel.ui.title.rememberPlayAction
 import com.kirtanya.reel.ui.title.rememberProviderOpener
@@ -127,6 +128,10 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
     val (saved, toggleSaved) = rememberWatchlistToggle(d.summary)
     var overviewOpen by rememberSaveable { mutableStateOf(false) }
     val openSources: (EpisodeNumber?) -> Unit = { ep -> onPlay(ep?.season, ep?.episode) }
+    var episodeOptions by remember { mutableStateOf<Episode?>(null) }
+    episodeOptions?.let { e ->
+        EpisodeOptions(d, e, progress[EpisodeNumber(e.season, e.number)], onPlay = { s, n -> onPlay(s, n) }, onOpenDest = onOpenDest, onDismiss = { episodeOptions = null })
+    }
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Tokens.Space.xxl
 
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -211,7 +216,7 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
                     Load.Loading -> item(key = "episodes-loading") { LoadingBox(Modifier.height(120.dp)) }
                     is Load.Failed -> item(key = "episodes-failed") { ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = gutter), kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh) }
                     is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
-                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], Modifier.padding(horizontal = gutter)) { onPlay(e.season, e.number) }
+                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], Modifier.padding(horizontal = gutter), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
                     }
                 }
             }
@@ -249,11 +254,11 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
 
 /** Episode card: still (with progress or a watched tick), number + name, runtime, two lines of story. */
 @Composable
-private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier = Modifier, onLongClick: () -> Unit, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val stillShape = RoundedCornerShape(Tokens.Radius.m)
     Row(
-        modifier.fillMaxWidth().focusCard(shape = shape, scale = 1f, onClick = onClick).padding(Tokens.Space.xs),
+        modifier.fillMaxWidth().focusCard(shape = shape, scale = 1f, onLongClick = onLongClick, onClick = onClick).padding(Tokens.Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -82,7 +82,8 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
 - **Release names** wrap at dots and dashes (`releaseName`), never mid-word.
 - **Sources page:** "Choose a source to play / download", the title (logo) and episode on the hero; a Play | Download switch (each card does what it says); a slim progress line ("Searching · 4 of 7 · 4 results", "Still searching: …"); the **Recommended** card (ranker's pick, glowing ring, facts, tag pills, one big button); then two sideways rows of chips (Sort · quality · type, then provider · language) and the rest as cards: quality badge + type on the left, size and seed bars, provider · languages, tags in the accent colour, the release name (one line), and a round icon on the right showing the action. Seed bars: 3 strong, 2 OK, 1 weak (amber), 0 none.
 - **Addon store:** search, then chips (kind · status, then content type · catalog), counts per chip, "Clear" when any is on.
-- **Downloads:** downloads first, then a **Stream cache** section (what played recently; deleted when space is needed). Download cards: Play, Pause/Resume, Delete, More (Change source, Keep as stream cache); cache cards: Play, Save as download, Delete.
+- **Options sheet (long-press / hold OK):** the title art (16:9, or 2:3 for posters) with the name and a quiet line, then icon + label rows (48 dp+ tall; removing is in the error colour). Phone: a bottom sheet. TV: a 360 dp panel on the right over a scrim; focus starts on the first row and stays inside, and Back closes it. Removing a Continue watching card hides it with an **Undo** snackbar (surfaceHighest; on TV the Undo button takes focus).
+- **Downloads:** downloads first, then a **Stream cache** section (what played recently; deleted when space is needed). Download cards: Play, Pause/Resume, Delete, More (Change source, Keep as stream cache, Go to title); cache cards: Play, Save as download, Delete.
 
 ## 4. Screen rules
 

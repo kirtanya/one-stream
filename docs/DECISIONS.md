@@ -5,6 +5,22 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Long-press opens an options sheet**
+Decision (user): long-pressing a Continue watching card shows more options (first item from the feature brainstorm).
+Built (Claude): one `OptionsSheet` (`ui/common/OptionsSheet.kt`). On the phone it's a bottom sheet with the title art on top.
+On TV it's a right-side panel in its own window, so focus can't leave it and Back closes it. Long-press used to act
+straight away (remove from Continue watching, toggle My list); now it opens the sheet. Continue watching: Resume, Start over,
+Play next episode, Mark as watched, Choose another source, Go to title, Remove from row. Posters: My list, Trailer, Share,
+Go to title. Episodes: Play from start, Download, Mark watched / unwatched. Downloads → More gains Go to title.
+Also decided (Claude): Remove hides the card at once and shows an Undo snackbar (app root, `UndoHost`); the history
+entry is deleted only when the snackbar goes. That replaces the old confirm dialog. On TV, Undo takes focus and
+focus goes back to the row afterwards. Mark watched uses `history.markWatched` (an unplayed episode gets
+`Playback.watchedMarker`, with the next episode so Continue watching moves on). A watched episode offers Mark unwatched
+instead. Play from start falls back to Sources for an episode that was only marked.
+Evidence: renders continue-options(-show), poster-options, episode-options, continue-undo, downloads-more (phone and TV).
+
+---
+
 **2026-10-21 · Caption style (phone and TV)**
 Decision (user): customise how subtitles look, on both devices.
 Built (Claude): `core/playback/CaptionStyle` (size Small–Extra large, text colour, background None / Light box /

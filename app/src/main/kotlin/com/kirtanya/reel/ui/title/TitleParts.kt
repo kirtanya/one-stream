@@ -118,9 +118,11 @@ fun rememberEpisodeProgress(tvId: Int): Map<com.kirtanya.reel.core.playback.Epis
 }
 
 /** Share a title as its TMDB page. */
-fun shareTitle(context: android.content.Context, d: TitleDetails) {
-    val url = "https://www.themoviedb.org/${d.summary.ref.type.path}/${d.summary.ref.id}"
+fun shareTitle(context: android.content.Context, d: TitleDetails) = shareTitle(context, d.summary)
+
+fun shareTitle(context: android.content.Context, t: com.kirtanya.reel.core.tmdb.TitleSummary) {
+    val url = "https://www.themoviedb.org/${t.ref.type.path}/${t.ref.id}"
     val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
-        .putExtra(android.content.Intent.EXTRA_TEXT, "${d.summary.title} — $url")
-    context.startActivity(android.content.Intent.createChooser(send, "Share ${d.summary.title}"))
+        .putExtra(android.content.Intent.EXTRA_TEXT, "${t.title} — $url")
+    context.startActivity(android.content.Intent.createChooser(send, "Share ${t.title}"))
 }

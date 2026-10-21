@@ -78,7 +78,13 @@ fun TvApp(
     val openTitle: (com.kirtanya.reel.core.tmdb.TitleSummary) -> Unit = { nav.open(Dest.Title(it.ref)) }
 
     // Remote only: no 48 dp touch padding around controls (it would only push layouts apart).
-    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified) {
+    // An outer host wins (screen renders put one in to show the Undo state).
+    val undo = com.kirtanya.reel.ui.common.LocalUndo.current ?: com.kirtanya.reel.ui.common.rememberUndoHost()
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.material3.LocalMinimumInteractiveComponentSize provides androidx.compose.ui.unit.Dp.Unspecified,
+        com.kirtanya.reel.ui.common.LocalIsTv provides true,
+        com.kirtanya.reel.ui.common.LocalUndo provides undo,
+    ) {
     val back: () -> Unit = { nav.back() }
     val open: (Dest) -> Unit = { nav.open(it) }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
@@ -109,6 +115,10 @@ fun TvApp(
         }
         // The tab bar stays put while tabs change under it.
         if (nav.top == null) TvTopBar(nav)
+        com.kirtanya.reel.ui.common.UndoSnackbarHost(
+            undo, isTv = true,
+            Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.tvSafeH, vertical = Tokens.Space.tvSafeV),
+        )
     }
     }
 

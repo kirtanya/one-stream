@@ -110,6 +110,9 @@ fun PhoneApp(
     val back: () -> Unit = { nav.back() }
     val open: (Dest) -> Unit = { nav.open(it) }
 
+    // An outer host wins (screen renders put one in to show the Undo state).
+    val undo = com.kirtanya.reel.ui.common.LocalUndo.current ?: com.kirtanya.reel.ui.common.rememberUndoHost()
+    androidx.compose.runtime.CompositionLocalProvider(com.kirtanya.reel.ui.common.LocalUndo provides undo) {
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         // Screen to screen: a cross-fade with a slight zoom. Each screen keeps its state (scroll,
         // season, search) while something is on top of it.
@@ -149,6 +152,14 @@ fun PhoneApp(
         ) {
             BottomBar(selected = nav.tab, onSelect = { nav.select(it) })
         }
+        // Undo for removals (Continue watching): just above the floating tab bar, or the gesture bar on pages.
+        com.kirtanya.reel.ui.common.UndoSnackbarHost(
+            undo, isTv = false,
+            Modifier.align(Alignment.BottomCenter).padding(horizontal = Tokens.Space.phoneGutter)
+                .padding(bottom = if (nav.stack.isEmpty()) Tokens.Space.bottomBarClearance + Tokens.Space.s else Tokens.Space.l)
+                .then(if (nav.stack.isEmpty()) Modifier else Modifier.navigationBarsPadding()),
+        )
+    }
     }
 
     if (showAdd || incomingMagnet != null) {

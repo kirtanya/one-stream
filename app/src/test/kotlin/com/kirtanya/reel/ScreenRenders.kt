@@ -321,7 +321,15 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun downloadsEnd() = render("downloads-end", scrollToEnd = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
     @Test fun downloadsCache() = render("downloads-cache", data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
     /** Alone over the canvas: the design rules read a dialog's own window. */
-    @Test fun downloadsMore() = render("downloads-more", windows = true) { com.kirtanya.reel.ui.MoreDialog(Fake.torrents[0], canChangeSource = true, {}, {}, {}) }
+    @Test fun downloadsMore() = render("downloads-more", windows = true) { com.kirtanya.reel.ui.MoreDialog(Fake.torrents[0], canChangeSource = true, {}, {}, {}, onGoToTitle = {}) }
+    // Long-press options (Continue watching, posters, episodes) and the Undo after removing a card.
+    @Test fun continueOptions() = render("continue-options", history = true, windows = true) { ContinueOptionsScene(show = false) }
+    @Test fun continueOptionsShow() = render("continue-options-show", history = true, windows = true) { ContinueOptionsScene(show = true) }
+    @Test fun posterOptions() = render("poster-options", windows = true) { PosterOptionsScene() }
+    @Test fun episodeOptions() = render("episode-options", history = true, windows = true) { EpisodeOptionsScene() }
+    @Test fun episodeOptionsUnplayed() = render("episode-options-unplayed", windows = true) { EpisodeOptionsScene() }
+    @Test fun continueUndo() = render("continue-undo", history = true) { UndoScene { phone()() } }
+
     @Test fun downloadsEmpty() = render("downloads-empty", data = RenderData(torrents = emptyList(), storage = 0L to 51_000_000_000L), content = phone { select(Tab.Downloads) })
 
     @Test fun settings() = render("settings", content = phone { select(Tab.Settings) })
@@ -439,7 +447,11 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvPerson() = render("person", tv = true, content = tvApp { open(Dest.Person(1, "Timothée Chalamet")) })
     @Test @Config(qualifiers = TV) fun tvDownloads() = render("downloads", tv = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvDownloadsCache() = render("downloads-cache", tv = true, data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
-    @Test @Config(qualifiers = TV) fun tvDownloadsMore() = render("downloads-more", tv = true, windows = true) { com.kirtanya.reel.ui.MoreDialog(Fake.torrents[0], canChangeSource = true, {}, {}, {}) }
+    @Test @Config(qualifiers = TV) fun tvDownloadsMore() = render("downloads-more", tv = true, windows = true) { com.kirtanya.reel.ui.MoreDialog(Fake.torrents[0], canChangeSource = true, {}, {}, {}, onGoToTitle = {}) }
+    @Test @Config(qualifiers = TV) fun tvContinueOptions() = render("continue-options", tv = true, history = true, windows = true) { TvScene { ContinueOptionsScene(show = false) } }
+    @Test @Config(qualifiers = TV) fun tvPosterOptions() = render("poster-options", tv = true, windows = true) { TvScene { PosterOptionsScene() } }
+    @Test @Config(qualifiers = TV) fun tvEpisodeOptions() = render("episode-options", tv = true, history = true, windows = true) { TvScene { EpisodeOptionsScene() } }
+    @Test @Config(qualifiers = TV) fun tvContinueUndo() = render("continue-undo", tv = true, history = true) { UndoScene { tvApp()() } }
     @Test @Config(qualifiers = TV) fun tvDownloadsEmpty() = render("downloads-empty", tv = true, data = RenderData(torrents = emptyList(), storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettings() = render("settings", tv = true, content = tvApp { select(Tab.Settings) })
     private fun tvSettingsPage(page: SettingsPage) =
@@ -459,6 +471,47 @@ open class ScreenRenders(protected val variant: Variant) {
         render("settings-homestorage-not-set-up", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.notSetUp.copy(isTv = true))) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeStorage)) } }
     @Test @Config(qualifiers = TV) fun tvAddSource() = render("add-source", tv = true, windows = true, data = RenderData(linkPreview = Load.Ready(preview))) {
         AddSourceLinkDialog(preview.url, isTv = true, onDone = {})
+    }
+
+    // ─── Option sheets (shown as if long-pressed) ─────────────────────────────────────────────
+
+    /** The TV root's locals: remote input, sheets as a side panel. */
+    @Composable
+    private fun TvScene(content: @Composable () -> Unit) {
+        CompositionLocalProvider(
+            androidx.compose.material3.LocalMinimumInteractiveComponentSize provides Dp.Unspecified,
+            com.kirtanya.reel.ui.common.LocalIsTv provides true,
+        ) { content() }
+    }
+
+    /** The sheet for the seeded film (Resume: every option) or show (Up next). */
+    @Composable
+    private fun ContinueOptionsScene(show: Boolean) {
+        val items = com.kirtanya.reel.ui.common.rememberContinueWatching()
+        val item = items.firstOrNull { it.entry.playback.tmdbType == if (show) "tv" else "movie" } ?: return
+        com.kirtanya.reel.ui.common.ContinueOptions(item, onOpenDest = {}, onDismiss = {}, refocus = {})
+    }
+
+    @Composable
+    private fun PosterOptionsScene() {
+        com.kirtanya.reel.ui.common.PosterOptions(Fake.details(Fake.film).summary, onOpen = {}, onDismiss = {})
+    }
+
+    /** The show's S2 E5: finished with history (Mark unwatched), never played without it (Mark watched). */
+    @Composable
+    private fun EpisodeOptionsScene() {
+        val history = (androidx.compose.ui.platform.LocalContext.current.applicationContext as ReelApp).history
+        val e = Fake.episodes(2, 24)[4]
+        val watched = history.entries.value.firstOrNull { it.playback.episode == com.kirtanya.reel.core.playback.EpisodeNumber(2, 5) }
+        com.kirtanya.reel.ui.title.EpisodeOptions(Fake.details(Fake.show), e, watched, onPlay = { _, _ -> }, onOpenDest = {}, onDismiss = {})
+    }
+
+    /** Home right after "Remove from row": the card is gone and the app's Undo snackbar is up. */
+    @Composable
+    private fun UndoScene(app: @Composable () -> Unit) {
+        val undo = com.kirtanya.reel.ui.common.rememberUndoHost()
+        androidx.compose.runtime.LaunchedEffect(Unit) { undo.remove("movie:${Fake.FILM_ID}", "Removed Dune: Part Two", commit = {}) }
+        CompositionLocalProvider(com.kirtanya.reel.ui.common.LocalUndo provides undo) { app() }
     }
 
     // ─── Brand ───────────────────────────────────────────────────────────────────────────────

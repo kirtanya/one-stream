@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -207,6 +208,13 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
             },
             onKeepAsCache = { more = null; confirmCache = t },
             onDismiss = { more = null },
+            onGoToTitle = origin?.let { o ->
+                {
+                    more = null
+                    val type = if (o.type == com.kirtanya.reel.core.tmdb.MediaType.TV.path) com.kirtanya.reel.core.tmdb.MediaType.TV else com.kirtanya.reel.core.tmdb.MediaType.MOVIE
+                    onOpenDest(com.kirtanya.reel.ui.nav.Dest.Title(com.kirtanya.reel.core.tmdb.TitleRef(type, o.tmdbId)))
+                }
+            },
         )
     }
 
@@ -360,7 +368,15 @@ private fun statusLine(t: TorrentSnapshot): String = buildString {
 
 /** A download's other actions, as a dialog of buttons (reachable with the remote too). */
 @Composable
-internal fun MoreDialog(t: TorrentSnapshot, canChangeSource: Boolean, onChangeSource: () -> Unit, onKeepAsCache: () -> Unit, onDismiss: () -> Unit) {
+internal fun MoreDialog(
+    t: TorrentSnapshot,
+    canChangeSource: Boolean,
+    onChangeSource: () -> Unit,
+    onKeepAsCache: () -> Unit,
+    onDismiss: () -> Unit,
+    /** Downloads started from a title's sources know their film / show: open its page. */
+    onGoToTitle: (() -> Unit)? = null,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Tokens.Colors.surface1,
@@ -373,6 +389,7 @@ internal fun MoreDialog(t: TorrentSnapshot, canChangeSource: Boolean, onChangeSo
                     Text("Change source works for downloads started from a title's sources.", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
                 }
                 ReelButton("Keep as stream cache", onKeepAsCache, Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, icon = Icons.Rounded.Theaters)
+                onGoToTitle?.let { ReelButton("Go to title", it, Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, icon = Icons.Rounded.Info) }
             }
         },
         confirmButton = { ReelButton("Close", onDismiss, kind = ButtonKind.Ghost) },

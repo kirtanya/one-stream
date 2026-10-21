@@ -75,6 +75,7 @@ import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.theme.Tokens
 import com.kirtanya.reel.ui.title.PlayAction
 import com.kirtanya.reel.ui.title.heroBackdrops
+import com.kirtanya.reel.ui.title.EpisodeOptions
 import com.kirtanya.reel.ui.title.rememberEpisodeProgress
 import com.kirtanya.reel.ui.title.rememberPlayAction
 import com.kirtanya.reel.ui.title.rememberProviderOpener
@@ -113,6 +114,10 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
     val playFocus = remember { FocusRequester() }
     RequestFocusOnce(playFocus)
     val openSources: (EpisodeNumber?) -> Unit = { ep -> onPlay(ep?.season, ep?.episode) }
+    var episodeOptions by remember { mutableStateOf<com.kirtanya.reel.core.tmdb.Episode?>(null) }
+    episodeOptions?.let { e ->
+        EpisodeOptions(d, e, progress[EpisodeNumber(e.season, e.number)], onPlay = { s, n -> onPlay(s, n) }, onOpenDest = onOpenDest, onDismiss = { episodeOptions = null })
+    }
     val side = Tokens.Space.tvSafeH
 
     Box(Modifier.fillMaxSize()) {
@@ -169,7 +174,7 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
                                 val watched = progress[EpisodeNumber(e.season, e.number)]
                                 val shape = RoundedCornerShape(Tokens.Radius.media)
                                 Column(Modifier.width(240.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
+                                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
                                         RemoteImage(TmdbImages.still(e.stillPath, "w780"), Modifier.fillMaxSize())
                                         when {
                                             watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), icon = Icons.Rounded.Check, accent = true)

@@ -13,8 +13,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.OndemandVideo
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Modifier
@@ -30,7 +38,7 @@ import com.kirtanya.reel.ui.theme.Tokens
 
 /**
  * 2:3 poster (radius 12, hairline) with title and a quiet meta line underneath. Long-press (hold
- * OK on the remote) adds it to My list or takes it off.
+ * OK on the remote) opens its options: My list, Trailer, Share, Go to title.
  */
 @Composable
 fun PosterCard(
@@ -43,14 +51,15 @@ fun PosterCard(
     onFocus: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(Tokens.Radius.m)
-    val toggleSaved = rememberWatchlistToggler()
+    var options by remember { mutableStateOf(false) }
+    if (options) PosterOptions(item, onOpen = onClick, onDismiss = { options = false })
     Column(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
         // [modifier] goes on the focusable image so focus requesters land on it.
         val frame = modifier
             .fillMaxWidth()
             .aspectRatio(2f / 3f)
             .focusCard(
-                shape = shape, scale = Tokens.Motion.posterFocusScale, onFocus = onFocus, onLongClick = { toggleSaved(item) },
+                shape = shape, scale = Tokens.Motion.posterFocusScale, onFocus = onFocus, onLongClick = { options = true },
                 origin = if (showText) androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) else androidx.compose.ui.graphics.TransformOrigin.Center,
                 onClick = onClick,
             )
@@ -106,3 +115,23 @@ fun metaLine(item: TitleSummary): String = listOfNotNull(
     item.rating?.let { "★ %.1f".format(it) } ?: if (item.ref.type == MediaType.TV) "Series" else "Film",
     item.year?.toString(),
 ).joinToString(" · ")
+
+/**
+ * Long-press on a poster: Add to / Remove from My list, Trailer (once the title's videos are in and
+ * it has one), Share, Go to title.
+ */
+@Composable
+internal fun PosterOptions(item: TitleSummary, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val (saved, toggle) = rememberWatchlistToggle(item)
+    val catalog = rememberCatalog()
+    val (details, _) = rememberLoad(item.ref) { catalog.details(item.ref) }
+    val trailer = (details as? Load.Ready)?.value?.trailer
+    val actions = listOfNotNull(
+        OptionAction(watchlistIcon(saved), if (saved) "Remove from My list" else "Add to My list", toggle),
+        trailer?.let { v -> OptionAction(Icons.Rounded.OndemandVideo, "Trailer", { openVideo(context, v) }, detail = "Opens YouTube") },
+        OptionAction(Icons.Rounded.Share, "Share", { com.kirtanya.reel.ui.title.shareTitle(context, item) }),
+        OptionAction(Icons.Rounded.Info, "Go to title", onOpen),
+    )
+    OptionsSheet(OptionsHeader(item.title, metaLine(item), item.posterPath?.let { TmdbImages.poster(it, "w185") }, poster = true), actions, onDismiss)
+}

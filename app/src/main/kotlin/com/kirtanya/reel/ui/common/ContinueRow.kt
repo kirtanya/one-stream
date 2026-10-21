@@ -18,13 +18,20 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,7 +60,9 @@ import com.kirtanya.reel.ui.theme.Tokens
 fun rememberContinueWatching(): List<ContinueItem> {
     val history = ReelApp.get(LocalContext.current).history
     val entries by history.entries.collectAsState()
-    return remember(entries) { ContinueWatching.select(entries, System.currentTimeMillis()) }
+    // A card removed a moment ago stays hidden while its Undo is offered.
+    val hidden = LocalUndo.current?.hidden.orEmpty().toList()
+    return remember(entries, hidden) { ContinueWatching.select(entries, System.currentTimeMillis()).filterNot { it.entry.playback.titleKey in hidden } }
 }
 
 /** Card heading and detail line, also used for the TV home's info block. */
@@ -96,33 +105,18 @@ fun ContinueRow(
     val context = LocalContext.current
     val history = ReelApp.get(context).history
     val shape = RoundedCornerShape(Tokens.Radius.media)
-    // Long-press asks first: on a TV remote a long press happens by accident (it removed two titles at once).
-    var confirmRemove by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<ContinueItem?>(null) }
-    confirmRemove?.let { pending ->
-        val keep = remember { FocusRequester() }
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { confirmRemove = null },
-            title = { Text("Remove from Continue watching?") },
-            text = { Text("${pending.entry.playback.title} and where you stopped will be forgotten.") },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { confirmRemove = null }, modifier = Modifier.focusRequester(keep)) { Text("Keep") }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    history.removeTitle(pending.entry.playback.titleKey)
-                    Toast.makeText(context, "Removed ${pending.entry.playback.title}", Toast.LENGTH_SHORT).show()
-                    confirmRemove = null
-                }) { Text("Remove") }
-            },
-        )
-        // The safe choice has focus, so an accidental OK keeps the title.
-        androidx.compose.runtime.LaunchedEffect(pending) { runCatching { keep.requestFocus() } }
+    // Long-press (hold OK) opens the options; removing is one of them, with Undo (it used to remove at once,
+    // and on a TV remote a long press happens by accident).
+    var options by remember { mutableStateOf<ContinueItem?>(null) }
+    val rowFocus = remember { FocusRequester() }
+    options?.let { item ->
+        ContinueOptions(item, onOpenDest, onDismiss = { options = null }, refocus = { rowFocus.requestFocus() })
     }
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         SectionHeader("Continue watching", Modifier.padding(horizontal = sidePadding))
         LazyRow(
             // TV: up/down between rows comes back to the card last focused in this row.
-            modifier = Modifier.focusRestorer(),
+            modifier = Modifier.focusRequester(rowFocus).focusRestorer(),
             state = listState,
             contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
@@ -141,7 +135,7 @@ fun ContinueRow(
                                 // Grows upward, so it never covers the title underneath.
                                 origin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f),
                                 onFocus = onFocus?.let { { it(item) } },
-                                onLongClick = { confirmRemove = item },
+                                onLongClick = { options = item },
                                 onClick = { openContinue(context, item, onOpenDest) },
                             )
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
@@ -175,4 +169,55 @@ fun ContinueRow(
             }
         }
     }
+}
+
+/** The card's art for the options sheet: the episode still, else the backdrop. */
+private fun continueArt(item: ContinueItem): String? = item.entry.playback.let { TmdbImages.still(it.stillPath, "w300") ?: TmdbImages.backdrop(it.backdropPath, "w300") }
+
+/**
+ * Long-press on a Continue watching card: Resume, Start over, Play next episode, Mark as watched,
+ * Choose another source, Go to title, Remove from row (with Undo). Up next cards only have the next
+ * episode to play, so they get Play, Go to title and Remove.
+ */
+@Composable
+internal fun ContinueOptions(item: ContinueItem, onOpenDest: (Dest) -> Unit, onDismiss: () -> Unit, refocus: () -> Unit) {
+    val context = LocalContext.current
+    val app = ReelApp.get(context)
+    val undo = LocalUndo.current
+    val entry = item.entry
+    val p = entry.playback
+    val ref = p.tmdbId?.let { id -> TitleRef(if (p.tmdbType == MediaType.TV.path) MediaType.TV else MediaType.MOVIE, id) }
+    fun play(startAtMs: Long?) = com.kirtanya.reel.ui.homedisk.gatedPlay(context, p.source, p.title) {
+        context.startActivity(PlayerActivity.forPlayback(context, p, startAtMs))
+    }
+    val actions = buildList {
+        when (item) {
+            is ContinueItem.Resume -> {
+                add(OptionAction(Icons.Rounded.PlayArrow, "Resume", { play(null) }, detail = continueDetail(item)))
+                add(OptionAction(Icons.Rounded.Replay, "Start over", { play(0) }, detail = p.episode?.label))
+                val next = p.next
+                if (ref != null && next != null) {
+                    add(OptionAction(Icons.Rounded.SkipNext, "Play next episode", { onOpenDest(Dest.Sources(ref, next.season, next.episode)) }, detail = next.label))
+                }
+                // A finished entry drops out of the row, or turns into Up next for a show.
+                add(OptionAction(Icons.Rounded.TaskAlt, "Mark as watched", {
+                    app.history.markWatched(p, entry.durationMs.takeIf { it > 0 })
+                    Toast.makeText(context, "Marked ${p.displayTitle} as watched", Toast.LENGTH_SHORT).show()
+                }))
+                if (ref != null) {
+                    add(OptionAction(Icons.Rounded.SwapHoriz, "Choose another source", {
+                        onOpenDest(Dest.Sources(ref, p.episode?.season, p.episode?.episode, resumeAtMs = ContinueWatching.resumePositionMs(entry)))
+                    }, detail = "Carries on where you stopped"))
+                }
+            }
+            is ContinueItem.UpNext -> add(OptionAction(Icons.Rounded.PlayArrow, "Play ${item.next.label}", { openContinue(context, item, onOpenDest) }))
+        }
+        if (ref != null) add(OptionAction(Icons.Rounded.Info, "Go to title", { onOpenDest(Dest.Title(ref)) }))
+        add(OptionAction(Icons.Rounded.RemoveCircleOutline, "Remove from row", {
+            val commit = { app.history.removeTitle(p.titleKey) }
+            if (undo != null) undo.remove(p.titleKey, "Removed ${p.title}", commit, refocus)
+            else { commit(); Toast.makeText(context, "Removed ${p.title}", Toast.LENGTH_SHORT).show() }
+        }, danger = true))
+    }
+    OptionsSheet(OptionsHeader(p.title, continueDetail(item), continueArt(item)), actions, onDismiss)
 }
