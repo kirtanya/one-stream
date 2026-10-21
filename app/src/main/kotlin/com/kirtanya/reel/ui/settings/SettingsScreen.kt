@@ -420,15 +420,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                 item { Section("Preview") { AccentPreview() } }
             }
 
-            SettingsPage.Playback -> item {
-                Section {
-                    ToggleRow(
-                        "Play the next episode automatically",
-                        "Finds a source near the end of an episode and starts it after a 10-second countdown.",
-                        playback.autoplayNext,
-                    ) { app.playbackSettings.update { it.copy(autoplayNext = !it.autoplayNext) } }
-                }
-            }
+            SettingsPage.Playback -> playbackItems(isTv)
 
             SettingsPage.Subtitles -> {
                 item {
