@@ -148,19 +148,24 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
             it.infoHash.lowercase() to DownloadTag(it.progress, it.phase == TorrentPhase.FINISHED || it.phase == TorrentPhase.SEEDING)
         }
     }
+    // Player-owned (debrid placeholders): sources whose addon is still downloading them say "Fetching…" and go last.
+    val notReadyTick by com.kirtanya.reel.player.NotReadyMemory.changes.collectAsState()
     fun viewOf(s: Source) = SourceBrowser.view(
-        s, SourceMarks.tags(s, req, marks, last, if (s.kind == com.kirtanya.reel.core.sources.SourceKind.TORRENT) s.infoHash?.lowercase()?.let(downloads::get) else null),
+        s, SourceMarks.tags(s, req, marks, last, if (s.kind == com.kirtanya.reel.core.sources.SourceKind.TORRENT) s.infoHash?.lowercase()?.let(downloads::get) else null) +
+            listOfNotNull(com.kirtanya.reel.player.NotReadyMemory.tag(s)),
     )
     var options by remember { mutableStateOf<SourceView?>(null) }
 
     // Starred sources first; the ranker's order otherwise.
-    val ranked = remember(search, marks) { SourceMarks.order(search?.sources.orEmpty(), marks, req) }
+    val ranked = remember(search, marks, notReadyTick) {
+        com.kirtanya.reel.core.player.NotReadySources.demote(SourceMarks.order(search?.sources.orEmpty(), marks, req), com.kirtanya.reel.player.NotReadyMemory::isNotReady)
+    }
     // Playing: recommend one this device can stream; downloading: size doesn't matter. The user's favourite wins if it came back.
     val best = remember(ranked, action, marks) {
-        val canUse = { s: Source -> action != SourceAction.PLAY || SourceRanker.fits(s, prefs) }
+        val canUse = { s: Source -> (action != SourceAction.PLAY || SourceRanker.fits(s, prefs)) && !com.kirtanya.reel.player.NotReadyMemory.isNotReady(s.key) }
         SourceMarks.favourite(ranked, marks, req)?.takeIf(canUse) ?: SourceBrowser.recommended(search?.sources.orEmpty(), canUse)
     }
-    val bestView = remember(best, marks, last, downloads) { best?.let(::viewOf) }
+    val bestView = remember(best, marks, last, downloads, notReadyTick) { best?.let(::viewOf) }
     // Trailers, teasers and other extras get their own section at the end; filters and counts cover the real thing only.
     val rows = remember(ranked, best, marks, last, downloads) { ranked.filter { it.key != best?.key && !it.isExtra }.map(::viewOf) }
     val extras = remember(ranked, marks, last, downloads) { ranked.filter { it.isExtra }.map(::viewOf) }

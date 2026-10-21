@@ -104,6 +104,7 @@ object StremioAddon {
                 kind = SourceKind.DIRECT, title = title, provider = provider, quality = quality,
                 sizeBytes = size, seeders = seeders, subtitles = subtitles, filename = filename,
                 bingeGroup = hints?.str("bingeGroup"),
+                cache = DebridCache.classify(name, description),
             )
             val infoHash = s.str("infoHash")?.lowercase()
             when {

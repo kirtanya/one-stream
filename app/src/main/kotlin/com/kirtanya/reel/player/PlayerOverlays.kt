@@ -82,6 +82,75 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
         visibility = View.GONE
     }
 
+    /**
+     * A debrid source played a placeholder and another took over: "Debridio is still fetching that one — playing
+     * Comet 1080p instead". Below the chip row, two lines at most.
+     */
+    val noticeChip: TextView = text(12f, PlayerColors.FOREGROUND, medium = true).apply {
+        setPadding(dp(14), dp(8), dp(14), dp(8))
+        background = glass(radius = 16)
+        maxLines = 2
+        maxWidth = dp(300)
+        visibility = View.GONE
+    }
+
+    lateinit var notReadyTitle: TextView; private set
+    lateinit var notReadyText: TextView; private set
+    lateinit var notReadyButtons: LinearLayout; private set
+    lateinit var notReadyRetry: Button; private set
+    lateinit var notReadySources: Button; private set
+    lateinit var notReadyBack: Button; private set
+
+    /**
+     * "Not ready yet": the debrid service is still downloading this and no other source could take over. A card on
+     * a dark scrim (the placeholder's last frame stays hidden) with Try again / Other sources / Back. Side by side
+     * where there's room (phone landscape, TV), stacked full width on a portrait phone.
+     */
+    val notReady: FrameLayout = FrameLayout(context).apply {
+        setBackgroundColor(Tokens.Night.canvas.copy(alpha = 0.94f).toArgb())
+        // Takes every touch, so the controls under it never open.
+        isClickable = true
+        visibility = View.GONE
+        val wide = context.resources.configuration.screenWidthDp >= 600
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(24), dp(24), dp(24), dp(20))
+            background = glass(radius = 24)
+            notReadyTitle = text(20f, PlayerColors.FOREGROUND, medium = true).apply { text = "Not ready yet"; gravity = Gravity.CENTER }
+            addView(notReadyTitle, LinearLayout.LayoutParams(-1, -2))
+            notReadyText = text(14f, Tokens.Night.textSecondary.toArgb()).apply {
+                gravity = Gravity.CENTER
+                setLineSpacing(dp(3).toFloat(), 1f)
+                setPadding(0, dp(8), 0, dp(20))
+            }
+            addView(notReadyText, LinearLayout.LayoutParams(-1, -2))
+            notReadyButtons = LinearLayout(context).apply {
+                orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                notReadyRetry = cardButton("Try again", primary = true)
+                notReadySources = cardButton("Other sources")
+                notReadyBack = cardButton("Back")
+                listOf(notReadyRetry, notReadySources, notReadyBack).forEachIndexed { i, b ->
+                    val lp = if (wide) LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = dp(8) }
+                    else LinearLayout.LayoutParams(-1, -2).apply { if (i > 0) topMargin = dp(8) }
+                    addView(b, lp)
+                }
+            }
+            addView(notReadyButtons, LinearLayout.LayoutParams(if (wide) -2 else -1, -2))
+        }
+        val width = minOf(context.resources.configuration.screenWidthDp - 32, 480)
+        addView(card, FrameLayout.LayoutParams(dp(width), -2, Gravity.CENTER))
+    }
+
+    /** The card's buttons: 48 dp tall on the phone (touch area), the usual 40 on the TV. */
+    private fun cardButton(label: String, primary: Boolean = false) = button(label, primary) {}.apply {
+        if (!tv) {
+            minHeight = dp(48)
+            minimumHeight = dp(48)
+        }
+    }
+
     private val statusChip = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -124,6 +193,9 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
     fun addTo(root: FrameLayout, topMarginDp: Int = 20) {
         root.addView(chips, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(topMarginDp), dp(24), 0) })
         if (!tv) root.addView(skipChip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(16), dp(PHONE_SKIP_BOTTOM_DP)) })
+        // Under the chip row (whose pills are up to 48 dp tall on the phone).
+        root.addView(noticeChip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(topMarginDp + if (tv) 44 else 56), dp(24), 0) })
+        root.addView(notReady, FrameLayout.LayoutParams(-1, -1))
     }
 
     /** Phone: keep the Skip chip just above the control band ([coveredPx] = what the band covers, 0 when hidden). */

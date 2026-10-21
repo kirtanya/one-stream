@@ -59,8 +59,8 @@ object SourceBrowser {
         type = SourceType.of(s),
         provider = SourceFacts.providerLabel(s.provider),
         languages = SourceFacts.languages(s),
-        // A trailer's row says so first.
-        tags = personal + listOfNotNull(s.extra) + SourceFacts.tags(s),
+        // A trailer's row says so first; an uncached debrid link says "Not cached" before the release facts.
+        tags = personal + listOfNotNull(s.extra, DebridCache.tag(s)) + SourceFacts.tags(s),
     )
 
     /**

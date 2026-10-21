@@ -36,6 +36,8 @@ class TvControlsRender {
     @Test fun renderStillWatching() = render("tv_still_watching", PlayerScenes.MID, overlay = PlayerScenes.Overlay.STILL_WATCHING)
     @Test fun renderSleep() = render("tv_sleep_chip", PlayerScenes.DARK, overlay = PlayerScenes.Overlay.SLEEP)
     @Test fun renderUpNextCredits() = render("tv_up_next_credits", PlayerScenes.MID, overlay = PlayerScenes.Overlay.UP_NEXT_CREDITS)
+    @Test fun renderNotReady() = render("tv_not_ready", PlayerScenes.MID, overlay = PlayerScenes.Overlay.NOT_READY)
+    @Test fun renderPlaceholderSwitch() = render("tv_placeholder_switch", PlayerScenes.MID, overlay = PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
     @Test fun renderAudioDelay() = render("tv_controls_audio_delay", PlayerScenes.MID, panel = true, slider = "Audio delay")
     @Test fun renderSubtitleDelay() = render("tv_controls_subtitle_delay", PlayerScenes.MID, panel = true, slider = "Subtitle delay")
 

@@ -48,6 +48,9 @@ object SourceRanker {
         if (prefs.avoidDolbyVision && s.quality.dolbyVision && !s.quality.hdr) score -= 200
         if (prefs.avoidDolbyVision && s.quality.dolbyVision) score -= 80
         if (prefs.avoidAv1 && s.quality.av1) score -= 200
+        // A debrid link the addon marks not cached usually plays a "downloading" clip first: below cached links of
+        // the same resolution, still above the next lower resolution's cached link (a step is worth more than 50).
+        if (DebridCache.of(s) == CacheState.UNCACHED) score -= UNCACHED_PENALTY
 
         // Above the user's cap: still listed, never first.
         val r = s.quality.resolution
@@ -73,4 +76,7 @@ object SourceRanker {
         }
         return score
     }
+
+    /** See [score]: uncached debrid links (DebridCache). */
+    const val UNCACHED_PENALTY = 50.0
 }

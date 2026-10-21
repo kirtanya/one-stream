@@ -38,6 +38,12 @@ class PhoneControlsRender {
     @Test fun renderPhoneStillWatching() = render("phone_still_watching", panel = false, overlay = PlayerScenes.Overlay.STILL_WATCHING)
     @Test fun renderPhoneSleep() = render("phone_sleep_chip", panel = false, overlay = PlayerScenes.Overlay.SLEEP)
     @Test fun renderPhoneUpNextCredits() = render("phone_up_next_credits", panel = false, overlay = PlayerScenes.Overlay.UP_NEXT_CREDITS)
+    // Debrid placeholder: the Not ready card (landscape, portrait, 130 %) and the chip after switching sources.
+    @Test fun renderPhoneNotReady() = render("phone_not_ready", panel = false, overlay = PlayerScenes.Overlay.NOT_READY)
+    @Test @Config(qualifiers = PORT) fun renderPortraitNotReady() = render("phone_portrait_not_ready", panel = false, overlay = PlayerScenes.Overlay.NOT_READY)
+    @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortraitNotReady130() = render("phone_portrait_not_ready_130", panel = false, overlay = PlayerScenes.Overlay.NOT_READY)
+    @Test fun renderPhonePlaceholderSwitch() = render("phone_placeholder_switch", panel = false, overlay = PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
+    @Test @Config(qualifiers = PORT) fun renderPortraitPlaceholderSwitch() = render("phone_portrait_placeholder_switch", panel = false, overlay = PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
     @Test fun renderPhoneAudioDelay() = render("phone_controls_audio_delay", panel = true, slider = "Audio delay")
     @Test @Config(qualifiers = PORT) fun renderPortraitSubtitleDelay() = render("phone_controls_portrait_subtitle_delay", panel = true, slider = "Subtitle delay")
 

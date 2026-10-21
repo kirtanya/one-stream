@@ -58,6 +58,8 @@ data class Source(
     val bingeGroup: String? = null,
     /** Set when this is a trailer, teaser, sample or other extra, not the film / episode itself ("Trailer"). */
     val extra: String? = null,
+    /** Debrid cache markers in the addon's stream name / description (DebridCache); null = not read (use DebridCache.of). */
+    val cache: CacheState? = null,
 ) {
     /** A trailer or other extra (see [SourceExtras]): never recommended or picked automatically. */
     val isExtra: Boolean get() = extra != null

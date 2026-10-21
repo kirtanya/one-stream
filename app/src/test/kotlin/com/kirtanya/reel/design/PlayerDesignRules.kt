@@ -127,6 +127,25 @@ class PlayerDesignRules {
     @Test @Config(sdk = [34], qualifiers = PHONE)
     fun phoneUpNextCredits() = phoneOverlay("player/phone-up-next-credits", PlayerScenes.Overlay.UP_NEXT_CREDITS)
 
+    // Debrid placeholder: the Not ready card and the chip after switching sources.
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneNotReady() = phoneOverlay("player/phone-not-ready", PlayerScenes.Overlay.NOT_READY)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitNotReady() = phoneOverlay("player/phone-portrait-not-ready", PlayerScenes.Overlay.NOT_READY)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortraitNotReady130() = phoneOverlay("player/phone-portrait-not-ready-130", PlayerScenes.Overlay.NOT_READY)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE, fontScale = 1.3f)
+    fun phoneNotReady130() = phoneOverlay("player/phone-not-ready-130", PlayerScenes.Overlay.NOT_READY)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phonePlaceholderSwitch() = phoneOverlay("player/phone-placeholder-switch", PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitPlaceholderSwitch() = phoneOverlay("player/phone-portrait-placeholder-switch", PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
+
     @Test @Config(sdk = [34], qualifiers = PHONE)
     fun phoneAudioDelay() = phoneSlider("player/phone-audio-delay", "Audio delay")
 
@@ -153,6 +172,17 @@ class PlayerDesignRules {
 
     @Test @Config(sdk = [34], qualifiers = TV)
     fun tvUpNextCredits() = tvOverlay("player/tv-up-next-credits", PlayerScenes.MID, PlayerScenes.Overlay.UP_NEXT_CREDITS)
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvNotReady() {
+        // The player hides the strip under the card (and the card holds the remote): its own three buttons move focus.
+        val scene = PlayerScenes.tv(PlayerScenes.MID, overlay = PlayerScenes.Overlay.NOT_READY, strip = false)
+        check("player/tv-not-ready", ViewChecks(scene.root, "player/tv-not-ready"), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
+        scene.release()
+    }
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvPlaceholderSwitch() = tvOverlay("player/tv-placeholder-switch", PlayerScenes.MID, PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
 
     @Test @Config(sdk = [34], qualifiers = TV)
     fun tvSleepChip() = tvOverlay("player/tv-sleep", PlayerScenes.DARK, PlayerScenes.Overlay.SLEEP)

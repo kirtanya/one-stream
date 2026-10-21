@@ -59,8 +59,14 @@ internal object PlayerScenes {
         return Triple(subtitle, audio, playback)
     }
 
-    /** The overlay states the renders show: Skip chip, Still watching?, the sleep chip, Up next at the credits. */
-    enum class Overlay { SKIP, SKIP_OVER_BAND, STILL_WATCHING, SLEEP, UP_NEXT_CREDITS }
+    /**
+     * The overlay states the renders show: Skip chip, Still watching?, the sleep chip, Up next at the credits, the
+     * debrid Not ready card and the chip after switching away from a placeholder.
+     */
+    enum class Overlay { SKIP, SKIP_OVER_BAND, STILL_WATCHING, SLEEP, UP_NEXT_CREDITS, NOT_READY, PLACEHOLDER_SWITCH }
+
+    /** Overlays that hold the screen with the controls hidden (as in the player). */
+    private val CONTROLS_HIDDEN = setOf(Overlay.SKIP, Overlay.STILL_WATCHING, Overlay.UP_NEXT_CREDITS, Overlay.NOT_READY, Overlay.PLACEHOLDER_SWITCH)
 
     private fun showOverlay(o: PlayerOverlays, which: Overlay?, tv: Boolean) {
         when (which) {
@@ -84,6 +90,20 @@ internal object PlayerScenes {
                 o.nextPlay.text = "Skip credits"
                 o.nextCard.visibility = android.view.View.VISIBLE
                 if (tv) o.nextPlay.requestFocus()
+            }
+            Overlay.NOT_READY -> {
+                o.notReadyText.text = com.kirtanya.reel.core.player.PlaceholderCheck.notReadyText("Debridio")
+                o.notReady.visibility = android.view.View.VISIBLE
+                if (tv) o.notReadyRetry.requestFocus()
+            }
+            Overlay.PLACEHOLDER_SWITCH -> {
+                val instead = com.kirtanya.reel.core.sources.Source(
+                    com.kirtanya.reel.core.sources.SourceKind.DIRECT, "x", "Comet | RD", com.kirtanya.reel.core.sources.Quality(resolution = 1080),
+                )
+                o.noticeChip.text = com.kirtanya.reel.core.player.PlaceholderCheck.switchNote("Debridio", instead)
+                o.noticeChip.visibility = android.view.View.VISIBLE
+                o.status.text = "Loading…"
+                o.status.visibility = android.view.View.VISIBLE
             }
         }
     }
@@ -138,7 +158,7 @@ internal object PlayerScenes {
         activity.setContentView(root)
         val exo = if (withPlayer) ExoPlayer.Builder(activity).build().also { c.attach(it) } else null
         val scene = Phone(root, c, exo, o)
-        if (overlay != Overlay.SKIP && overlay != Overlay.STILL_WATCHING && overlay != Overlay.UP_NEXT_CREDITS) c.show()
+        if (overlay !in CONTROLS_HIDDEN) c.show()
         showOverlay(o, overlay, tv = false)
         ShadowLooper.idleMainLooper()
         scene.midFilm()

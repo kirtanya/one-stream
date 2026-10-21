@@ -5,6 +5,35 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-22 · Debrid "downloading" placeholder clips: detect, stop, fall back**
+Decision (user report: a Debridio link played "[Debridio] Downloading to Provider — Please wait" instead of the film).
+Logic + tests: `core/player/Placeholder.kt` (PlaceholderCheck, PlaceholderFallback, NotReadySources),
+`core/sources/DebridCache.kt` (`PlaceholderTest`). Player: `player/PlayerActivity`, `PlayerOverlays`, `NotReadyMemory`.
+Also decided (Claude):
+- Detection only for direct http(s) links of a film / episode (TMDB id), never trailers / extras or links from other
+  apps. Primary: media under 3 min where over 10 min is expected (TMDB episode → show / film runtime, else a history
+  duration ≥ 10 min — a shorter one may be a saved placeholder — else assumed). While the runtime is fetched (≤ 2.5 s)
+  the player holds playback and saves nothing. Secondary: the final URL after redirects (OkHttp application
+  interceptor) has a placeholder file name (`downloading*.mp4`, `not_cached`, `uncached`, `torrent_not_downloaded`,
+  `/static/videos|exceptions/…`); the stem must be letters / `_` / `-` only, so release names never match. Only host +
+  pattern name are logged; addon URLs carry the debrid key.
+- On a hit: stop at once, no watch progress (guards in saveProgress / STATE_ENDED / onStart), source marked "not ready"
+  for 30 min (in memory, by source key). Fallback: a fresh source search (≤ 15 s, whatever answered) and the best
+  **direct** link that isn't that file, not-ready or marked uncached — cached first, then unknown. Torrents are never
+  auto-picked (P2P rules, slow start; the user can pick one from Other sources). It plays from the same start position
+  through Change source's hand-over, with a chip "<Addon> is still fetching that one — playing <provider quality>
+  instead". At most 3 switches in a row. Nothing found → the Not ready card (Try again = same source resolved afresh,
+  Other sources, Back), not the generic error.
+- Sources page (UI / One stream sessions' files, kept additive): Stremio streams carry `Source.cache` from the stream
+  name + description (⚡ / RD+ / [AD+] / Instant (name only) / Cached vs ⏳ / ⬇️ / [RD download] / Download /
+  Uncached / Not cached; both → unknown). Uncached rows get a "Not cached" tag (SourceBrowser.view) and −50 in
+  SourceRanker (below the same resolution cached, above the next lower one). Not-ready rows get "Fetching…", go last
+  and are never the Recommended card unless nothing else is left (SourcesScreen, 3 small edits).
+Telemetry: ReelStats `placeholder` (host, reason duration|pattern, pattern, expectedMin, actualS, marked, addon, hops),
+`placeholderFallback` (found, ms, to, cache), `placeholderRetry`.
+Device test: SourcesProbe `--ez placeholderTest true [--ei runtimeMin 90] [--ez fallback true]` (10 s CC-BY Big Buck Bunny
+clip as a "Debridio" link; fallback = the full film on archive.org). Unverified on devices.
+
 **2026-10-22 · Engine: download only overnight, speed cap while watching, stream-cache limit**
 Decision (user): build the engine items of roadmap A. Spec: STREAMING_V2 §8.3 (addendum). Logic + tests:
 `core/stream/DownloadRules.kt`, `CachePolicy.budget(limit)`, `RestorePolicy` (`DownloadRulesTest`).

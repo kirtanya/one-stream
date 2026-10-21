@@ -21,6 +21,9 @@ import kotlinx.coroutines.withTimeout
  * `--ez mainThreadTest true` adds OpenSubtitles (removed after), searches subtitles + sources on the main thread.
  * `--ez subsTest true [--ei tmdb <id> --es type tv --ei season N --ei episode N --es filename <f>]` checks every subtitle addon.
  * `--ez playTest true --es url <direct> [--ei tmdb --ei season --ei episode --ei nextEpisode --el startMs --el durationMs]` plays a test video as an episode.
+ * `--ez placeholderTest true [--ei runtimeMin 90] [--ez fallback true]` plays a 10 s legal clip as if a debrid addon
+ *   sent its "downloading" placeholder for Big Buck Bunny (tmdb 10378): the Not ready card, or with `fallback` the
+ *   switch to the full film (archive.org). Afterwards: `--es removeTitle movie:10378` (fallback plays and saves it).
  * `--es removeTitle <titleKey>` removes a film/show from watch history.
  * `--ez report true [--es note <text>]` saves a manual problem report (screenshot of the screen on top, if ours).
  * `--es reportTest crash|freeze` tests the automatic reports: crash the app / block its main thread for 8 s.
@@ -114,6 +117,10 @@ class SourcesProbe : BroadcastReceiver() {
             context.startActivity(com.kirtanya.reel.player.PlayerActivity.forMagnet(context, sample.magnet, sample.title)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             Log.i(TAG, "playing sample ${sample.title}")
+            return
+        }
+        if (intent.getBooleanExtra("placeholderTest", false)) {
+            placeholderTest(context, intent)
             return
         }
         if (intent.getBooleanExtra("playTest", false)) {
@@ -245,6 +252,33 @@ class SourcesProbe : BroadcastReceiver() {
     }
 
     /**
+     * Debrid placeholder check (core/player/PlaceholderCheck) without a debrid account: a 10 s Big Buck Bunny clip
+     * (CC BY, test-videos.co.uk) plays as a "Debridio" link for the film, expected to run [runtimeMin] (default 90;
+     * TMDB says 10, too short to count). With `fallback` the only other source is the full film on archive.org.
+     */
+    private fun placeholderTest(context: Context, intent: Intent) {
+        val runtimeMin = intent.getIntExtra("runtimeMin", 90)
+        val fallback = intent.getBooleanExtra("fallback", false)
+        val q = { t: String -> com.kirtanya.reel.core.sources.QualityParser.parse(t) }
+        val clip = com.kirtanya.reel.core.sources.Source(
+            com.kirtanya.reel.core.sources.SourceKind.DIRECT, "Big Buck Bunny 1080p (placeholder test)", "Debridio (test)", q("1080p"),
+            url = PLACEHOLDER_CLIP,
+        )
+        val full = com.kirtanya.reel.core.sources.Source(
+            com.kirtanya.reel.core.sources.SourceKind.DIRECT, "Big Buck Bunny 720p surround", "Internet Archive (test)", q("720p"),
+            url = BBB_FULL, cache = com.kirtanya.reel.core.sources.CacheState.CACHED,
+        )
+        val playback = com.kirtanya.reel.core.playback.Playback(
+            key = "movie:10378", titleKey = "movie:10378", title = "Big Buck Bunny", tmdbType = "movie", tmdbId = 10378, year = 2008, source = clip,
+        )
+        context.startActivity(
+            com.kirtanya.reel.player.PlayerActivity.forPlaceholderTest(context, playback, runtimeMin * 60_000L, if (fallback) listOf(full) else emptyList())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        Log.i(TAG, "placeholderTest started: expected ${runtimeMin} min, fallback=$fallback")
+    }
+
+    /**
      * Do the subtitle addons work? `--ez subsTest true [--ei tmdb <id>] [--es type tv --ei season N --ei episode N]
      * [--es filename <name>]` lists every installed subtitle addon, asks the enabled ones for the title
      * exactly as the player does (IMDb id from TMDB), and logs per addon: request URL (addon config
@@ -366,5 +400,9 @@ class SourcesProbe : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "ReelProbe"
+        /** 10 s of Big Buck Bunny (CC BY, Blender Foundation), 1 MB, HTTPS: stands in for a debrid "downloading" clip. */
+        private const val PLACEHOLDER_CLIP = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
+        /** The whole film (9:56) on archive.org: the cached source the placeholder test falls back to. */
+        private const val BBB_FULL = "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
     }
 }

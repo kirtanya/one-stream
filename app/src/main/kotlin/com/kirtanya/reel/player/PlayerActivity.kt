@@ -74,6 +74,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -150,6 +151,19 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     /** The Up next card appeared at the learned / chapter credits, before the last 30 s. */
     private var nextAtCredits = false
 
+    // ---- debrid placeholder clips (core/player/PlaceholderCheck)
+    /** A direct debrid / http link of a film or episode: the only kind an addon swaps for a "downloading" clip. */
+    private val placeholderCandidate by lazy { com.kirtanya.reel.core.player.PlaceholderCheck.applies(playback.source, playback.tmdbId != null) }
+    /** How long this film / episode should run (TMDB, history), looked up while the link resolves. */
+    private var expectedRuntime: kotlinx.coroutines.Deferred<Long?>? = null
+    /** The media is short and we're checking the expected runtime: nothing plays or is saved meanwhile. */
+    private var placeholderPending = false
+    private var placeholderChecked = false
+    /** This link played a placeholder: stopped, never saved, never re-prepared. */
+    private var placeholderHit = false
+    /** Placeholders already switched away from before this player (PlaceholderCheck.MAX_SWITCHES). */
+    private val placeholderHops by lazy { intent.getIntExtra(EXTRA_HOPS, 0) }
+
     private lateinit var playerView: PlayerView
     /** Cinema mode: the glow in the bars around the video. */
     private lateinit var ambient: AmbientGlow
@@ -223,6 +237,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         sourceChanged = handedOver != null
         val resumeAt = ContinueWatching.startPositionMs(handedOver, app.history.get(playback.key))
         startAtMs = resumeAt
+        if (placeholderCandidate) expectedRuntime = lifecycleScope.async { expectedRuntimeMs() }
+        intent.getStringExtra(EXTRA_NOTE)?.let(::showNotice)
         lifecycleScope.launch {
             try {
                 val subtitles = async { findSubtitles() }
@@ -430,6 +446,20 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .retryOnConnectionFailure(false)
+                // Debrid addons redirect an uncached link to a "downloading" clip: the final URL's file name can
+                // give it away before the clip even plays (PlaceholderCheck.matchUrl; only host + pattern logged).
+                .apply {
+                    if (placeholderCandidate) addInterceptor { chain ->
+                        val response = chain.proceed(chain.request())
+                        val final = response.request.url
+                        if (chain.request().url.toString() !in subtitleUrls) {
+                            com.kirtanya.reel.core.player.PlaceholderCheck.matchUrl(final.toString())?.let { pattern ->
+                                playerView.post { onPlaceholder(com.kirtanya.reel.core.player.PlaceholderReason.PATTERN, null, null, pattern, final.host) }
+                            }
+                        }
+                        response
+                    }
+                }
                 .build(),
         ).setUserAgent(com.kirtanya.reel.core.sources.CHROME_UA)
         val http = ResolvingDataSource.Factory(okhttp) { spec ->
@@ -492,6 +522,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                     stats { it.bufferingStart(now()) }
                 }
                 Player.STATE_ENDED -> {
+                    // A placeholder clip (or one being checked) ending is not the film ending.
+                    if (placeholderPending || placeholderHit) return
                     saveProgress(ended = true)
                     if (nextReady?.second != null && !nextCancelled && prefs.autoplayNext && !sleepAtEnd()) autoPlayNext()
                     else if (nextCard.visibility == View.VISIBLE) nextPlay.requestFocus()
@@ -501,7 +533,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
         override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
             val d = player?.duration ?: return
-            if (d != C.TIME_UNSET && d > 0) preparedStream?.let { app.engine.setStreamDuration(it, d) }
+            if (d != C.TIME_UNSET && d > 0) {
+                preparedStream?.let { app.engine.setStreamDuration(it, d) }
+                checkPlaceholderDuration(d)
+            }
         }
 
         override fun onRenderedFirstFrame() {
@@ -627,6 +662,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     private fun saveProgress(ended: Boolean = false) {
+        // A placeholder's 30 s must never become this title's duration or position.
+        if (placeholderHit || placeholderPending) return
         val exo = player ?: return
         val duration = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return
         val position = if (ended) duration else exo.currentPosition
@@ -873,10 +910,12 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             return true
         }
         val overlayUp = nextCard.visibility == View.VISIBLE || resumeChip.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE ||
-            overlays.stillCard.visibility == View.VISIBLE
+            overlays.stillCard.visibility == View.VISIBLE || overlays.notReady.visibility == View.VISIBLE
         val controls = tvControls
         // TV: the strip takes OK/↑/↓/Back/media keys first (unless a chip or card holds the remote).
-        if (controls != null && exo != null && errorPanel.visibility != View.VISIBLE && (controls.visible || !overlayUp) && controls.handleKey(event)) return true
+        if (controls != null && exo != null && errorPanel.visibility != View.VISIBLE && overlays.notReady.visibility != View.VISIBLE &&
+            (controls.visible || !overlayUp) && controls.handleKey(event)
+        ) return true
         val controlsUp = controls?.visible ?: playerView.isControllerFullyVisible
         if (exo != null && isSeekKey && event.action == KeyEvent.ACTION_DOWN && !overlayUp &&
             (seekKey == event.keyCode || !controlsUp)
@@ -998,6 +1037,163 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         finish()
     }
 
+    // ---------------------------------------------------------------- debrid placeholder clips
+
+    /**
+     * How long this film / episode should run: the test hook, else TMDB (the episode's own runtime, else the
+     * show's / film's), else a remembered duration that looks like a real title (PlaceholderCheck.expectedMs).
+     */
+    private suspend fun expectedRuntimeMs(): Long? {
+        intent.getLongExtra(EXTRA_EXPECTED_MS, -1L).takeIf { it > 0 }?.let { return it }
+        val id = playback.tmdbId ?: return null
+        val runtime = withTimeoutOrNull(4_000) {
+            runCatching {
+                val ep = playback.episode
+                if (playback.tmdbType == "tv") {
+                    val own = ep?.let { e -> app.tmdb.season(id, e.season).firstOrNull { it.number == e.episode }?.runtimeMin }
+                    own ?: app.tmdb.details(TitleRef(MediaType.TV, id)).runtimeMin
+                } else app.tmdb.details(TitleRef(MediaType.MOVIE, id)).runtimeMin
+            }.getOrNull()
+        }
+        return com.kirtanya.reel.core.player.PlaceholderCheck.expectedMs(runtime, app.history.get(playback.key)?.durationMs)
+    }
+
+    /**
+     * The media's length is known. Under 3 minutes for a debrid link of a film / episode: hold playback (nothing
+     * saved meanwhile) while the expected runtime arrives, then either flag a placeholder or play on.
+     */
+    private fun checkPlaceholderDuration(durationMs: Long) {
+        if (!placeholderCandidate || placeholderChecked || placeholderHit) return
+        placeholderChecked = true
+        if (durationMs >= com.kirtanya.reel.core.player.PlaceholderCheck.MAX_PLACEHOLDER_MS) return
+        val exo = player ?: return
+        placeholderPending = true
+        exo.playWhenReady = false
+        lifecycleScope.launch {
+            val expected = withTimeoutOrNull(2_500) { expectedRuntime?.await() }
+            placeholderPending = false
+            if (com.kirtanya.reel.core.player.PlaceholderCheck.byDuration(durationMs, expected)) {
+                onPlaceholder(com.kirtanya.reel.core.player.PlaceholderReason.DURATION, durationMs, expected, null, null)
+            } else if (!placeholderHit) {
+                player?.playWhenReady = true
+            }
+        }
+    }
+
+    /**
+     * This link played the addon's "downloading" clip: stop it at once, save nothing, remember the source as not
+     * ready (30 min), then hand over to another source that looks cached, or show the Not ready card.
+     */
+    private fun onPlaceholder(reason: com.kirtanya.reel.core.player.PlaceholderReason, actualMs: Long?, expectedMs: Long?, pattern: String?, host: String?) {
+        if (placeholderHit || isFinishing || leavingForNext) return
+        placeholderHit = true
+        placeholderPending = false
+        player?.let {
+            it.playWhenReady = false
+            it.stop()
+        }
+        progressJob?.cancel()
+        nextJob?.cancel()
+        nextCancelled = true
+        hideNextCard()
+        hideResumeChip()
+        hideSkipChip()
+        tvControls?.hide()
+        phoneControls?.hideNow()
+        val src = playback.source
+        NotReadyMemory.mark(src.key)
+        stat("placeholder", mapOf(
+            // Host only: the addon's link carries the user's debrid key in its path.
+            "host" to (host ?: src.url?.let { runCatching { Uri.parse(it).host }.getOrNull() }),
+            "reason" to reason.stat,
+            "pattern" to pattern,
+            "expectedMin" to expectedMs?.div(60_000),
+            "actualS" to actualMs?.div(1_000),
+            "marked" to com.kirtanya.reel.core.sources.DebridCache.of(src).name,
+            "addon" to addonName(),
+            "hops" to placeholderHops,
+        ))
+        showNotReady(searching = true)
+        lifecycleScope.launch {
+            val started = now()
+            val alt = if (placeholderHops >= com.kirtanya.reel.core.player.PlaceholderCheck.MAX_SWITCHES) null else findAlternative()
+            stat("placeholderFallback", mapOf("found" to (alt != null), "ms" to now() - started,
+                "to" to alt?.let { com.kirtanya.reel.core.player.PlaceholderCheck.label(it) },
+                "cache" to alt?.let { com.kirtanya.reel.core.sources.DebridCache.of(it).name }))
+            if (alt != null && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !isFinishing) switchTo(alt)
+            else showNotReady(searching = false)
+        }
+    }
+
+    /** The addon's short name for the card and chip ("Debridio | RD" → "Debridio"). */
+    private fun addonName() = com.kirtanya.reel.core.sources.SourceFacts.providerLabel(playback.source.provider)
+
+    /**
+     * Another source for this film / episode (PlaceholderFallback): the test hook's list, else a fresh search
+     * (up to 15 s, taking whatever has answered by then).
+     */
+    private suspend fun findAlternative(): Source? {
+        val notReady = { key: String -> NotReadyMemory.isNotReady(key) }
+        intent.getStringExtra(EXTRA_ALTERNATIVES)?.let { list ->
+            val given = runCatching { json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Source.serializer()), list) }.getOrDefault(emptyList())
+            return com.kirtanya.reel.core.player.PlaceholderFallback.pick(playback.source, given, notReady)
+        }
+        val req = sourceRequest(playback.episode) ?: return null
+        var latest: List<Source> = emptyList()
+        app.sources.ensureReady()
+        withTimeoutOrNull(15_000) {
+            app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision()))
+                .transformWhile { emit(it); !it.done }
+                .collect { latest = it.sources }
+        }
+        return com.kirtanya.reel.core.player.PlaceholderFallback.pick(playback.source, latest, notReady)
+    }
+
+    /** Plays [alt] from where this one was to start, with a chip saying why (Change source's hand-over). */
+    private fun switchTo(alt: Source) {
+        leavingForNext = true
+        val note = com.kirtanya.reel.core.player.PlaceholderCheck.switchNote(addonName(), alt)
+        startActivity(forPlayback(this, playback.copy(source = alt), startAtMs)
+            .putExtra(EXTRA_NOTE, note)
+            .putExtra(EXTRA_HOPS, placeholderHops + 1)
+            .putExtra(EXTRA_UNTOUCHED, untouchedBefore)
+            .apply { if (sleepChoice.minutes != null) putExtra(EXTRA_SLEEP, sleepChoice.name).putExtra(EXTRA_SLEEP_AT, sleepSetAt) })
+        finish()
+    }
+
+    /** "Try again": the same source resolved afresh (the addon may have it by now). */
+    private fun retryPlaceholderSource() {
+        NotReadyMemory.clear(playback.source.key)
+        stat("placeholderRetry", mapOf("addon" to addonName()))
+        leavingForNext = true
+        // The same intent (test hooks included), starting where this one was to start.
+        val again = Intent(intent).setClass(this, PlayerActivity::class.java).putExtra(EXTRA_START_MS, startAtMs)
+        again.removeExtra(EXTRA_NOTE)
+        startActivity(again)
+        finish()
+    }
+
+    /** The Not ready card; [searching] = still looking for another source (no buttons yet). */
+    private fun showNotReady(searching: Boolean) {
+        status.visibility = View.GONE
+        overlays.notReadyText.text = com.kirtanya.reel.core.player.PlaceholderCheck.notReadyText(addonName()) +
+            if (searching) "\n\nLooking for another source…" else ""
+        overlays.notReadyButtons.visibility = if (searching) View.GONE else View.VISIBLE
+        overlays.notReadySources.visibility = if (playback.tmdbId != null) View.VISIBLE else View.GONE
+        overlays.notReady.visibility = View.VISIBLE
+        if (!searching) overlays.notReadyRetry.requestFocus()
+    }
+
+    /** The chip a player that took over from a placeholder shows for its first seconds. */
+    private fun showNotice(text: String) {
+        overlays.noticeChip.text = text
+        overlays.noticeChip.visibility = View.VISIBLE
+        lifecycleScope.launch {
+            delay(10_000)
+            overlays.noticeChip.visibility = View.GONE
+        }
+    }
+
     /** The Change source row for the settings panel: off (with a note) for a file without TMDB info. */
     private fun changeSourceRow() =
         if (PlayerSourceChange.available(playback)) PanelExtra(CHANGE_SOURCE_ROW) { changeSource() }
@@ -1045,7 +1241,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         // After a real hand-off to another player, stay idle; its play button prepares again.
         val exo = player
         if (exo != null && exo.playbackState == Player.STATE_IDLE && streamUrl != null && errorPanel.visibility != View.VISIBLE &&
-            !(externalHandoff && stoppedSinceHandoff)
+            !placeholderHit && !(externalHandoff && stoppedSinceHandoff)
         ) {
             // Preparing again anyway: late subtitles join here for free.
             if (pendingSubs.isNotEmpty()) attachSubtitles(pendingSubs, "return", prepare = false)
@@ -1165,6 +1361,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             "error" to errorText.text?.toString()?.takeIf { errorPanel.visibility == View.VISIBLE },
             "nextCard" to (nextCard.visibility == View.VISIBLE),
             "externalHandoff" to externalHandoff,
+            "placeholder" to placeholderHit.takeIf { it },
             "tv" to isTelevision(),
         )
     }
@@ -1341,6 +1538,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         val learned = if (playback.episode != null) com.kirtanya.reel.core.player.SkipLearning.introWindow(store.show(playback.titleKey)) else null
         val chip = com.kirtanya.reel.core.player.SkipPlan.chipAt(exo.currentPosition, chapters, learned)
         val busy = nextCard.visibility == View.VISIBLE || overlays.stillCard.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE || isInPictureInPictureMode ||
+            placeholderHit ||
             phoneControls?.panelOpen == true || tvControls?.panelOpen == true
         if (chip == null || busy) return hideSkipChip()
         if (chip == chipShown) return
@@ -1726,6 +1924,13 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         skipChip.setOnClickListener { skipNow() }
         overlays.stillContinue.setOnClickListener { answerStillWatching(true) }
         overlays.stillStop.setOnClickListener { answerStillWatching(false) }
+        overlays.notReadyRetry.setOnClickListener { retryPlaceholderSource() }
+        overlays.notReadySources.setOnClickListener {
+            leavingForNext = true
+            openSources(playback.episode, startAtMs)
+            finish()
+        }
+        overlays.notReadyBack.setOnClickListener { finish() }
     }
 
     private fun buildErrorPanel(root: FrameLayout) {
@@ -1776,6 +1981,14 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         /** A sleep timer in minutes carried to the next episode: its choice and when it was set (elapsedRealtime). */
         private const val EXTRA_SLEEP = "sleep"
         private const val EXTRA_SLEEP_AT = "sleepAt"
+        /** Chip text for a player that took over from a placeholder ("Debridio is still fetching that one — …"). */
+        private const val EXTRA_NOTE = "placeholderNote"
+        /** Placeholders switched away from so far (PlaceholderCheck.MAX_SWITCHES). */
+        private const val EXTRA_HOPS = "placeholderHops"
+        /** Test hook (SourcesProbe placeholderTest): the expected runtime instead of TMDB's. */
+        private const val EXTRA_EXPECTED_MS = "expectedMs"
+        /** Test hook: the sources a placeholder may switch to (JSON list) instead of a search; empty = none. */
+        private const val EXTRA_ALTERNATIVES = "alternatives"
         private val json = Json { ignoreUnknownKeys = true }
 
         fun formatTime(ms: Long): String {
@@ -1794,6 +2007,14 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             val name = title ?: parsed?.name ?: "Torrent"
             return forPlayback(context, Playback.forTorrentFile(parsed?.infoHash.orEmpty(), fileIndex, name, magnet = magnet, filename = filename))
         }
+
+        /**
+         * SourcesProbe `placeholderTest`: plays [playback] as if its source were a debrid link, expecting [expectedMs]
+         * of film, with only [alternatives] to fall back to (empty = the Not ready card).
+         */
+        fun forPlaceholderTest(context: Context, playback: Playback, expectedMs: Long, alternatives: List<Source>): Intent =
+            forPlayback(context, playback).putExtra(EXTRA_EXPECTED_MS, expectedMs)
+                .putExtra(EXTRA_ALTERNATIVES, json.encodeToString(kotlinx.serialization.builtins.ListSerializer(Source.serializer()), alternatives))
 
         fun forTorrent(context: Context, infoHash: String, title: String? = null, fileIndex: Int? = null): Intent =
             forPlayback(context, Playback.forTorrentFile(infoHash, fileIndex, title ?: infoHash.take(8)))

@@ -97,6 +97,8 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
   - `--es addAddon <manifest url>` / `--es removeAddon <url>` around the search
   - `--ei playSample 0..2` cold-start test on a legal sample (Blender open movies)
   - `--ez playTest true --es url <direct> [--ei tmdb --ei season --ei episode --ei nextEpisode --el startMs --el durationMs]`
+  - `--ez placeholderTest true [--ei runtimeMin 90] [--ez fallback true]` debrid "downloading" placeholder check:
+    Not ready card, or with `fallback` the switch to the full film (then `--es removeTitle movie:10378`)
   - `--ez history true` dump watch history + Continue watching
   - `--es setPosition <titleKey> --el ms <position>` put a watch position back
   - `--es removeTitle <titleKey>` remove a title from watch history
