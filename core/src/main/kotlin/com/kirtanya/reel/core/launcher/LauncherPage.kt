@@ -30,6 +30,8 @@ object LauncherPage {
     val EPISODE_COLUMNS = listOf("season", "episode", "name", "overview", "still", "air_date", "aired", "progress", "link")
     val SOURCE_COLUMNS = listOf(
         "token", "name", "provider", "quality", "size_bytes", "seeds", "kind", "languages", "best", "play_link", "downloadable",
+        // Added later, so at the end (never reorder): what a cast link's hint names.
+        "hash", "file", "url",
     )
     val DOWNLOAD_COLUMNS = listOf("key", "title", "subtitle", "progress", "state", "size_bytes", "play_link")
     val RESULT_KEYS = listOf("ok", "message")
@@ -139,6 +141,9 @@ object LauncherPage {
                 if (s.key == bestKey) 1 else 0,
                 LauncherLink.play(tokens[i], ref, season, episode),
                 if (downloadable(s)) 1 else 0,
+                CastChoice.hashOf(s),
+                if (s.kind == SourceKind.TORRENT) s.fileIdx ?: -1 else -1,
+                if (s.kind == SourceKind.DIRECT) s.url else null,
             )
         }
     }

@@ -129,7 +129,7 @@ private fun openExternal(context: Context, source: Source) {
  * download this one replaces: it's deleted only once the new one has started, so a failed start
  * leaves it alone (docs/STREAMING_V2.md §7.3a).
  */
-fun download(context: Context, source: Source, title: String, origin: DownloadOrigin? = null, replacing: String? = null) {
+fun download(context: Context, source: Source, title: String, origin: DownloadOrigin? = null, replacing: String? = null, startedMessage: String? = null) {
     val app = ReelApp.get(context)
     val main = android.os.Handler(context.mainLooper)
     fun dropOld(newHash: String?) {
@@ -146,7 +146,7 @@ fun download(context: Context, source: Source, title: String, origin: DownloadOr
                 val hash = app.engine.addMagnet(source.magnetUri() ?: return@launch, TorrentMode.DOWNLOAD, source.fileIdx, source.filename)
                 origin?.let { app.downloadOrigins.put(hash, it) }
                 dropOld(hash)
-                if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"
+                startedMessage ?: if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"
             } catch (e: EngineException) {
                 e.message ?: "Couldn't start the download"
             }
@@ -162,7 +162,7 @@ fun download(context: Context, source: Source, title: String, origin: DownloadOr
             source.headers.forEach { (k, v) -> request.addRequestHeader(k, v) }
             val started = runCatching { context.getSystemService(DownloadManager::class.java).enqueue(request) }.isSuccess
             if (started) dropOld(null)
-            Toast.makeText(context, if (started) "Downloading “$title”" else "Couldn't start the download", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, if (started) startedMessage ?: "Downloading “$title”" else "Couldn't start the download", Toast.LENGTH_SHORT).show()
         }
         SourceKind.EXTERNAL -> Unit
     }

@@ -43,7 +43,7 @@ class LauncherPageTest {
     @Test fun columnOrders() {
         assertEquals(LauncherApi.COLUMNS + listOf("overview", "genres", "runtime_min", "seasons", "status", "in_watchlist", "resume_key", "resume_progress"), LauncherPage.DETAILS_COLUMNS)
         assertEquals(listOf("season", "episode", "name", "overview", "still", "air_date", "aired", "progress", "link"), LauncherPage.EPISODE_COLUMNS)
-        assertEquals(listOf("token", "name", "provider", "quality", "size_bytes", "seeds", "kind", "languages", "best", "play_link", "downloadable"), LauncherPage.SOURCE_COLUMNS)
+        assertEquals(listOf("token", "name", "provider", "quality", "size_bytes", "seeds", "kind", "languages", "best", "play_link", "downloadable", "hash", "file", "url"), LauncherPage.SOURCE_COLUMNS)
         assertEquals(listOf("key", "title", "subtitle", "progress", "state", "size_bytes", "play_link"), LauncherPage.DOWNLOAD_COLUMNS)
     }
 
@@ -127,6 +127,10 @@ class LauncherPageTest {
         assertEquals(-1, col(rows[2], "seeds"))
         assertEquals("onestream://play?source=t2aaaaaaaa&type=movie&tmdb=550", col(rows[1], "play_link"))
         assertNull(LauncherPage.best(listOf(service)))
+        assertEquals(listOf(null, "a".repeat(40), null), rows.map { col(it, "hash") })
+        assertEquals(listOf(-1, -1, -1), rows.map { col(it, "file") })
+        assertEquals(listOf(null, null, "https://x"), rows.map { col(it, "url") })
+        assertEquals(LauncherPage.SOURCE_COLUMNS.size, rows[0].size)
     }
 
     @Test fun languagesFromText() {

@@ -5,6 +5,23 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Play / Download on TV from the phone (cast links)**
+Decision: One Launcher on the phone sends an Android TV remote app link to the TV:
+`onestream://cast/play|download?type&tmdb[&season&episode][&hash&file&url]` (LAUNCHER_API.md Part 3).
+The TV runs its **own** source search and the link's hash / file / url only selects among those results,
+never plays a URI by itself (any app or remote can send links). Play shows "Starting on your TV…" then
+opens the player (hinted source if this TV can stream it, else Recommended); nothing found → message +
+Open Sources. Download goes through an invisible trampoline activity (Theme.NoDisplay, empty task
+affinity, noHistory, excludeFromRecents) into EngineService, so the player or whatever is on screen is
+not interrupted; toast "Downloading <title> on this TV". `/sources` rows gain `hash`, `file`, `url` at
+the end. The MainActivity `onestream` filter now lists its hosts: a catch-all would also match
+`cast/download` and Android would ask which activity to open.
+Why: the user searches on the phone and wants the film to start (or download) on the TV without the
+remote. Evidence: `CastLinkTest`, renders `tv/cast-starting.png`, `tv/cast-none.png`; design rules pass
+with no baseline change. Not yet tried on the devices.
+
+---
+
 **2026-10-21 · Sources page, addon store filters, Change source + download ↔ stream cache**
 Decision (Sources page): one page for Play and Download. A Play | Download switch under the title sets
 what every card does (the page opens on Play from a title; Change source opens it fixed on download), so

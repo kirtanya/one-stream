@@ -25,6 +25,9 @@ sealed interface LauncherLink {
         val episode: Int? = null,
     ) : LauncherLink
 
+    /** "Play on TV" / "Download on TV" from the phone (`onestream://cast/play|download?…`). */
+    data class Cast(val request: CastRequest) : LauncherLink
+
     companion object {
         const val SCHEME = "onestream"
 
@@ -66,6 +69,7 @@ sealed interface LauncherLink {
                     if (token == null && torrent == null && fallback == null) null
                     else Play(token, torrent, fallback, params["season"]?.toIntOrNull(), params["episode"]?.toIntOrNull())
                 }
+                "cast" -> segments.singleOrNull()?.let { CastRequest.parse(it, params) }?.let(::Cast)
                 else -> null
             }
         }

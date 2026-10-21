@@ -59,6 +59,11 @@ class EngineService : LifecycleService() {
             quit()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_CAST_DOWNLOAD) {
+            // Re-parsed from the link text: the request crosses into the service as plain data.
+            val request = (com.kirtanya.reel.core.launcher.LauncherLink.parse(intent.dataString) as? com.kirtanya.reel.core.launcher.LauncherLink.Cast)?.request
+            if (request != null) lifecycleScope.launch { com.kirtanya.reel.data.CastDownloads.run(this@EngineService, request) }
+        }
         return START_STICKY
     }
 
@@ -111,9 +116,19 @@ class EngineService : LifecycleService() {
         private const val CHANNEL_ID = "engine"
         private const val NOTIFICATION_ID = 1
         private const val ACTION_QUIT = "com.kirtanya.reel.QUIT"
+        private const val ACTION_CAST_DOWNLOAD = "com.kirtanya.reel.CAST_DOWNLOAD"
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, EngineService::class.java))
+        }
+
+        /** "Download on TV" (onestream://cast/download): search + download in the background (data/CastDownloads). */
+        fun castDownload(context: Context, request: com.kirtanya.reel.core.launcher.CastRequest) {
+            val link = com.kirtanya.reel.core.launcher.CastRequest.link(true, request.ref, request.season, request.episode, request.hint)
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, EngineService::class.java).setAction(ACTION_CAST_DOWNLOAD).setData(android.net.Uri.parse(link)),
+            )
         }
     }
 }

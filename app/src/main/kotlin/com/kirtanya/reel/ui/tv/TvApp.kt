@@ -92,6 +92,11 @@ fun TvApp(
                 is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { com.kirtanya.reel.ui.common.PersonScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = true, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
+                is Dest.Cast -> com.kirtanya.reel.ui.sources.CastScreen(
+                    screen.request, isTv = true, onBack = back,
+                    onStarted = { nav.replace(screen, Dest.Title(screen.request.ref)) },
+                    onOpenSources = { nav.replace(screen, Dest.Sources(screen.request.ref, screen.request.season, screen.request.episode)) },
+                )
                 is Tab -> saveable.SaveableStateProvider(if (screen == Tab.Search) nav.searchStateKey else screen.name) {
                     when (screen) {
                         Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = open)

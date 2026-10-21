@@ -251,6 +251,9 @@ open class ScreenRenders(protected val variant: Variant) {
     }
     @Test fun sourcesStarting() = render("sources-starting", data = RenderData(sourceSearch = { null }), content = phone { open(Dest.Sources(Fake.film)) })
 
+    @Test fun castStarting() = render("cast-starting", data = RenderData(sourceSearch = { Fake.searching }), content = phone { open(Dest.Cast(castFilm)) })
+    @Test fun castNone() = render("cast-none", data = RenderData(sourceSearch = { Fake.nothingFound }), content = phone { open(Dest.Cast(castFilm)) })
+
     @Test fun collectionService() = render("collection-service", content = phone { open(Dest.Collection("Netflix", provider = Provider.FEATURED[0])) })
     @Test fun collectionRow() = render("collection-row", content = phone { open(Dest.Collection("Top rated shows", items = Fake.titles(1, seed = 20))) })
     @Test fun collectionError() = render("collection-error", catalog = FakeCatalog(Answer.Fail), content = phone { open(Dest.Collection("JioHotstar", provider = Provider.FEATURED[2])) })
@@ -335,6 +338,8 @@ open class ScreenRenders(protected val variant: Variant) {
     )
     @Test @Config(qualifiers = TV) fun tvSourcesReplace() = render("sources-replace", tv = true, data = RenderData(sourceSearch = { Fake.manySources }, torrents = Fake.torrents), content = tvApp { open(Dest.Sources(Fake.film, download = true, replacing = Fake.torrents[0].infoHash)) })
     @Test @Config(qualifiers = TV) fun tvSourcesNone() = render("sources-none", tv = true, data = RenderData(sourceSearch = { Fake.noProviders }), content = tvApp { open(Dest.Sources(Fake.long)) })
+    @Test @Config(qualifiers = TV) fun tvCastStarting() = render("cast-starting", tv = true, data = RenderData(sourceSearch = { Fake.searching }), content = tvApp { open(Dest.Cast(castShow)) })
+    @Test @Config(qualifiers = TV) fun tvCastNone() = render("cast-none", tv = true, data = RenderData(sourceSearch = { Fake.nothingFound }), content = tvApp { open(Dest.Cast(castFilm)) })
     @Test @Config(qualifiers = TV) fun tvCollection() = render("collection-service", tv = true, content = tvApp { open(Dest.Collection("Netflix", provider = Provider.FEATURED[0])) })
     @Test @Config(qualifiers = TV) fun tvCollectionGenre() = render("collection-genre", tv = true, content = tvApp { open(Dest.Collection("Drama", genre = com.kirtanya.reel.core.tmdb.Genre(18, "Drama"), genreType = com.kirtanya.reel.core.tmdb.MediaType.TV)) })
     @Test @Config(qualifiers = TV) fun tvPerson() = render("person", tv = true, content = tvApp { open(Dest.Person(1, "Timothée Chalamet")) })
@@ -385,6 +390,9 @@ open class ScreenRenders(protected val variant: Variant) {
         compose.setContent { com.kirtanya.reel.ui.common.BrandMark(256.dp) }
         compose.onRoot().captureRoboImage("build/screens/brand-logo.png")
     }
+
+    private val castFilm get() = com.kirtanya.reel.core.launcher.CastRequest(false, Fake.film, null, null, com.kirtanya.reel.core.launcher.CastHint())
+    private val castShow get() = com.kirtanya.reel.core.launcher.CastRequest(false, Fake.show, 2, 6, com.kirtanya.reel.core.launcher.CastHint())
 
     companion object {
         /** Pixel 8 as the user has it: 1080 × 2400 px, display size raised to 480 dpi → 360 × 800 dp. */

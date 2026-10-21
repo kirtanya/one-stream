@@ -42,6 +42,9 @@ sealed interface Dest {
 
     /** A title known only by its IMDb id (One Launcher links): looked up on TMDB, then becomes [Title]. */
     data class ImdbTitle(val imdbId: String, val type: com.kirtanya.reel.core.tmdb.MediaType) : Dest
+
+    /** "Play on TV" from the phone (onestream://cast/play): searches, then opens the player; becomes [Title]. */
+    data class Cast(val request: com.kirtanya.reel.core.launcher.CastRequest) : Dest
 }
 
 /** Tabs at the root; title pages stack on top. Back pops the stack, then returns to Home. */

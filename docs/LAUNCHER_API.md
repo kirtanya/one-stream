@@ -54,7 +54,8 @@ TMDB info are left out of `continue`.
 
 ## Deep links
 `ACTION_VIEW`, category `DEFAULT`, into `MainActivity` (singleTop; `onNewIntent` handles them too).
-Start with `FLAG_ACTIVITY_NEW_TASK` from the launcher.
+Start with `FLAG_ACTIVITY_NEW_TASK` from the launcher. The manifest lists the hosts (`title`, `imdb`,
+`resume`, `search`, `play`, `cast`); a new host needs a manifest entry too.
 
 | Link | Does |
 |---|---|
@@ -63,7 +64,7 @@ Start with `FLAG_ACTIVITY_NEW_TASK` from the launcher.
 | `onestream://resume/<key>` | What tapping that Continue watching card does (resume in the player at its position; "Up next" opens Sources for that episode). An older episode key or a bare `tv:<id>` matches the show's card. Not in history → the title page. |
 | `onestream://search?q=<text>` | The Search tab with that query (URL-encoded; `+` and `%20` both mean a space) |
 
-A malformed `onestream://` link just brings the app to the front.
+A malformed `onestream://` link with one of those hosts just brings the app to the front.
 
 ---
 
@@ -101,7 +102,10 @@ plugin name), `quality` (string\|null: "4K HDR", "1080p", … — null for servi
 from the release text — "Hindi, English", "Dual audio", "Multi"; One Stream doesn't track languages
 otherwise), `best` (0/1: the Sources screen's Best match, the first non-service source), `play_link`
 (`onestream://play?source=<token>&type=…&tmdb=…[&season=&episode=]`), `downloadable` (0/1: torrents and
-direct links, like the app's Download button).
+direct links, like the app's Download button), then (added later, always at the end) `hash` (string\|null:
+the torrent's btih info-hash, 40 lowercase hex; null for direct / service), `file` (int: the torrent's file
+index, -1 when unknown or not a torrent), `url` (string\|null: a direct source's URL; null otherwise).
+`hash` / `file` / `url` are what a cast link's hint carries (Part 3).
 
 `downloads` columns: `key` (info-hash), `title`, `subtitle` (string\|null, "1.2 GB of 4.0 GB"),
 `progress` (0..1; 1 when done), `state` ("queued"\|"downloading"\|"paused"\|"done"\|"failed"),
@@ -125,3 +129,32 @@ source (what picking it on the Sources screen does; service links open their app
 (One Stream restarted) → the title page from `type` + `tmdb`.
 `onestream://play?torrent=<info-hash>` → plays that download (Downloads tab's Play); if the engine
 hasn't loaded it yet, the Downloads tab. Unknown hashes never start a new torrent (any app can send links).
+
+---
+
+## Part 3: Play / Download on TV (cast links)
+One Launcher on the **phone** shows a title's sources and offers "Play on TV" / "Download on TV". It
+sends an Android TV remote **app link** (the remote protocol's app-link launch → `ACTION_VIEW` of the URI
+on the TV) to One Stream on the TV. Both links are exported VIEW filters with `DEFAULT` + `BROWSABLE`.
+They work on the phone too, but are meant for the TV. Code: core `launcher/CastLink.kt` (`CastRequest`
+parse / build, `CastChoice` hint matching + choice; tests in `CastLinkTest`), app `ui/sources/CastScreen.kt`,
+`CastDownloadActivity`, `data/CastDownloads.kt`.
+
+| Link | Does |
+|---|---|
+| `onestream://cast/play?type=movie\|tv&tmdb=<id>[&season=N&episode=M][&hash=<btih>][&file=<idx>][&url=<direct url>]` | `MainActivity`: a "Starting on your TV…" screen (title, poster, Cancel; Back cancels), runs the app's own source search, picks a source (below) and opens the player as the Sources page would (resumes from history). Nothing found → "Couldn't find a source" + **Open Sources** for that film / episode. The screen then becomes the title page (Back from the player lands there). |
+| `onestream://cast/download?…same parameters…` | `CastDownloadActivity`: invisible (Theme.NoDisplay, own task, no history, not in Recents), finishes at once, so the TV keeps showing what it was showing (the player keeps playing). `EngineService` searches (25 s cap, then what has arrived), picks (below) and starts the app's own Download (with its download origin, so Change source works). Toast: "Downloading <title> on this TV" or why not ("Couldn't find a source to download …"). |
+
+- Shows need `season` + `episode` (else the link is malformed); films ignore them. `type` and `tmdb` are required.
+- `hash`: 40 hex or 32 base32 (normalised to lowercase hex). `file`: ≥ 0. `url`: http(s) only. Bad hint
+  values are dropped; the link still works without them.
+- **Security:** the hint never plays or downloads anything by itself. It only selects among the sources
+  the TV's own search returned (the user's own addons + plugins); an unknown hash / URL is ignored.
+- Choice, play: the search result matching the hint (same hash + same file; a hint or source without a
+  file index matches by hash; another file of the same torrent never does; direct links by exact URL),
+  if this device can stream it (TV storage limit); otherwise the Sources page's Recommended pick (one
+  that fits; if none fits, the ranker's winner). A hinted source starts as soon as it arrives; without
+  one the choice waits for the whole search (25 s cap). Services are never picked.
+- Choice, download: the hinted source if downloadable (torrent, or direct with a URL), else the ranker's
+  best downloadable source. Size doesn't matter.
+

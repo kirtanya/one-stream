@@ -66,16 +66,47 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="stremio" android:host="*" android:pathPattern=".*manifest\\.json" />
             </intent-filter>
-            <!-- One Launcher opens titles, Continue watching and search here (docs/LAUNCHER_API.md). -->
+            <!-- One Launcher opens titles, Continue watching and search here (docs/LAUNCHER_API.md).
+                 Hosts listed one by one: a catch-all would also match cast/download and Android would
+                 ask which activity to use. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="onestream" />
+                <data android:host="title" />
+                <data android:host="imdb" />
+                <data android:host="resume" />
+                <data android:host="search" />
+                <data android:host="play" />
+            </intent-filter>
+            <!-- "Play on TV" from the phone: an Android TV remote app link (BROWSABLE so the remote can open it). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="onestream" android:host="cast" android:pathPrefix="/play" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- "Download on TV" from the phone: invisible trampoline into EngineService, so the TV isn't interrupted. -->
+        <activity
+            android:name=".CastDownloadActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="standard"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="onestream" android:host="cast" android:pathPrefix="/download" />
             </intent-filter>
         </activity>
 

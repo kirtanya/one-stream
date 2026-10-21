@@ -160,6 +160,12 @@ class MainActivity : ComponentActivity() {
                     else -> com.kirtanya.reel.core.launcher.LauncherPage.playFallback(link, tokenKnown = false)?.let { openDest = Dest.Title(it) }
                 }
             }
+            is LauncherLink.Cast -> {
+                val request = link.request
+                // Downloads normally arrive at CastDownloadActivity (so the TV isn't interrupted); this is a fallback.
+                if (request.download) com.kirtanya.reel.engine.EngineService.castDownload(this, request)
+                else openDest = Dest.Cast(request)
+            }
             null -> Unit
         }
     }
