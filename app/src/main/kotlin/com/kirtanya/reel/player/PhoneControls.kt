@@ -68,6 +68,8 @@ internal class PhoneControls(
     private var player: Player? = null
 
     private val controls = FrameLayout(ctx)
+    /** The bottom band (its height decides how far captions move up while it shows). */
+    private var bandView: View? = null
     private val titleView = text(CAPTION_SP, medium = true)
     private val metaView = text(CAPTION_SP)
     private val back = RoundButton(ctx, R.drawable.ic_pl_back, "Back", BUTTON_DP, ICON_DP)
@@ -134,6 +136,7 @@ internal class PhoneControls(
         // (they take no touches) so its line sits just under them; the band's top margin keeps that
         // touch area off the buttons above.
         val band = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+        bandView = band
         band.addView(row, LinearLayout.LayoutParams(-1, -2).apply { marginStart = ctx.dp(ROW_EDGE_DP); marginEnd = ctx.dp(ROW_EDGE_DP) })
         band.addView(times, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4); marginStart = ctx.dp(EDGE_DP); marginEnd = ctx.dp(EDGE_DP) })
         seek.line = true
@@ -225,10 +228,24 @@ internal class PhoneControls(
         }
     }
 
+    /** The controls showing or hiding (captions move up out of the band's way while it shows). */
+    var onShown: ((Boolean) -> Unit)? = null
+
+    /** How much of the bottom the band covers right now, in px (0 when hidden). */
+    fun coveredBottomPx(): Int {
+        val b = bandView ?: return 0
+        if (!visible || b.height == 0) return 0
+        val loc = IntArray(2).also { b.getLocationInWindow(it) }
+        val me = IntArray(2).also { getLocationInWindow(it) }
+        return (me[1] + height) - loc[1]
+    }
+
     fun show() {
         if (locked) { flashUnlock(); return }
         if (!visible) {
             controls.visibility = VISIBLE
+            // After layout, so the band has its size.
+            post { onShown?.invoke(true) }
             controls.alpha = 0f
             controls.animate().alpha(1f).setDuration(160).start()
             refresh()
@@ -239,7 +256,7 @@ internal class PhoneControls(
 
     fun hide() {
         closePanel()
-        controls.animate().alpha(0f).setDuration(160).withEndAction { controls.visibility = GONE }.start()
+        controls.animate().alpha(0f).setDuration(160).withEndAction { controls.visibility = GONE; onShown?.invoke(false) }.start()
         main.removeCallbacks(hideRunnable)
         main.removeCallbacks(tick)
     }
@@ -249,6 +266,7 @@ internal class PhoneControls(
         closePanel()
         controls.animate().cancel()
         controls.visibility = GONE
+        onShown?.invoke(false)
         unlock.visibility = GONE
         hud.visibility = GONE
         main.removeCallbacks(hideRunnable)

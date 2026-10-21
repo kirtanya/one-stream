@@ -42,7 +42,6 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import com.kirtanya.reel.MainActivity
 import com.kirtanya.reel.ReelApp
@@ -156,6 +155,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         // Phones: landscape from the first frame (most video is wide; a portrait video turns back below).
         if (!isTelevision()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         setContentView(buildLayout())
+        // A caption style changed in Settings (e.g. from the TV's panel or another screen) shows at once.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { app.playbackSettings.state.collect { applyCaptionLook() } }
+        }
         // Phone: Back closes the settings panel before it leaves the player.
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -523,9 +526,21 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             // A file's "default" flag shouldn't pick subtitles for you; language does.
             .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
             .build()
-        playerView.subtitleView?.apply {
-            setFractionalTextSize(prefs.subtitleSize.fraction)
-            setStyle(CaptionStyleCompat(PlayerColors.SUBTITLE_TEXT, PlayerColors.SUBTITLE_BOX, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, PlayerColors.SUBTITLE_EDGE, null))
+        applyCaptionLook()
+    }
+
+    /**
+     * The user's caption style (Settings → Subtitles → Style). On the phone, while the bottom band shows,
+     * captions sit just above it instead of under the buttons.
+     */
+    private fun applyCaptionLook() {
+        val view = playerView.subtitleView ?: return
+        val style = prefs.caption
+        com.kirtanya.reel.captions.CaptionLook.apply(view, style)
+        val covered = phoneControls?.coveredBottomPx() ?: 0
+        if (covered > 0 && playerView.height > 0) {
+            val lift = (covered + dp(8)).toFloat() / playerView.height
+            view.setBottomPaddingFraction(maxOf(style.position.bottomFraction, lift))
         }
     }
 
@@ -1233,6 +1248,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         phoneControls?.setToggles(listOf(picture, cinema))
         phoneControls?.syncZoom(prefs.picture == com.kirtanya.reel.core.playback.PictureMode.FILL)
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))
+        phoneControls?.onShown = { applyCaptionLook() }
         // The same small chips as the TV, top right (the phone controls keep the top clear).
         buildTvChips(root)
         buildErrorPanel(root)
