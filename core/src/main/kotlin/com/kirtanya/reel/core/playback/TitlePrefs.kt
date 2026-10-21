@@ -19,9 +19,14 @@ data class TitlePrefs(
     /** PictureMode.name */
     val picture: String? = null,
     val speed: Float? = null,
+    /** Audio delay in ms (lip sync off in one release); null = 0. */
+    val audioDelayMs: Int? = null,
+    /** Subtitle delay in ms (subtitles from another release); null = 0. */
+    val subtitleDelayMs: Int? = null,
     val changedAt: Long = 0,
 ) {
-    val isEmpty: Boolean get() = audioLanguage == null && subtitleLanguage == null && subtitleLabel == null && picture == null && speed == null
+    val isEmpty: Boolean get() = audioLanguage == null && subtitleLanguage == null && subtitleLabel == null && picture == null && speed == null &&
+        audioDelayMs == null && subtitleDelayMs == null
 
     companion object {
         const val SUBTITLES_OFF = "off"
