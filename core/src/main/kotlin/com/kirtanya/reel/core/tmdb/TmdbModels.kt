@@ -23,6 +23,36 @@ data class CastMember(val name: String, val character: String?, val profilePath:
 
 data class Genre(val id: Int, val name: String)
 
+/** A film series (TMDB collection): "The Dune Collection". */
+data class CollectionRef(val id: Int, val name: String, val posterPath: String?, val backdropPath: String?)
+
+/** A collection's page: its films in release order. */
+data class CollectionDetails(val ref: CollectionRef, val overview: String, val parts: List<TitleSummary>)
+
+/** One episode with its air date, for "Next episode" and the calendar. */
+data class AiringEpisode(val season: Int, val episode: Int, val name: String, val airDate: String?, val stillPath: String? = null) {
+    /** "S2 E4" */
+    val label: String get() = "S$season E$episode"
+}
+
+/** A row of the calendar: an episode of a followed show airing (or aired) in the window. */
+data class CalendarEntry(val show: TitleSummary, val episode: AiringEpisode, val date: java.time.LocalDate)
+
+/** Discover with filters (genre grid, "Browse"). Null / empty = no filter. */
+data class DiscoverFilter(
+    val type: MediaType,
+    val genres: Set<Int> = emptySet(),
+    val yearFrom: Int? = null,
+    val yearTo: Int? = null,
+    /** TMDB rating 0–10, e.g. 7.0. Only titles with enough votes count. */
+    val minRating: Double? = null,
+    /** Original language, ISO 639-1 ("hi", "ko"). */
+    val language: String? = null,
+    val sort: Sort = Sort.POPULAR,
+) {
+    enum class Sort(val label: String) { POPULAR("Popular"), RATING("Top rated"), NEWEST("Newest"), TITLE("A–Z") }
+}
+
 /** A YouTube video from TMDB (trailers first). Open [youtubeUrl] with an ACTION_VIEW intent. */
 data class Video(val key: String, val name: String, val type: String, val official: Boolean) {
     val youtubeUrl get() = "https://www.youtube.com/watch?v=$key"
@@ -102,6 +132,12 @@ data class TitleDetails(
     val genreList: List<Genre> = emptyList(),
     /** Extra textless backdrops (for a slideshow behind the title). */
     val backdrops: List<String> = emptyList(),
+    /** Films: the series it belongs to ("The Dune Collection"), for a franchise row. */
+    val collection: CollectionRef? = null,
+    /** Shows: the next announced episode with its air date (TMDB next_episode_to_air). */
+    val nextAiring: AiringEpisode? = null,
+    /** Shows: the latest aired episode with its air date. */
+    val lastAiredEpisode: AiringEpisode? = null,
     /** TMDB status: "Released", "Returning Series", "Ended"… */
     val status: String? = null,
 ) {

@@ -84,6 +84,11 @@ object TmdbParser {
                 val go = g as? JsonObject ?: return@mapNotNull null
                 Genre(go.int("id") ?: return@mapNotNull null, go.str("name") ?: return@mapNotNull null)
             },
+            collection = o.obj("belongs_to_collection")?.let { c ->
+                c.int("id")?.let { CollectionRef(it, c.str("name").orEmpty(), c.str("poster_path"), c.str("backdrop_path")) }
+            },
+            nextAiring = o.obj("next_episode_to_air")?.let(::airing),
+            lastAiredEpisode = o.obj("last_episode_to_air")?.let(::airing),
             backdrops = (o.obj("images")?.get("backdrops") as? JsonArray).orEmpty()
                 .mapNotNull { it as? JsonObject }
                 .filter { it.str("iso_639_1") == null } // textless
@@ -121,6 +126,24 @@ object TmdbParser {
             )
             .map { Video(it.str("key")!!, it.str("name").orEmpty(), it.str("type").orEmpty(), (it["official"] as? JsonPrimitive)?.content == "true") }
             .take(12)
+    }
+
+    private fun airing(e: JsonObject): AiringEpisode? = AiringEpisode(
+        season = e.int("season_number") ?: return null,
+        episode = e.int("episode_number") ?: return null,
+        name = e.str("name").orEmpty(),
+        airDate = e.str("air_date"),
+        stillPath = e.str("still_path"),
+    )
+
+    /** A collection: its films oldest first (unreleased ones without a date last). */
+    fun parseCollection(body: String): CollectionDetails {
+        val o = root(body)
+        val ref = CollectionRef(o.int("id") ?: error("No id in collection"), o.str("name").orEmpty(), o.str("poster_path"), o.str("backdrop_path"))
+        val parts = (o["parts"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .sortedWith(compareBy({ it.str("release_date").isNullOrBlank() }, { it.str("release_date").orEmpty() }))
+            .mapNotNull { summary(it, MediaType.MOVIE) }
+        return CollectionDetails(ref, o.str("overview").orEmpty(), parts)
     }
 
     fun parseGenres(body: String): List<Genre> =

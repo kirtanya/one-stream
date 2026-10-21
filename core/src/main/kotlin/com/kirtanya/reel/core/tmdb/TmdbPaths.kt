@@ -40,6 +40,31 @@ object TmdbPaths {
     /** Looks a title up by its IMDb id (tt…): `movie_results` / `tv_results`. */
     fun find(imdbId: String) = "find/${URLEncoder.encode(imdbId.trim(), Charsets.UTF_8)}?external_source=imdb_id&language=en-US"
 
+    fun collection(id: Int) = "collection/$id?language=en-US"
+
+    /** Discover with the user's filters; [page] from 1. Rating sorts need enough votes to mean something. */
+    fun discover(f: DiscoverFilter, page: Int = 1, today: java.time.LocalDate = java.time.LocalDate.now()): String {
+        val movie = f.type == MediaType.MOVIE
+        val dateField = if (movie) "primary_release_date" else "first_air_date"
+        val sort = when (f.sort) {
+            DiscoverFilter.Sort.POPULAR -> "popularity.desc"
+            DiscoverFilter.Sort.RATING -> "vote_average.desc"
+            DiscoverFilter.Sort.NEWEST -> "$dateField.desc"
+            DiscoverFilter.Sort.TITLE -> if (movie) "original_title.asc" else "original_name.asc"
+        }
+        val minVotes = if (f.sort == DiscoverFilter.Sort.RATING || f.minRating != null) 200 else 20
+        return buildString {
+            append("discover/${f.type.path}?language=en-US&include_adult=false&page=$page&sort_by=$sort&vote_count.gte=$minVotes")
+            if (f.genres.isNotEmpty()) append("&with_genres=" + f.genres.sorted().joinToString(","))
+            f.yearFrom?.let { append("&$dateField.gte=$it-01-01") }
+            f.yearTo?.let { append("&$dateField.lte=$it-12-31") }
+            // Newest first shouldn't list announced titles that aren't out yet.
+            if (f.sort == DiscoverFilter.Sort.NEWEST && f.yearTo == null) append("&$dateField.lte=$today")
+            f.minRating?.let { append("&vote_average.gte=$it") }
+            f.language?.let { append("&with_original_language=$it") }
+        }
+    }
+
     fun person(id: Int) = "person/$id?language=en-US&append_to_response=combined_credits"
 
     private const val EXTRAS = "images,videos,recommendations,similar"

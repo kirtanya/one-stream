@@ -83,6 +83,29 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
     suspend fun byGenre(type: MediaType, genreId: Int, page: Int = 1): List<TitleSummary> =
         list(TmdbPaths.byGenre(type, genreId, page), type)
 
+    /** A film series: its films in release order. */
+    suspend fun collection(id: Int): com.kirtanya.reel.core.tmdb.CollectionDetails =
+        TmdbParser.parseCollection(get(TmdbPaths.collection(id)))
+
+    /** Discover with filters (genre grid / Browse); 20 per page, [page] from 1. */
+    suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int = 1): List<TitleSummary> =
+        list(TmdbPaths.discover(filter, page), filter.type)
+
+    /**
+     * Episodes of [shows] airing from [from] to [to] (a week back to a few weeks ahead, say). Ended
+     * shows are skipped; a show that fails to load is left out rather than failing the whole calendar.
+     */
+    suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate): List<com.kirtanya.reel.core.tmdb.CalendarEntry> = coroutineScope {
+        val details = shows.filter { it.type == MediaType.TV }.distinct()
+            .map { ref -> async { runCatching { details(ref) }.getOrNull() } }
+            .mapNotNull { it.await() }
+            .filter(com.kirtanya.reel.core.tmdb.EpisodeCalendar::isFollowable)
+        val seasons = details.map { d ->
+            async { d.summary.ref.id to (com.kirtanya.reel.core.tmdb.EpisodeCalendar.seasonToFetch(d)?.let { runCatching { season(d.summary.ref.id, it) }.getOrNull() }.orEmpty()) }
+        }.associate { it.await() }
+        com.kirtanya.reel.core.tmdb.EpisodeCalendar.entries(details, seasons, from, to)
+    }
+
     /** A cast member's page (photo, bio, films and shows). */
     suspend fun person(id: Int): PersonDetails = TmdbParser.parsePerson(get(TmdbPaths.person(id)))
 
