@@ -158,6 +158,16 @@ object Subtitles {
      * "eng" / "en" / "EN" / "English" / "en-US" / "English (UK)" → "en"; blank → "und"; unknown codes
      * are kept (lower case). Region and script are dropped: the setting and the menu work per language.
      */
+    /**
+     * Does [tracks] contain [want] (a language the user reads; null / "off" = none)? Late subtitle
+     * tracks in that language are attached at once instead of waiting for a pause.
+     */
+    fun containsLanguage(tracks: List<SubtitleTrack>, want: String?): Boolean {
+        if (want.isNullOrBlank() || want == "off") return false
+        val w = normalizeLanguage(want)
+        return tracks.any { normalizeLanguage(it.language) == w }
+    }
+
     fun normalizeLanguage(code: String): String {
         val name = code.substringBefore('(').trim()
         if (name.isEmpty()) return "und"

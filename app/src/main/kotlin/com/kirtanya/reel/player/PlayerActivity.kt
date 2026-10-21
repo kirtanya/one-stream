@@ -296,11 +296,17 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         val extra = late.filter { it.url !in have }
         if (extra.isEmpty()) return
         if (!firstFrameShown) attachSubtitles(extra, "beforeFirstFrame")
+        // The language the user reads arrived: show it now (one short re-buffer) rather than leave the
+        // film without subtitles until a pause — on the phone OpenSubtitles took 5.6 s (device test).
+        else if (wantedIn(extra)) attachSubtitles(extra, "lateWanted")
         else {
             pendingSubs = extra
             subsStat("subsLate", mapOf("pending" to extra.size))
         }
     }
+
+    /** Does [tracks] contain the language the user wants to see by itself (not Off)? */
+    private fun wantedIn(tracks: List<SubtitleTrack>): Boolean = Subtitles.containsLanguage(tracks, prefs.subtitleLanguage)
 
     /** Rebuilds the item with [extra] subtitle tracks at the current position; [prepare] = false when the caller prepares. */
     private fun attachSubtitles(extra: List<SubtitleTrack>, why: String, prepare: Boolean = true) {

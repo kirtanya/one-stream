@@ -178,4 +178,14 @@ class SubtitleDefaultsTest {
         assertEquals(595_000, ContinueWatching.startPositionMs(null, entry))
         assertEquals(595_000, ContinueWatching.startPositionMs(-1, entry))
     }
+
+    @Test fun lateTracksInTheWantedLanguageAreRecognised() {
+        fun t(lang: String) = com.kirtanya.reel.core.sources.SubtitleTrack(url = "https://x/$lang.srt", language = lang)
+        val tracks = listOf(t("pt"), t("eng"), t(""))
+        kotlin.test.assertTrue(com.kirtanya.reel.core.sources.Subtitles.containsLanguage(tracks, "en"))
+        kotlin.test.assertTrue(com.kirtanya.reel.core.sources.Subtitles.containsLanguage(tracks, "English"))
+        kotlin.test.assertFalse(com.kirtanya.reel.core.sources.Subtitles.containsLanguage(tracks, "fr"))
+        kotlin.test.assertFalse(com.kirtanya.reel.core.sources.Subtitles.containsLanguage(tracks, "off"))
+        kotlin.test.assertFalse(com.kirtanya.reel.core.sources.Subtitles.containsLanguage(tracks, null))
+    }
 }
