@@ -123,7 +123,8 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     var confirm by remember { mutableStateOf<Source?>(null) }
 
     val ranked = search?.sources.orEmpty()
-    val best = remember(ranked) { SourceBrowser.recommended(ranked) }
+    // Playing: recommend one this device can stream; downloading: size doesn't matter.
+    val best = remember(ranked, action) { SourceBrowser.recommended(ranked) { action != SourceAction.PLAY || SourceRanker.fits(it, prefs) } }
     val bestView = remember(best) { best?.let(SourceBrowser::view) }
     val rows = remember(ranked, best) { ranked.filter { it.key != best?.key }.map(SourceBrowser::view) }
     val facets = remember(rows) { SourceBrowser.facets(rows) }

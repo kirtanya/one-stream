@@ -61,8 +61,15 @@ object SourceBrowser {
         tags = SourceFacts.tags(s),
     )
 
-    /** The ranker's winner that can start in the app (services open another app, so never recommended). */
-    fun recommended(ranked: List<Source>): Source? = ranked.firstOrNull { it.kind != SourceKind.EXTERNAL }
+    /**
+     * The ranker's winner that can start in the app (services open another app, so never recommended).
+     * To play, also one this device can stream ([playable], e.g. not a 4K REMUX on the TV) — recommending
+     * one and then warning "too big" was the user's complaint; only if none fits, the ranker's winner.
+     */
+    fun recommended(ranked: List<Source>, playable: (Source) -> Boolean = { true }): Source? {
+        val inApp = ranked.filter { it.kind != SourceKind.EXTERNAL }
+        return inApp.firstOrNull(playable) ?: inApp.firstOrNull()
+    }
 
     /**
      * Chips over [rows] (the list under the Recommended card). Quality chips appear for every

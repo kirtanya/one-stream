@@ -109,6 +109,14 @@ class SourceBrowserTest {
         assertNull(SourceBrowser.recommended(listOf(src("svc", kind = SourceKind.EXTERNAL))))
     }
 
+    @Test fun recommendedToPlayIsOneThisDeviceCanStream() {
+        val small = { s: com.kirtanya.reel.core.sources.Source -> (s.sizeBytes ?: 0L) < 10_000_000_000L }
+        val pick = SourceBrowser.recommended(ranked, small)
+        assertTrue(pick != null && small(pick), "not the 40 GB REMUX: ${pick?.title}")
+        assertEquals(SourceBrowser.recommended(ranked), SourceBrowser.recommended(ranked) { true }, "downloading: the ranker's winner")
+        assertEquals(ranked[0], SourceBrowser.recommended(ranked.take(1)) { false }, "nothing fits: still the winner (with its warning)")
+    }
+
     @Test fun facetsOnlyWhereThereIsAChoice() {
         val rows = ranked.map(SourceBrowser::view)
         val f = SourceBrowser.facets(rows)
