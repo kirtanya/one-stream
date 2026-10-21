@@ -48,6 +48,7 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val hidden by lazy { com.kirtanya.reel.data.HiddenStore(this) }
     val sourcePrefs by lazy { com.kirtanya.reel.data.SourcePrefsStore(this) }
     val titlePrefs by lazy { com.kirtanya.reel.data.TitlePrefsStore(this) }
+    val autoDownloader by lazy { com.kirtanya.reel.data.AutoDownloader(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
     /** Which title / episode each download is for (Downloads → Change source). */
     val downloadOrigins by lazy { com.kirtanya.reel.data.DownloadOriginStore(this) }
@@ -74,6 +75,7 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         appScope.launch { sources.ensureReady() }
         // Finishing something in the player ticks it as watched (and so it syncs to the TV).
         appScope.launch { history.entries.collect { watched.recordHistory(it) } }
+        autoDownloader.start()
         // Before anything can start the engine: the P2P network rule must hold downloads from the first moment.
         home.start()
         if (isTv) tvSync.start() else phoneSync.start()
