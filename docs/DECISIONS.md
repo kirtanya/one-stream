@@ -5,6 +5,34 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Home disk phase 2 (set up now, no disk) and the product answers**
+Decision (user, product questions of HOME_DISK §21): "On this phone" on mobile data waits for Wi-Fi by default,
+with "Start now anyway"; an unknown Wi-Fi is asked once per network (answer remembered by fingerprint); the
+office (a Wi-Fi marked "Never here (work)") never moves BitTorrent traffic, a blocked download offers
+"Download at home instead"; **Play follows the same rule** (blocked at work, ask once on unknown Wi-Fi,
+unchanged on mobile data and at home); what the TV plays stays in the disk cache 7 days (setting); auto-cache
+from details off (setting); cache share 40 % (setting); big 4K files away: warn + smaller source (Phase 7);
+sharing: guests see only picked titles, can't request downloads, app or VLC link (Phase 9, no placeholder now).
+Built (Claude): `core/homedisk/` (DiskLayout, TitleManifest, PartsMap, Lease, NetworkFingerprint + HomeNetwork,
+P2pRule, DeleteWhere, HomeBadges, DownloadWhereSheet, HomeSettings, RetentionPolicy, StreamToken, Outbox,
+DiskTest + ConnectPolicy), `core/sync/HomeRpc` (sync v3: request / ack / progress / done, TV-side HomeAgent with
+idempotency), SyncServer v3 endpoint + private-peer filter, SyncClient.rpc; app `homedisk/` (HomeSecrets in the
+Android Keystore — pairing secrets moved there too —, NetworkWatch, HomeDisk + jcifs Test, P2pGate with the
+`TorrentEngine.downloadHold` hook, HomeClient outbox, TvHomeAgent); Settings → Devices → Home storage on phone
+and TV, Download-where sheet, Downloads badges / held downloads / at-home rows / delete-where; problem reports
+drop password lines and mask the share user and folder (`Redactor`).
+Also decided here (Claude): the very first Test, with no home network saved, signs in only after "Are you at
+home?" and then saves that network (I6 otherwise unchanged); a TV proof on the LAN also saves the home
+fingerprint, so home is known when the TV is off later; the outbox never stores the SMB password (added at
+send time to `home.config`); the outbox is sent while the app runs (start, network change, Downloads, every
+minute) — the JobScheduler job comes with Phase 6.
+Why: the user wants everything set up before the disk arrives, and no P2P on the office network is a hard rule.
+Evidence: core tests (HomeDiskTest, HomeRpcTest incl. v3 over real HTTP), design rules, renders
+`phone/settings-homestorage*`, `download-where*`, `downloads-home`, `downloads-mobile`, `downloads-delete-where`,
+`network-*`, `tv/settings-homestorage*`. Not yet tried on the devices; the Test says "Not connected" until the disk exists.
+
+---
+
 **2026-10-21 · Play / Download on TV from the phone (cast links)**
 Decision: One Launcher on the phone sends an Android TV remote app link to the TV:
 `onestream://cast/play|download?type&tmdb[&season&episode][&hash&file&url]` (LAUNCHER_API.md Part 3).

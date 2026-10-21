@@ -94,10 +94,16 @@ fun AddLinkSheet(initialLink: String?, onDismiss: () -> Unit, onDownloadStarted:
             try {
                 val f = file
                 when {
-                    mode == TorrentMode.STREAM && f == null -> context.startActivity(PlayerActivity.forMagnet(context, link.trim(), magnet?.name))
+                    mode == TorrentMode.STREAM && f == null -> com.kirtanya.reel.ui.homedisk.gatedPlay(context, null, magnet?.name ?: "this link") { context.startActivity(PlayerActivity.forMagnet(context, link.trim(), magnet?.name)) }
                     mode == TorrentMode.STREAM && f != null -> {
-                        val hash = app.engine.addTorrentFile(f.second, TorrentMode.STREAM)
-                        context.startActivity(PlayerActivity.forTorrent(context, hash, f.first.removeSuffix(".torrent")))
+                        com.kirtanya.reel.ui.homedisk.gatedPlay(context, null, f.first) {
+                            // The app's scope: the sheet (and its own scope) is gone by the time a network question is answered.
+                            app.appScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                runCatching { app.engine.addTorrentFile(f.second, TorrentMode.STREAM) }
+                                    .onSuccess { hash -> context.startActivity(PlayerActivity.forTorrent(context, hash, f.first.removeSuffix(".torrent"))) }
+                                    .onFailure { Toast.makeText(context, it.message, Toast.LENGTH_SHORT).show() }
+                            }
+                        }
                     }
                     f != null -> app.engine.addTorrentFile(f.second, TorrentMode.DOWNLOAD).also { onDownloadStarted() }
                     else -> app.engine.addMagnet(link.trim(), TorrentMode.DOWNLOAD).also { onDownloadStarted() }

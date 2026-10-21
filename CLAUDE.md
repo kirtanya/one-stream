@@ -10,7 +10,8 @@
   product (what it does / looks like), never about code.
 - Plans: `docs/MACHINE_FIRST_PLAN.md` (current roadmap), `docs/PLAN.md` (product + architecture),
   `docs/STREAMING_V2.md` (engine spec), `docs/DESIGN_STYLE.md` (design language),
-  `docs/HOME_DISK_PLAN.md` (parked), `docs/DECISIONS.md` (decision log: add an entry for each real decision).
+  `docs/HOME_DISK.md` (home disk spec, binding), `docs/HOME_DISK_PLAN.md` (its phases; phase 2 done),
+  `docs/DECISIONS.md` (decision log: add an entry for each real decision).
 
 ## Machine-first rules
 - **Specs in `docs/` are the source of truth.** For engine / streaming behaviour change
@@ -100,6 +101,7 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
   - `--es removeTitle <titleKey>` remove a title from watch history
   - `--ez mainThreadTest true` subtitle + source search on the main thread
   - `--es sync pair|push|open|add|remove [--es code … --es link …]` phone → TV sync checks
+  - `--es home state|net|test|open|request|jobs|config` home disk checks (`test [--ez confirmHome true]`)
   - `--ez report true [--es note <text>]` manual problem report;
     `--es reportTest crash|freeze` test the automatic ones
 - **Undo test effects:** tests that play something change the user's Continue watching. Run
@@ -127,9 +129,11 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
 - `sources/` source search: Nuvio JS plugins (PluginRuntime / PluginJs / DomBridge), Stremio addons,
   SourceAggregator + SourceRanker, Quality, Subtitles, SourceFacts (tags / languages / seed health) + SourceBrowser
   (Sources page chips, filters, sort, status).
-- `sync/` phone → TV sync: SyncServer / SyncClient, SyncCrypto, SourcesBundle, SourceLinks.
+- `sync/` phone → TV sync: SyncServer / SyncClient, SyncCrypto, SourcesBundle, SourceLinks, HomeRpc (v3 home requests).
+- `homedisk/` home disk pure logic (HOME_DISK.md): DiskLayout, TitleManifest, PartsMap, Lease, HomeNetwork,
+  P2pRule (phone network rule), DeleteWhere, HomeBadges, HomeSettings, RetentionPolicy, Outbox, DiskTest.
 - `tmdb/` TMDB models, parser, paths. `magnet/` magnet parsing + trackers. `playback/` Playback,
-  WatchHistory. `library/` Watchlist, Downloads (download origins, SourceSwap for Change source). `store/` AddonCatalog. `report/` ReportPolicy, LogWindow, ShakeGate.
+  WatchHistory. `library/` Watchlist, Downloads (download origins, SourceSwap for Change source). `store/` AddonCatalog. `report/` ReportPolicy, LogWindow, ShakeGate, Redactor (home-disk credentials out of reports).
 
 `:app` — `app/src/main/kotlin/com/kirtanya/reel/`
 - `ReelApp.kt` app singletons; `MainActivity.kt` picks phone or TV UI.
@@ -139,6 +143,8 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
   PlayerKit (icons, seek bar, settings panel), TvControls (bottom strip), PhoneControls (gestures, PiP).
 - `server/LocalStreamServer.kt` token-URL HTTP server for external players only.
 - `report/` ReportCenter, FreezeWatchdog, ExitReasons, ScreenCapture, ShakeDetector (problem reports).
+- `homedisk/` Home (hub), HomeSecrets (Keystore), NetworkWatch, HomeDisk (home detection, jcifs Test), P2pGate,
+  HomeClient (phone outbox), TvHomeAgent; UI in `ui/homedisk/` + `ui/settings/HomeStoragePage.kt`.
 - `data/` stores (Sources, Addon, WatchHistory, Watchlist, PlaybackSettings), TmdbRepository,
   ProviderApps, SourcesProbe; `data/sync/` PhoneSync, TvSync, Nsd.
 - `ui/` `phone/` + `tv/` screens (Home, Search, Title), `common/` shared components (ReelButton,

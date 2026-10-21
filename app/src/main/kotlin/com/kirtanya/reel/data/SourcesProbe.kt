@@ -23,6 +23,7 @@ import kotlinx.coroutines.withTimeout
  * `--es removeTitle <titleKey>` removes a film/show from watch history.
  * `--ez report true [--es note <text>]` saves a manual problem report (screenshot of the screen on top, if ours).
  * `--es reportTest crash|freeze` tests the automatic reports: crash the app / block its main thread for 8 s.
+ * `--es home state|test|open|request|jobs|config|net` home disk checks (docs/HOME_DISK.md, see homeProbe).
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
@@ -74,6 +75,10 @@ class SourcesProbe : BroadcastReceiver() {
             }
             app.history.continueWatching().forEach { Log.i(TAG, "continue ${it::class.simpleName} ${it.entry.playback.key}") }
             Log.i(TAG, "history done")
+            return
+        }
+        intent.getStringExtra("home")?.let { cmd ->
+            homeProbe(app, cmd, intent, goAsync())
             return
         }
         if (intent.hasExtra("sync")) {
@@ -259,6 +264,61 @@ class SourcesProbe : BroadcastReceiver() {
             } finally {
                 if (!hadAddon) app.sources.removeAddon(subsUrl)
                 Log.i(TAG, "main-thread test done")
+                pending.finish()
+            }
+        }
+    }
+
+    /**
+     * Home disk (docs/HOME_DISK.md), no P2P anywhere:
+     * `--es home state`   settings (no password), disk state, home decision, network rule, outbox / jobs
+     * `--es home test [--ez confirmHome true]`   runs the disk Test (signs in only at home) and logs its line
+     * `--es home open`    opens Settings → Home storage
+     * `--es home request [--es magnet <m>]`   phone: "Download at home" for a legal sample (Big Buck Bunny) and sends it
+     * `--es home jobs`    phone: polls the TV's jobs; TV: lists its jobs
+     * `--es home config`  phone: sends the disk settings to the TV and logs the TV's Test line
+     * `--es home net`     the network facts and what the rule says for downloads and plays
+     */
+    private fun homeProbe(app: ReelApp, cmd: String, intent: Intent, pending: PendingResult) {
+        val home = app.home
+        app.appScope.launch {
+            try {
+                when (cmd) {
+                    "open" -> app.startActivity(com.kirtanya.reel.MainActivity.openHomeStorage(app))
+                    "test" -> Log.i(TAG, "home test: " + when (val o = home.disk.test(intent.getBooleanExtra("confirmHome", false))) {
+                        is com.kirtanya.reel.homedisk.TestOutcome.Done -> o.line
+                        is com.kirtanya.reel.homedisk.TestOutcome.Refused -> "refused: ${o.line}"
+                        com.kirtanya.reel.homedisk.TestOutcome.NeedsConfirm -> "no home network saved yet: add --ez confirmHome true (only at home)"
+                    })
+                    "request" -> {
+                        val magnet = intent.getStringExtra("magnet") ?: com.kirtanya.reel.ui.SAMPLE_TORRENTS[0].magnet
+                        val id = home.client.requestDownload(magnet, null, null, intent.getStringExtra("label") ?: "Probe: Big Buck Bunny", null)
+                        home.client.flush(force = true)
+                        Log.i(TAG, "home request $id → ${home.client.jobs.value.firstOrNull { it.requestId == id }} error=${home.client.lastError.value}")
+                    }
+                    "jobs" -> if (app.isTv) home.agent.state.value.jobs.forEach { Log.i(TAG, "home job $it") } else {
+                        home.client.poll()
+                        home.client.jobs.value.forEach { Log.i(TAG, "home job $it") }
+                    }
+                    "config" -> Log.i(TAG, "home config: ${home.client.sendConfig()}")
+                    "net" -> {
+                        home.disk.refresh(deep = true)
+                        val net = home.network.now.value
+                        Log.i(TAG, "home net transport=${net.transport} metered=${net.metered} fp=${net.fingerprint?.take(12)} home=${home.disk.ui.value.home}")
+                        if (!app.isTv) Log.i(TAG, "home rule download=${home.gate.verdict(com.kirtanya.reel.core.homedisk.P2pUse.DOWNLOAD)} play=${home.gate.verdict(com.kirtanya.reel.core.homedisk.P2pUse.STREAM)} held=${home.gate.held.value.size}")
+                    }
+                    else -> {
+                        home.disk.refresh(deep = false)
+                        val s = home.settings.value
+                        Log.i(TAG, "home settings address=${s.address} shareSet=${s.share.isNotEmpty()} userSet=${s.user.isNotEmpty()} passwordSaved=${home.passwordSaved.value} keystore=${home.secrets.available} homeSaved=${s.homeFingerprint != null} where=${s.downloadWhere} mobileData=${s.mobileData} networks=${s.networks.size} retention=${s.retention}")
+                        Log.i(TAG, "home disk ${home.disk.ui.value.state} lastTest=${home.disk.ui.value.lastTest}")
+                        if (app.isTv) Log.i(TAG, "home tv jobs=${home.agent.state.value.jobs.size} addrs=${home.agent.addresses()}")
+                        else Log.i(TAG, "home outbox=${home.client.outbox.value.size} jobs=${home.client.jobs.value.size} tv=${home.client.pairedTv()?.name} waiting=${home.gate.waiting.value}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "home $cmd failed: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
                 pending.finish()
             }
         }

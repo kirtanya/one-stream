@@ -27,6 +27,8 @@ class RenderData(
     val confirmReplace: Boolean = false,
     /** Addon store: search text and chips already picked. */
     val storeQuery: com.kirtanya.reel.core.store.StoreQuery? = null,
+    /** Home disk: settings, disk state, at-home jobs, held downloads. */
+    val home: com.kirtanya.reel.ui.homedisk.HomeView? = null,
 )
 
 val LocalRenderData = staticCompositionLocalOf<RenderData?> { null }

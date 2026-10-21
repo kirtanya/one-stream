@@ -27,7 +27,9 @@ import kotlinx.coroutines.launch
 class ReelApp : Application(), SingletonImageLoader.Factory {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val http by lazy { TmdbRepository.createHttp() }
-    private val engineLazy = lazy { TorrentEngine(this) }
+    private val engineLazy = lazy { TorrentEngine(this).also { engineCreated.value = true } }
+    /** True once something created the engine (the home disk's P2P gate waits for it, never creates it). */
+    val engineCreated = kotlinx.coroutines.flow.MutableStateFlow(false)
     val engine: TorrentEngine by engineLazy
     /** The engine if something already created it (problem reports read it but must not start it). */
     val engineIfCreated: TorrentEngine? get() = if (engineLazy.isInitialized()) engine else null
@@ -52,6 +54,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         getSystemService(android.app.UiModeManager::class.java).currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
             packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
     }
+    /** Home disk: settings, Keystore secrets, connection manager, phone requests / TV agent (docs/HOME_DISK.md). */
+    val home by lazy { com.kirtanya.reel.homedisk.Home(this) }
     val tvSync by lazy { com.kirtanya.reel.data.sync.TvSync(this, sources, watchlist) }
     val phoneSync by lazy {
         val syncHttp = http.newBuilder().readTimeout(2, java.util.concurrent.TimeUnit.MINUTES).build()
@@ -63,6 +67,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         // First, so a crash anywhere below is reported too.
         reports.install()
         appScope.launch { sources.ensureReady() }
+        // Before anything can start the engine: the P2P network rule must hold downloads from the first moment.
+        home.start()
         if (isTv) tvSync.start() else phoneSync.start()
     }
 

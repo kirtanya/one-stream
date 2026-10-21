@@ -112,6 +112,8 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     fun playbackOf(s: Source) = playbackFor(d, epNumber, ep?.name, ep?.stillPath, s)
     val label = d.summary.title + if (epNumber != null) " · ${epNumber.label}" else ""
     val origin = DownloadOrigin(d.summary.ref.type.path, d.summary.ref.id, season, episode, label)
+    // Phone: Download → At home / On this phone (docs/HOME_DISK.md §17.3), with the network rule.
+    val where = com.kirtanya.reel.ui.homedisk.rememberDownloadFlow(label, origin, isTv)
 
     var downloading by remember { mutableStateOf(startDownload) }
     val action = when {
@@ -144,7 +146,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
         when {
             action == SourceAction.PLAY || s.kind == com.kirtanya.reel.core.sources.SourceKind.EXTERNAL -> play(context, playbackOf(s))
             replacing != null -> confirm = s
-            else -> download(context, s, label, origin)
+            else -> where.download(s)
         }
     }
 
@@ -170,6 +172,8 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                             ReelButton("Play", { downloading = false }, kind = if (!downloading) ButtonKind.Primary else ButtonKind.Ghost, icon = Icons.Rounded.PlayArrow)
                             ReelButton("Download", { downloading = true }, kind = if (downloading) ButtonKind.Primary else ButtonKind.Ghost, icon = Icons.Rounded.Download)
                         }
+                        // "At home · change": the remembered choice, and the way back to the sheet.
+                        if (downloading) where.rememberedLine()?.let { ReelButton(it, where::change, kind = ButtonKind.Ghost, icon = Icons.Rounded.Download) }
                     }
                     Status(search)
                 }

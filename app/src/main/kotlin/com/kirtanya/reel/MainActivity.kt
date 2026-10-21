@@ -82,6 +82,8 @@ class MainActivity : ComponentActivity() {
                     } else {
                         PhoneApp(incomingMagnet = incomingMagnet, onIncomingHandled = { incomingMagnet = null }, openDest = openDest, onOpenHandled = { openDest = null }, openTab = openTab, onTabHandled = { openTab = null }, openSearch = openSearch, onSearchHandled = { openSearch = null })
                     }
+                    // Home disk network rule: "Use this Wi-Fi?" / "Not on this network" wherever play or download was pressed.
+                    com.kirtanya.reel.ui.homedisk.NetworkPromptHost()
                     incomingSourceLink?.let { link ->
                         androidx.compose.runtime.key(link) { AddSourceLinkDialog(link, isTv = isTv, onDone = { incomingSourceLink = null }) }
                     }
@@ -99,6 +101,11 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent?.action == ACTION_OPEN_DOWNLOADS) {
             openTab = com.kirtanya.reel.ui.nav.Tab.Downloads
+            return
+        }
+        if (intent?.action == ACTION_OPEN_HOME_STORAGE) {
+            openTab = com.kirtanya.reel.ui.nav.Tab.Settings
+            com.kirtanya.reel.ui.settings.SettingsLink.pending = com.kirtanya.reel.ui.settings.SettingsPage.HomeStorage
             return
         }
         intent?.getIntExtra(EXTRA_OPEN_ID, -1)?.takeIf { it > 0 }?.let { id ->
@@ -153,7 +160,7 @@ class MainActivity : ComponentActivity() {
                 when {
                     // Exactly what picking it on the Sources screen does.
                     playback != null -> com.kirtanya.reel.ui.sources.play(this, playback)
-                    download != null -> startActivity(com.kirtanya.reel.player.PlayerActivity.forTorrent(this, download.infoHash, download.name))
+                    download != null -> com.kirtanya.reel.ui.homedisk.gatedPlay(this, null, download.name) { startActivity(com.kirtanya.reel.player.PlayerActivity.forTorrent(this, download.infoHash, download.name)) }
                     // A download the engine hasn't loaded yet (cold start): the Downloads tab.
                     link.torrent != null -> openTab = com.kirtanya.reel.ui.nav.Tab.Downloads
                     // The token died with an earlier process: the title page instead.
@@ -172,6 +179,13 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val ACTION_OPEN_DOWNLOADS = "com.kirtanya.reel.OPEN_DOWNLOADS"
+        private const val ACTION_OPEN_HOME_STORAGE = "com.kirtanya.reel.OPEN_HOME_STORAGE"
+
+        /** Opens Settings → Home storage (the Download-where sheet, `--es home open` from adb). */
+        fun openHomeStorage(context: android.content.Context): Intent =
+            Intent(context, MainActivity::class.java)
+                .setAction(ACTION_OPEN_HOME_STORAGE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         private const val EXTRA_FORCE_TV = "forceTv"
 
         /** Opens the app on its Downloads tab (the downloads notification). */

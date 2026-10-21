@@ -25,6 +25,15 @@ interface SyncHost {
 
     fun pairedPhones(): List<PairedPhone>
     fun savePairedPhone(phone: PairedPhone)
+
+    /** v3: the TV's own addresses (LAN, Tailscale 100.x) for the hello (docs/HOME_DISK.md §9.1). */
+    fun addresses(): List<String> = emptyList()
+
+    /** v3: the home disk at a glance, for the hello. */
+    fun homeSummary(): HomeSummary? = null
+
+    /** v3: one home request from a paired phone (already decrypted); see [HomeAgent]. */
+    suspend fun rpc(phone: PairedPhone, request: RpcRequest): RpcReply = HomeRpc.error(request.id, "Unknown operation ${request.op.take(40)}")
 }
 
 @Serializable data class ApplyResult(val summary: String, val failed: Int = 0)
@@ -37,12 +46,17 @@ interface SyncHost {
     /** HMAC(secret, "tv:" + phone's challenge) when the phone is paired, proving this is the paired TV. */
     val proof: String? = null,
     val protocol: Int = SyncProtocol.VERSION,
+    /** v3: the TV's LAN and Tailscale addresses. */
+    val addrs: List<String> = emptyList(),
+    /** v3: disk state, free bytes, active jobs. */
+    val home: HomeSummary? = null,
 )
 @Serializable data class PairRequest(val code: String, val device: String)
 @Serializable data class PairResponse(val tvId: String, val name: String, val phoneId: String, val secret: String)
 
 object SyncProtocol {
-    const val VERSION = 2
+    /** 3 = home RPC (docs/HOME_DISK.md §9); v2 phones keep working (same hello, pair and sources routes). */
+    const val VERSION = 3
     const val SERVICE_TYPE = "_reel._tcp."
     const val DEFAULT_PORT = 47821
     const val MAX_BODY = 256 * 1024
@@ -50,6 +64,9 @@ object SyncProtocol {
     const val PAIRING_WINDOW_MS = 3 * 60_000L
     const val WRONG_CODES_ALLOWED = 3
     const val NONCE_TTL_MS = 2 * 60_000L
+
+    /** Peers the TV's servers answer: private LAN, link-local, loopback, Tailscale 100.64/10 (docs/HOME_DISK.md §9.1). */
+    fun allowedPeer(address: String?): Boolean = com.kirtanya.reel.core.homedisk.NetworkFingerprint.isPrivateOrTailnet(address)
 }
 
 /**
@@ -101,9 +118,12 @@ class SyncServer(
 
     override fun serve(session: IHTTPSession): Response = try {
         when {
+            // Defence in depth (§9.1): only the home LAN, loopback and the tailnet; nothing is forwarded on the router anyway.
+            !SyncProtocol.allowedPeer(session.remoteIpAddress) -> text(Response.Status.FORBIDDEN, "no")
             session.method == Method.GET && session.uri == "/sync/v2/hello" -> hello(session)
             session.method == Method.POST && session.uri == "/sync/v2/pair" -> pair(body(session))
             session.method == Method.POST && session.uri == "/sync/v2/sources" -> push(session)
+            session.method == Method.POST && session.uri == "/sync/v3/rpc" -> rpc(session)
             else -> text(Response.Status.NOT_FOUND, "not found")
         }
     } catch (e: TooLarge) {
@@ -120,7 +140,8 @@ class SyncServer(
         val phone = session.parameters["phone"]?.firstOrNull()?.let { id -> host.pairedPhones().firstOrNull { it.id == id } }
         val challenge = session.parameters["challenge"]?.firstOrNull()?.take(64)
         val proof = if (phone != null && challenge != null) SyncCrypto.hmac(phone.secret, "tv:$challenge") else null
-        return ok(json.encodeToString(HelloResponse.serializer(), HelloResponse(host.deviceName, host.tvId, nonce, proof)))
+        val hello = HelloResponse(host.deviceName, host.tvId, nonce, proof, addrs = runCatching { host.addresses() }.getOrDefault(emptyList()), home = runCatching { host.homeSummary() }.getOrNull())
+        return ok(json.encodeToString(HelloResponse.serializer(), hello))
     }
 
     private fun pair(body: String): Response {
@@ -146,19 +167,37 @@ class SyncServer(
         }
     }
 
-    private fun push(session: IHTTPSession): Response {
-        val phone = session.headers["x-reel-phone"]?.let { id -> host.pairedPhones().firstOrNull { it.id == id } }
-            ?: return text(Response.Status.UNAUTHORIZED, "Not paired")
+    /** A paired phone's encrypted body, checked against a fresh single-use nonce; or the refusal to send. */
+    private fun opened(session: IHTTPSession): Triple<PairedPhone, String, ByteArray>? {
+        val phone = session.headers["x-reel-phone"]?.let { id -> host.pairedPhones().firstOrNull { it.id == id } } ?: return null
         val nonce = session.headers["x-reel-nonce"].orEmpty()
-        val issued = nonces.remove(nonce) ?: return text(Response.Status.UNAUTHORIZED, "Stale request")
-        if (clock() - issued > SyncProtocol.NONCE_TTL_MS) return text(Response.Status.UNAUTHORIZED, "Stale request")
+        val issued = nonces.remove(nonce) ?: return null
+        if (clock() - issued > SyncProtocol.NONCE_TTL_MS) return null
         val plain = try {
             SyncCrypto.decrypt(phone.secret, body(session), nonce)
         } catch (e: TooLarge) {
             throw e
         } catch (e: Exception) {
-            return text(Response.Status.UNAUTHORIZED, "Not paired")
+            return null
         }
+        return Triple(phone, nonce, plain)
+    }
+
+    private fun rpc(session: IHTTPSession): Response {
+        val (phone, nonce, plain) = opened(session) ?: return text(Response.Status.UNAUTHORIZED, "Not paired")
+        val request = json.decodeFromString(RpcRequest.serializer(), plain.decodeToString())
+        val reply = try {
+            runBlocking { host.rpc(phone, request) }
+        } catch (e: Exception) {
+            HomeRpc.error(request.id, "The TV couldn't do that")
+        }
+        onEvent("rpc:${phone.name}:${request.op}")
+        return ok(SyncCrypto.encrypt(phone.secret, json.encodeToString(RpcReply.serializer(), reply).toByteArray(), "reply:$nonce"))
+    }
+
+    private fun push(session: IHTTPSession): Response {
+        val (phone, _, plain) = opened(session) ?: return text(Response.Status.UNAUTHORIZED, "Not paired")
+        val nonce = session.headers["x-reel-nonce"].orEmpty()
         val bundle = json.decodeFromString(SourcesBundle.serializer(), plain.decodeToString())
         val result = runBlocking { host.apply(bundle.copy(from = phone.name)) }
         onEvent("synced:${phone.name}:${result.summary}")

@@ -295,6 +295,45 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun settingsStorage() = settingsPage(SettingsPage.Storage)
     @Test fun settingsAbout() = settingsPage(SettingsPage.About)
 
+    // ─── Home disk (docs/HOME_DISK.md §17): set up now, no disk yet ─────────────────────────────
+
+    private fun homePage(name: String, home: com.kirtanya.reel.ui.homedisk.HomeView) =
+        render(name, data = RenderData(installed = Fake.installed, home = home)) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.HomeStorage)) } }
+    @Test fun settingsHomeStorage() = homePage("settings-homestorage", FakeHome.notConnected)
+    @Test fun settingsHomeStorageNotSetUp() = homePage("settings-homestorage-not-set-up", FakeHome.notSetUp)
+    @Test fun settingsHomeStorageNewWifi() = homePage("settings-homestorage-new-wifi", FakeHome.newWifi)
+    @Test fun downloadWhere() = render("download-where", windows = true, data = RenderData(home = FakeHome.newWifi)) {
+        com.kirtanya.reel.ui.homedisk.DownloadWhereSheetView(pickOnly = false, onPick = { _, _ -> }, onDismiss = {})
+    }
+    @Test fun downloadWhereNotSetUp() = render("download-where-not-set-up", windows = true, data = RenderData(home = FakeHome.notSetUp)) {
+        com.kirtanya.reel.ui.homedisk.DownloadWhereSheetView(pickOnly = false, onPick = { _, _ -> }, onDismiss = {})
+    }
+    @Test fun downloadWhereChange() = render("download-where-change", windows = true, data = RenderData(home = FakeHome.notConnected)) {
+        com.kirtanya.reel.ui.homedisk.DownloadWhereSheetView(pickOnly = true, onPick = { _, _ -> }, onDismiss = {})
+    }
+    @Test fun downloadsHome() = render("downloads-home", data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins, home = FakeHome.newWifi), content = phone { select(Tab.Downloads) })
+    @Test fun downloadsMobile() = render("downloads-mobile", data = RenderData(torrents = Fake.torrents.take(2), storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins, home = FakeHome.mobile), content = phone { select(Tab.Downloads) })
+    @Test fun downloadsDeleteWhere() = render("downloads-delete-where", windows = true) {
+        com.kirtanya.reel.ui.homedisk.DeleteWhereDialog(
+            "Sintel", com.kirtanya.reel.core.homedisk.DeleteWhere.choice(onPhone = true, disk = com.kirtanya.reel.core.homedisk.DiskPresence.UNKNOWN), {}, {},
+        )
+    }
+    @Test fun networkAsk() = render("network-ask", windows = true) {
+        com.kirtanya.reel.ui.homedisk.NetworkPrompt(
+            com.kirtanya.reel.homedisk.GatePrompt(com.kirtanya.reel.core.homedisk.P2pVerdict.Ask("x"), com.kirtanya.reel.core.homedisk.P2pUse.STREAM, proceed = {}, atHome = {}), {}, {},
+        )
+    }
+    @Test fun networkWork() = render("network-work", windows = true) {
+        com.kirtanya.reel.ui.homedisk.NetworkPrompt(
+            com.kirtanya.reel.homedisk.GatePrompt(com.kirtanya.reel.core.homedisk.P2pVerdict.Block(com.kirtanya.reel.core.homedisk.WaitReason.WORK_NETWORK), com.kirtanya.reel.core.homedisk.P2pUse.STREAM, proceed = {}, atHome = {}), {}, {},
+        )
+    }
+    @Test fun networkMobile() = render("network-mobile", windows = true) {
+        com.kirtanya.reel.ui.homedisk.NetworkPrompt(
+            com.kirtanya.reel.homedisk.GatePrompt(com.kirtanya.reel.core.homedisk.P2pVerdict.Wait(com.kirtanya.reel.core.homedisk.WaitReason.MOBILE_DATA, true), com.kirtanya.reel.core.homedisk.P2pUse.DOWNLOAD, proceed = {}, atHome = {}, later = {}), {}, {},
+        )
+    }
+
     @Test fun addLink() = render("add-link", windows = true) {
         Box(Modifier.fillMaxSize()) { AddLinkSheet(initialLink = "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny+(2008)+[1080p]+[Blender+Open+Movie]", onDismiss = {}, onDownloadStarted = {}) }
     }
@@ -358,6 +397,10 @@ open class ScreenRenders(protected val variant: Variant) {
         data = RenderData(installed = Fake.installed, store = Fake.store, storeQuery = com.kirtanya.reel.core.store.StoreQuery(types = setOf("series"))),
     ) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.Store)) } }
     @Test @Config(qualifiers = TV) fun tvSettingsPhoneTv() = tvSettingsPage(SettingsPage.PhoneTv)
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeStorage() =
+        render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeStorage)) } }
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageNotSetUp() =
+        render("settings-homestorage-not-set-up", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.notSetUp.copy(isTv = true))) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeStorage)) } }
     @Test @Config(qualifiers = TV) fun tvAddSource() = render("add-source", tv = true, windows = true, data = RenderData(linkPreview = Load.Ready(preview))) {
         AddSourceLinkDialog(preview.url, isTv = true, onDone = {})
     }

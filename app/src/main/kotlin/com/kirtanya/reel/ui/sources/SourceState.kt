@@ -98,7 +98,8 @@ fun playbackFor(d: TitleDetails, episode: EpisodeNumber?, episodeName: String?, 
 fun play(context: Context, playback: Playback) {
     when (playback.source.kind) {
         SourceKind.EXTERNAL -> openExternal(context, playback.source)
-        else -> context.startActivity(PlayerActivity.forPlayback(context, playback))
+        // Torrents follow the phone's network rule first (docs/HOME_DISK.md §5.3).
+        else -> com.kirtanya.reel.ui.homedisk.gatedPlay(context, playback.source, playback.title) { context.startActivity(PlayerActivity.forPlayback(context, playback)) }
     }
 }
 

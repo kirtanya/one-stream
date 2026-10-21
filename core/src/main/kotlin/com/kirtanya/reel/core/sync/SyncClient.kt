@@ -44,6 +44,33 @@ class SyncClient(private val http: HttpFetcher) {
         return json.decodeFromString(ApplyResult.serializer(), plain.decodeToString())
     }
 
+    /**
+     * Sends one home request (protocol v3, docs/HOME_DISK.md §9.1) after the same identity check as [push].
+     * A TV older than v3 can't take it: [SyncException] "Update One Stream on the TV".
+     */
+    suspend fun rpc(base: String, creds: TvCredentials, request: RpcRequest): RpcReply {
+        val hello = verifiedHello(base, creds)
+        if (!HomeRpc.supported(hello)) throw SyncException(HomeRpc.UPDATE_TV)
+        val body = SyncCrypto.encrypt(creds.secret, json.encodeToString(RpcRequest.serializer(), request).toByteArray(), hello.nonce)
+        val reply = call(base, "/sync/v3/rpc", "POST", body, mapOf("X-Reel-Phone" to creds.phoneId, "X-Reel-Nonce" to hello.nonce))
+        val plain = runCatching { SyncCrypto.decrypt(creds.secret, reply, "reply:${hello.nonce}") }.getOrElse {
+            throw SyncException("That isn't your paired TV")
+        }
+        return json.decodeFromString(RpcReply.serializer(), plain.decodeToString())
+    }
+
+    /** The TV at [base] answers our random challenge with the shared secret (so it is the paired one): its hello. */
+    suspend fun verifiedHello(base: String, creds: TvCredentials): HelloResponse {
+        val challenge = SyncCrypto.randomHex(16)
+        val hello = hello(base, creds.phoneId, challenge)
+        val expected = SyncCrypto.hmac(creds.secret, "tv:$challenge")
+        if (hello.tvId != creds.tvId || hello.proof == null || !SyncCrypto.same(hello.proof, expected)) {
+            if (hello.tvId == creds.tvId) throw SyncException("This TV doesn't know this phone any more. Pair again.", needsPairing = true)
+            throw SyncException("That isn't your paired TV")
+        }
+        return hello
+    }
+
     private suspend fun call(base: String, path: String, method: String, body: String?, extra: Map<String, String>): String {
         val headers = mapOf("Content-Type" to "application/json") + extra
         val r = try {

@@ -346,14 +346,16 @@ class ReportCenter(private val app: ReelApp) {
         val files = ArrayList<String>()
 
         val logEnd = LocalDateTime.ofInstant(Instant.ofEpochMilli(r.logEnd), zone)
+        // Home disk credentials never reach a report (docs/HOME_DISK.md §6): password lines dropped, user and folder masked.
+        val redact = runCatching { app.home.redactor() }.getOrDefault(com.kirtanya.reel.core.report.Redactor.NONE)
         val logs = try {
-            LogWindow.filter(readLogs(r.logPid), logEnd, LOG_WINDOW_SEC, listOf(BuildConfig.TMDB_TOKEN))
+            redact.lines(LogWindow.filter(readLogs(r.logPid), logEnd, LOG_WINDOW_SEC, listOf(BuildConfig.TMDB_TOKEN)))
         } catch (t: Throwable) {
             listOf("(reading logcat failed: $t)")
         }
         File(tmp, "logs.txt").writeText(logs.joinToString("\n", postfix = "\n"))
         files += "logs.txt"
-        r.stack?.let { File(tmp, "stack.txt").writeText(it); files += "stack.txt" }
+        r.stack?.let { File(tmp, "stack.txt").writeText(redact.scrub(it)); files += "stack.txt" }
         r.files.forEach { (file, bytes) -> File(tmp, file).writeBytes(bytes); files += file }
         r.shot?.let { shot ->
             if (runCatching { ScreenCapture.writePng(shot, File(tmp, "screen.png")) }.onFailure { Log.w(TAG, "screen.png failed", it) }.getOrDefault(false)) files += "screen.png"
@@ -378,7 +380,7 @@ class ReportCenter(private val app: ReelApp) {
             "reelStats" to LogWindow.messagesFor(logs, EngineStats.TAG, logEnd).takeLast(STATS_LINES),
             "files" to files + "report.json",
         )
-        File(tmp, "report.json").writeText(json.encodeToString(JsonElement.serializer(), toJson(report)))
+        File(tmp, "report.json").writeText(redact.scrub(json.encodeToString(JsonElement.serializer(), toJson(report))))
         val done = File(root, name)
         val out = if (tmp.renameTo(done)) done else tmp
         Log.i(TAG, "ReelReport saved ${out.absolutePath}")

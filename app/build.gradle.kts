@@ -54,6 +54,8 @@ android {
 
     packaging {
         jniLibs.useLegacyPackaging = true
+        // jcifs brings BouncyCastle: its multi-release class copies and ~1.3 MB of data files are never used (docs/HOME_DISK.md §4.2).
+        resources.excludes += listOf("META-INF/versions/**", "org/bouncycastle/**/*.properties", "org/bouncycastle/**/*.bin*")
     }
 
     testOptions {
@@ -102,6 +104,9 @@ dependencies {
     implementation("org.libtorrent4j:libtorrent4j-android-arm:$libtorrent")
 
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+
+    // Home disk: SMB client for the USB disk on the router (docs/HOME_DISK.md §4; R8 keep rules in proguard-rules.pro).
+    implementation("org.codelibs:jcifs:3.0.4")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt.coil3:coil-compose:3.6.3")

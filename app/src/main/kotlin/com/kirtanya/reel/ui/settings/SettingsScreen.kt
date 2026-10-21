@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
@@ -112,6 +113,7 @@ enum class SettingsPage(val title: String, val icon: ImageVector) {
     Store("Addon store", Icons.Rounded.Storefront),
     Plugins("Plugins", Icons.Rounded.Extension),
     PhoneTv("Phone & TV", Icons.Rounded.Devices),
+    HomeStorage("Home storage", Icons.Rounded.Dns),
     Storage("Storage", Icons.Rounded.Storage),
     About("About", Icons.Rounded.Info),
 }
@@ -119,7 +121,7 @@ enum class SettingsPage(val title: String, val icon: ImageVector) {
 private val GROUPS = listOf(
     "Watching" to listOf(SettingsPage.Playback, SettingsPage.Subtitles),
     "Sources" to listOf(SettingsPage.Addons, SettingsPage.Store, SettingsPage.Plugins),
-    "Devices" to listOf(SettingsPage.PhoneTv),
+    "Devices" to listOf(SettingsPage.PhoneTv, SettingsPage.HomeStorage),
     "App" to listOf(SettingsPage.Appearance, SettingsPage.Storage, SettingsPage.About),
 )
 
@@ -146,6 +148,15 @@ fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
         stackNames = stackNames.dropLast(1)
     }
     BackHandler(enabled = stack.isNotEmpty()) { back() }
+    // Opened from elsewhere (the Download-where sheet, adb): jump straight to that page.
+    val link = SettingsLink.pending
+    androidx.compose.runtime.LaunchedEffect(link) {
+        if (link != null) {
+            forward = true
+            stackNames = listOf(link.name)
+            SettingsLink.pending = null
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         AmbientGlow(Tokens.Colors.accent, strength = 0.25f)
@@ -174,6 +185,7 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
     val app = ReelApp.get(LocalContext.current)
     val sources = installedSources(app)
     val playback by app.playbackSettings.state.collectAsState()
+    val home = com.kirtanya.reel.ui.homedisk.rememberHomeView()
     var cacheBytes by remember { mutableLongStateOf(-1L) }
     LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { app.engine.cacheBytes() } }
     val devices = if (isTv) {
@@ -200,6 +212,7 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
         SettingsPage.Plugins -> "${sources.plugins.count { it.enabled }} of ${sources.plugins.size} plugins on"
         SettingsPage.PhoneTv -> devices
         SettingsPage.Storage -> if (cacheBytes < 0) "Stream cache" else "Stream cache · ${formatBytes(cacheBytes)}"
+        SettingsPage.HomeStorage -> homeStorageSummary(home, isTv)
         SettingsPage.About -> "One Stream ${BuildConfig.VERSION_NAME}"
     }
 
@@ -234,7 +247,7 @@ internal fun installedSources(app: ReelApp): com.kirtanya.reel.data.SourcesState
 
 /** Material list-group label: sentence case, primary colour. */
 @Composable
-private fun GroupLabel(text: String) {
+internal fun GroupLabel(text: String) {
     Text(text, style = Tokens.Type.label, color = Tokens.Colors.accent, modifier = Modifier.padding(start = Tokens.Space.l, top = Tokens.Space.s))
 }
 
@@ -249,7 +262,7 @@ private fun NavRow(icon: ImageVector, title: String, summary: String, modifier: 
         IconTile(icon)
         Column(Modifier.weight(1f)) {
             Text(title, style = Tokens.Type.label, color = Tokens.Colors.text)
-            Text(summary, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(summary, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Tokens.Colors.textTertiary)
     }
@@ -303,11 +316,11 @@ internal fun PageTitle(title: String, subtitle: String?, isTv: Boolean, onBack: 
 
 /** A plain card for a page's content (no title: the page has one). */
 @Composable
-private fun Section(title: String? = null, note: String? = null, content: @Composable ColumnScope.() -> Unit) {
+internal fun Section(title: String? = null, note: String? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.widthIn(max = 860.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         if (title != null) GroupLabel(title)
         ReelCard(Modifier.fillMaxWidth(), content = content)
-        if (note != null) Text(note, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, modifier = Modifier.padding(horizontal = Tokens.Space.xs))
+        if (note != null) Text(note, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(horizontal = Tokens.Space.xs))
     }
 }
 
@@ -355,6 +368,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
         SettingsPage.Plugins -> "Plugin repositories (Nuvio format) run small scripts on this device to find sources."
         SettingsPage.PhoneTv -> if (isTv) "Get addons and plugins from your phone, so you never type on the TV." else "Set sources up once on the phone; your TV gets them too."
         SettingsPage.Storage -> "Streams are cached on this device and trimmed automatically."
+        SettingsPage.HomeStorage -> "A USB disk on your router: your library and stream cache, shared by your devices."
         else -> null
     }
 
@@ -493,6 +507,8 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
             // Composed only while this page is open: the TV offers a pairing code just while it's on screen.
             SettingsPage.PhoneTv -> item { Section { SyncContent(isTv) } }
 
+            SettingsPage.HomeStorage -> homeStorageItems(isTv)
+
             SettingsPage.Storage -> item {
                 Section {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
@@ -570,7 +586,7 @@ internal fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemo
         ) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Switch(
                 checked = checked,

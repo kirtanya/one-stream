@@ -47,7 +47,7 @@ fun rememberPlayAction(d: TitleDetails): PlayAction {
 
 fun runPlayAction(context: Context, action: PlayAction, openSources: (EpisodeNumber?) -> Unit) {
     when (action) {
-        is PlayAction.Resume -> context.startActivity(PlayerActivity.forPlayback(context, action.entry.playback))
+        is PlayAction.Resume -> action.entry.playback.let { p -> com.kirtanya.reel.ui.homedisk.gatedPlay(context, p.source, p.title) { context.startActivity(PlayerActivity.forPlayback(context, p)) } }
         is PlayAction.Choose -> openSources(action.episode)
     }
 }

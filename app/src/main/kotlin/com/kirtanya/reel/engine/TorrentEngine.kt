@@ -316,6 +316,8 @@ class TorrentEngine(private val context: Context) {
         val save = saveDirFor(hash, mode)
         params.setSavePath(save.absolutePath)
         var flags = flagsFor(mode, params.getFlags())
+        // Home disk P2P rule (docs/HOME_DISK.md §5.3): a download added where it must wait starts paused, with no traffic.
+        if (mode == TorrentMode.DOWNLOAD && downloadHold(hash)) flags = flags.without(TorrentFlags.AUTO_MANAGED).or_(TorrentFlags.PAUSED)
         if (mode == TorrentMode.STREAM && streamFileIdx != null && streamFileIdx >= 0) {
             // Fetch nothing but the chosen file: without this, an abandoned start (Back during
             // "Finding peers…") downloaded the whole torrent once metadata arrived.
@@ -1459,6 +1461,8 @@ class TorrentEngine(private val context: Context) {
                 var flags = saved.without(TorrentFlags.AUTO_MANAGED).without(TorrentFlags.PAUSED).without(TorrentFlags.SEQUENTIAL_DOWNLOAD)
                 if (decided.autoManaged) flags = flags.or_(TorrentFlags.AUTO_MANAGED)
                 if (decided.paused) flags = flags.or_(TorrentFlags.PAUSED)
+                // Home disk P2P rule (§5.3): a download restored on a network where it must wait comes back paused.
+                else if (meta.mode == TorrentMode.DOWNLOAD && downloadHold(meta.infoHash)) flags = flags.without(TorrentFlags.AUTO_MANAGED).or_(TorrentFlags.PAUSED)
                 if (raw == null && (meta.mode == TorrentMode.STREAM || !meta.intent.fullTorrent)) flags = flags.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
                 params.setFlags(flags)
                 // libtorrent saves these in resume data: never let an old throttle or cap come back.
@@ -1545,6 +1549,12 @@ class TorrentEngine(private val context: Context) {
         const val DEFAULT_CACHE_BUDGET = -1L
 
         private fun is64Bit() = Build.SUPPORTED_64_BIT_ABIS.isNotEmpty() && android.os.Process.is64Bit()
+
+        /**
+         * Home disk P2P rule hook (docs/HOME_DISK.md §5.3), set by the phone's P2pGate before the engine starts:
+         * true = this download must wait on the current network, so it is added / restored paused.
+         */
+        @Volatile var downloadHold: (String) -> Boolean = { false }
 
         /** The canonical key ([TorrentKey]) of a libtorrent info-hash pair. */
         fun keyOf(ih: InfoHash): String = TorrentKey.canonical(if (ih.hasV1()) ih.v1.toHex() else null, ih.best.toHex())

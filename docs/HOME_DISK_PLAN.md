@@ -18,8 +18,13 @@ The goal: a USB hard disk on the home router becomes One Stream's shared library
 4. **Set up now, without the disk**: Settings → Home storage, the remembered Download choice, Downloads
    badges and delete choices, all saying "Not connected" until the disk exists.
 
-Status (2026-10-21): spec written (phase 1.4). Phase 2 can start now; phases 1.1–1.3 and 3+ wait for the
-disk (phase 0). The machine-first plan said this fits after its step 7; the user decides when phase 2 starts.
+Status (2026-10-21): spec written (phase 1.4); **phase 2 built** (set up now, no disk): core models + tests,
+Keystore secrets, jcifs + R8 rules + Test, home detection, Settings → Home storage (phone + TV), Download-where
+sheet + the P2P network rule (downloads and plays), Downloads badges + delete-where, sync v3 RPC skeleton
+(TV answers "Accepted, waiting for home storage"). Not yet tried on the devices. Phases 1.1–1.3 and 3+ wait for
+the disk (phase 0). Product questions answered 2026-10-21 (DECISIONS.md).
+Phase 2 leftovers for later phases: the `home-outbox` JobScheduler job (the outbox is sent on app start,
+network change, Downloads opening and every minute while the app runs), Tailscale address order (6.4).
 
 Effort levels: Medium · High · Extra high · Max · Ultracode (multi-agent workflow, for reviews only).
 

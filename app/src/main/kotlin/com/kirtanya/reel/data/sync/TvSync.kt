@@ -42,6 +42,8 @@ class TvSync(private val context: Context, private val sources: SourcesStore, pr
     private val json = Json { ignoreUnknownKeys = true }
     private val phones = ListSerializer(PairedPhone.serializer())
     private val applyLock = Mutex()
+    /** Pairing secrets live in the Keystore-backed store, not in preferences (docs/HOME_DISK.md §6). */
+    private val secrets = com.kirtanya.reel.homedisk.HomeSecrets.get(context)
     private var server: SyncServer? = null
     private var stopAnnouncing: (() -> Unit)? = null
 
@@ -87,6 +89,7 @@ class TvSync(private val context: Context, private val sources: SourcesStore, pr
 
     fun forgetPhone(id: String) {
         savePhones(pairedPhones().filterNot { it.id == id })
+        secrets.put(com.kirtanya.reel.homedisk.HomeSecrets.pairPhone(id), null)
         refresh()
     }
 
@@ -99,13 +102,20 @@ class TvSync(private val context: Context, private val sources: SourcesStore, pr
         else result.copy(summary = listOf(result.summary.takeUnless { it == "already up to date" }, "watchlist: $changed changed").filterNotNull().joinToString(", "))
     }
 
-    override fun pairedPhones(): List<PairedPhone> =
-        prefs.getString("phones", null)?.let { runCatching { json.decodeFromString(phones, it) }.getOrNull() }.orEmpty()
+    override fun pairedPhones(): List<PairedPhone> {
+        val saved = prefs.getString("phones", null)?.let { runCatching { json.decodeFromString(phones, it) }.getOrNull() }.orEmpty()
+        val list = saved.map { p -> p.copy(secret = p.secret.ifEmpty { secrets.get(com.kirtanya.reel.homedisk.HomeSecrets.pairPhone(p.id)).orEmpty() }) }
+        // Older versions kept the secrets in plain preferences: move them once.
+        if (saved.any { it.secret.isNotEmpty() } && secrets.available) savePhones(list)
+        return list.filter { it.secret.isNotEmpty() }
+    }
 
     override fun savePairedPhone(phone: PairedPhone) = savePhones(pairedPhones().filterNot { it.name == phone.name } + phone)
 
     private fun savePhones(list: List<PairedPhone>) {
-        prefs.edit().putString("phones", json.encodeToString(phones, list)).apply()
+        // Secrets first (and only blanked in preferences once they are safely stored), so a failure never loses a pairing.
+        val stored = secrets.available && secrets.put(list.associate { com.kirtanya.reel.homedisk.HomeSecrets.pairPhone(it.id) to it.secret })
+        prefs.edit().putString("phones", json.encodeToString(phones, if (stored) list.map { it.copy(secret = "") } else list)).apply()
     }
 
     private fun refresh() {
@@ -120,6 +130,14 @@ class TvSync(private val context: Context, private val sources: SourcesStore, pr
             lastUpdateAt = prefs.getLong("lastUpdateAt", 0),
         )
     }
+
+    // Home disk (sync v3, docs/HOME_DISK.md §9): requests from paired phones, addresses and the disk in the hello.
+    override suspend fun rpc(phone: PairedPhone, request: com.kirtanya.reel.core.sync.RpcRequest) =
+        com.kirtanya.reel.ReelApp.get(context).home.agent.rpc(phone, request)
+
+    override fun addresses(): List<String> = com.kirtanya.reel.ReelApp.get(context).home.agent.addresses()
+
+    override fun homeSummary() = com.kirtanya.reel.ReelApp.get(context).home.agent.summary()
 
     /** For the adb probe. */
     fun port(): Int = server?.listeningPort ?: -1

@@ -69,6 +69,8 @@ class PhoneSync(
     private val client = SyncClient(http)
     private val nsd = Nsd(context)
     private val pushLock = Mutex()
+    /** Pairing secrets live in the Keystore-backed store, not in preferences (docs/HOME_DISK.md §6). */
+    private val secrets = com.kirtanya.reel.homedisk.HomeSecrets.get(context)
 
     private val _state = MutableStateFlow(PhoneSyncState(load(), prefs.getBoolean("auto", true)))
     val state: StateFlow<PhoneSyncState> = _state.asStateFlow()
@@ -101,7 +103,10 @@ class PhoneSync(
         return push(p.tvId, force = true) ?: "Paired with ${p.name}"
     }
 
-    fun forget(tvId: String) = save(_state.value.tvs.filterNot { it.tvId == tvId })
+    fun forget(tvId: String) {
+        save(_state.value.tvs.filterNot { it.tvId == tvId })
+        secrets.put(com.kirtanya.reel.homedisk.HomeSecrets.pairTv(tvId), null)
+    }
 
     fun setAutoSync(on: Boolean) {
         prefs.edit().putBoolean("auto", on).apply()
@@ -164,12 +169,24 @@ class PhoneSync(
         save(_state.value.tvs.map { if (it.tvId == tvId) change(it) else it })
 
     private fun save(tvs: List<PairedTv>) {
-        prefs.edit().putString("tvs", json.encodeToString(list, tvs)).apply()
+        // Secrets first (and only blanked in preferences once they are safely stored), so a failure never loses a pairing.
+        val stored = secrets.available && secrets.put(tvs.associate { com.kirtanya.reel.homedisk.HomeSecrets.pairTv(it.tvId) to it.secret })
+        val plain = if (stored) tvs.map { it.copy(secret = "") } else tvs
+        prefs.edit().putString("tvs", json.encodeToString(list, plain)).apply()
         _state.value = _state.value.copy(tvs = tvs)
     }
 
-    private fun load(): List<PairedTv> =
-        prefs.getString("tvs", null)?.let { runCatching { json.decodeFromString(list, it) }.getOrNull() }.orEmpty()
+    private fun load(): List<PairedTv> {
+        val saved = prefs.getString("tvs", null)?.let { runCatching { json.decodeFromString(list, it) }.getOrNull() }.orEmpty()
+        val tvs = saved.map { tv -> tv.copy(secret = tv.secret.ifEmpty { secrets.get(com.kirtanya.reel.homedisk.HomeSecrets.pairTv(tv.tvId)).orEmpty() }) }
+        // Older versions kept the secrets in plain preferences: move them once.
+        if (saved.any { it.secret.isNotEmpty() } && secrets.available) {
+            if (secrets.put(tvs.associate { com.kirtanya.reel.homedisk.HomeSecrets.pairTv(it.tvId) to it.secret })) {
+                prefs.edit().putString("tvs", json.encodeToString(list, tvs.map { it.copy(secret = "") })).apply()
+            }
+        }
+        return tvs
+    }
 
     companion object {
         private const val TAG = "ReelSync"

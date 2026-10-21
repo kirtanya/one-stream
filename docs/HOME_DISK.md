@@ -334,7 +334,7 @@ reasons `NoAnswer` (nothing at the address), `NoShare`, `PasswordRejected`, `Ful
 - VPN: the rule looks at the underlying network (`NetworkCapabilities` with NOT_VPN, or
   `getUnderlyingNetworks()`), because Tailscale on the phone is a VPN.
 
-### 5.3 The phone's P2P network rule **[Decided, defaults Open]**
+### 5.3 The phone's P2P network rule **[Decided]** (defaults decided by the user 2026-10-21)
 
 Applies to every phone download that moves BitTorrent traffic ("On this phone", Keep, Save as download),
 evaluated on the network that carries the traffic (non-VPN):
@@ -342,17 +342,27 @@ evaluated on the network that carries the traffic (non-VPN):
 | Network | Phone P2P |
 |---|---|
 | Home (§5.2) | allowed |
-| Mobile data | allowed only if "Download on this phone over mobile data" is on **[Open: default off?]** |
+| Mobile data | waits for Wi-Fi by default; allowed when "Download on this phone over mobile data" is on (off by default), or per download with **Start now anyway** **[Decided]** |
 | Wi-Fi the user has allowed (per fingerprint, "Allow downloads on this Wi-Fi") | allowed |
 | Wi-Fi the user marked "Never here (work)" | never |
-| Any other Wi-Fi (office, café, unknown) | **never automatically.** The download waits ("Waiting for home Wi-Fi") and the screen offers "Download at home instead" and "Allow this Wi-Fi" (with the line "Never allow this on a work network") **[Open: ask per network, or never?]** |
+| Any other Wi-Fi (office, café, unknown) | **never automatically.** **Ask once per network** (answer remembered by fingerprint): "Allow this Wi-Fi" / "Never here (work)" / "Download at home instead", with the line "Never allow this on a work network". Until answered the download waits ("Waiting for home Wi-Fi") **[Decided]**. The office is "Never here (work)": never, and a blocked download offers "Download at home instead" (or "Download when I'm home"); Start now anyway never works there (hard rule) |
 
 - Waiting downloads start by themselves when an allowed network appears (network callback + the §7.2 job).
 - Pure logic: `core/homedisk/P2pRule.kt` (inputs: transport, metered, isHome, fingerprint, allow / block
   sets, user settings; output: ALLOW | WAIT(reason)), with a test per row.
-- Whether **streaming** (Play) on the phone follows the same rule is **[Open]**; until answered, Play is
-  unchanged (it is a deliberate act in front of the user; the existing NetworkGate already keeps prewarm,
-  hedging and autoWarm off untrusted networks).
+- **Streaming (Play) follows the rule too [Decided 2026-10-21]**: it is P2P. On a work Wi-Fi Play is refused
+  ("Not on this network") with "Download at home instead"; on an unknown Wi-Fi it asks the same once-per-network
+  question (one answer for downloads and plays); on mobile data and at home Play is unchanged. Gated at every
+  Play entry point outside the player (Sources, Title resume, Continue watching, Downloads, Add link, launcher
+  links); the player's own next-episode autoplay is not gated (it follows a play that already passed the rule).
+- Applied by `homedisk/P2pGate` (phone): downloads on a network that says wait are paused (and tracked in
+  `files/home/held.json`); new and restored downloads start paused through `TorrentEngine.downloadHold`, so
+  no traffic happens before the rule looks; they resume by themselves on an allowed network. Home here is
+  §5.2 (TV proof saves the home fingerprint, so home is known even when the TV is off later).
+- First Test with no home network saved: the app asks "Are you at home?" and only then signs in; that Test
+  saves the network as home (I6 stays: never on mobile data, another known network or a work Wi-Fi). The
+  TV's first Test runs from `home.config` when the phone has just proved it is at home with this TV
+  (`HomeConfig.atHome`).
 
 ---
 
@@ -679,7 +689,8 @@ until Phase 3 numbers say otherwise.
   The TV's Wi-Fi carries each byte twice (disk → TV, TV → router).
 - On open the phone measures throughput over the first 8 MiB; if the file's average bitrate
   (size / runtime) > 0.8 × throughput it shows "This file may pause away from home (needs ~40 Mbit/s, you
-  have ~12)" with "Other sources" and "Play anyway" **[Open: warn, or just play?]**.
+  have ~12)" with "Other sources" and "Play anyway" **[Decided 2026-10-21: warn and suggest a smaller
+  source; Phase 7, no setting in Phase 2]**.
 - No transcoding (the R4 can't transcode 4K in real time). The phone LoadControl's 50 s buffer applies.
 
 ---
@@ -696,20 +707,23 @@ until Phase 3 numbers say otherwise.
 - Guest rights: `home.library` (filtered) and `home.stream` only. No downloads, deletes, settings or jobs;
   one stream at a time per guest. `guest.revoke` from the owner's phone; revoking in Tailscale cuts the
   network path too.
-- **[Open]**: whole library or only titles the owner picks; whether a guest may ask for downloads; One
-  Stream app only, or also a link that opens in VLC.
+- **[Decided 2026-10-21]**: guests see only titles the owner picks; guests can't request downloads; One
+  Stream app or a VLC link. All Phase 9; no settings placeholder in Phase 2 (§17.1 lists People as Phase 9).
 
 ---
 
-## 13. Retention and eviction (TV) **[Decided, defaults Open]**
+## 13. Retention and eviction (TV) **[Decided]** (defaults decided 2026-10-21)
 
+- **Defaults [Decided 2026-10-21]**: what the TV plays is kept in the disk cache **7 days** (setting "Keep what
+  the TV plays", on); the cache may use **40 %** of the disk (setting); **auto-cache when opening details: off**
+  by default (setting). The settings exist from Phase 2 (`RetentionSettings`); eviction and caching run from Phase 8.
 - **Only `cache/` is ever evicted automatically.** `library/` is never touched; `incoming/` only when
   abandoned (no lease, no progress for 14 days); `.trash/` after 3 days.
 - `RetentionPolicy` (pure, `core/homedisk/`), run by the TV daily at 04:00, after every finished job, and
   whenever free space < floor:
   ```
   floor        = max(20 GB, 5 % of the disk)                         (always left free)
-  cacheBudget  = setting, default 40 % of the disk                    [Open]
+  cacheBudget  = setting, default 40 % of the disk                    [Decided]
   expired      = cache titles with now − max(lastUsedAt, completedAt) > retentionDays (default 7; 1/3/7/14/30/until space is needed)
   evict        = expired, then oldest-first while cacheBytes > cacheBudget or free < floor
   never        = titles with a live lease, being played, being conveyed, or marked Keep
@@ -793,7 +807,7 @@ case once Phase 3 ships.
   encrypted"), **Test** (result line, §4.5), "Home network: saved · Forget".
 - **Downloads**: "When I tap Download": *Download at home* / *Download on this phone* / *Ask me* (the
   remembered choice); "Copy phone downloads to the home disk when I'm home" (on); "Download on this phone
-  over mobile data" (off **[Open]**); "Other Wi-Fi networks: ask first, never at work" with the list of
+  over mobile data" (off **[Decided]**); "Other Wi-Fi networks: ask first, never at work" with the list of
   allowed / blocked networks.
 - **Stream cache on the disk**: "Keep cached titles for 7 days"; "Use up to 40 % of the disk".
 - **Away from home**: "Watch your home library away" with status ("Your TV is reachable as kame-tv" /
@@ -941,18 +955,16 @@ Order: 2 (now) → 1.1–1.3 (when the disk exists) → 3 → 4 → 5 → 6 → 
 
 ## 21. Open questions
 
-**For the user (product):**
+**For the user (product):** answered 2026-10-21 (DECISIONS.md) except Q1, which waits for the disk:
 1. Router model and what the share speaks (Phase 0 / 1.1). The disk must be exFAT or NTFS, not FAT32 (4 GB
    file limit; the Test checks).
-2. "On this phone" over **mobile data**: start at once, or wait for Wi-Fi? (Proposal: wait, with a switch.)
-3. **Other Wi-Fi** (a friend's, a hotel): ask once per network, or never download there? Office: never.
-4. Should **Play** on the phone also be blocked on the office Wi-Fi and unknown Wi-Fi, like downloads?
-5. Should titles the **TV streams** also be kept on the disk's stream cache for 7 days, and should opening a
-   title's details on the TV start caching it (auto-cache)? (Plan question 2.)
-6. How much of the disk may the stream cache use? (Proposal: 40 %.)
-7. Away with big 4K files: warn and suggest a smaller source, or just try?
-8. Sharing: whole library or only titles you pick; may guests ask for downloads; One Stream only, or also a
-   VLC link?
+2. ~~Mobile data~~ **[Decided]** wait for Wi-Fi by default; "Start now anyway" per download; a switch.
+3. ~~Other Wi-Fi~~ **[Decided]** ask once per network (remembered); office: never ("Download at home instead").
+4. ~~Play~~ **[Decided]** follows the rule: blocked at work (offer Download at home), unknown Wi-Fi asks once.
+5. ~~TV viewing in the cache / auto-cache~~ **[Decided]** keep 7 days (setting); auto-cache off (setting).
+6. ~~Cache share~~ **[Decided]** 40 % (setting).
+7. ~~Big 4K away~~ **[Decided]** warn + suggest a smaller source (Phase 7).
+8. ~~Sharing~~ **[Decided]** only titles you pick; no download requests; One Stream app or a VLC link (Phase 9).
 
 **To measure** (decided provisionally): conveyor overhead (§8.2), TV SMB read / write MB/s, phone copy rate,
 Tailscale throughput from the R4, reconnect ramp after a reset, disk spin-up delay.

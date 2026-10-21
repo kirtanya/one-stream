@@ -74,7 +74,7 @@ fun continueDetail(item: ContinueItem): String = when (item) {
 fun openContinue(context: android.content.Context, item: ContinueItem, onOpenDest: (Dest) -> Unit) {
     val p = item.entry.playback
     when (item) {
-        is ContinueItem.Resume -> context.startActivity(PlayerActivity.forPlayback(context, p))
+        is ContinueItem.Resume -> com.kirtanya.reel.ui.homedisk.gatedPlay(context, p.source, p.title) { context.startActivity(PlayerActivity.forPlayback(context, p)) }
         is ContinueItem.UpNext -> {
             val id = p.tmdbId ?: return
             onOpenDest(Dest.Sources(TitleRef(MediaType.TV, id), item.next.season, item.next.episode))
