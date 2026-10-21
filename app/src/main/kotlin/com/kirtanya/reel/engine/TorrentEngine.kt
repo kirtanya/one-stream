@@ -10,6 +10,9 @@ import com.kirtanya.reel.core.magnet.DEFAULT_TRACKERS
 import com.kirtanya.reel.core.magnet.Magnet
 import com.kirtanya.reel.core.stream.CacheEntry
 import com.kirtanya.reel.core.stream.CachePolicy
+import com.kirtanya.reel.core.stream.ModeChange
+import com.kirtanya.reel.core.stream.ModeFacts
+import com.kirtanya.reel.core.stream.ModeStep
 import com.kirtanya.reel.core.stream.DiskBackend
 import com.kirtanya.reel.core.stream.FileChoice
 import com.kirtanya.reel.core.stream.FileSpan
@@ -439,12 +442,60 @@ class TorrentEngine(private val context: Context) {
         refreshSnapshots()
     }
 
-    /** "Keep": a stream becomes a normal download in the Downloads folder; fetched pieces are reused. */
+    /** "Keep" / "Save as download": a stream becomes a normal download in the Downloads folder; fetched pieces are reused. */
     fun keep(hash: String) {
         val h = find(hash) ?: return
         val meta = metas[hash] ?: return
-        if (meta.mode == TorrentMode.DOWNLOAD) return
-        keepInternal(h, meta, com.kirtanya.reel.core.stream.FileIntent())
+        when (ModeChange.toDownload(modeFacts(hash, meta))) {
+            ModeStep.NONE -> Unit
+            ModeStep.CANCEL_PENDING -> saveMeta(meta.copy(cachePending = false))
+            // keepInternal defers by itself while a player holds the torrent.
+            ModeStep.DEFER, ModeStep.NOW -> keepInternal(h, meta, com.kirtanya.reel.core.stream.FileIntent())
+        }
+    }
+
+    /**
+     * "Keep as stream cache" (docs/STREAMING_V2.md §7.3a): a download stops being kept. Its data stays
+     * where it is and becomes a stream-cache entry under the normal cache policy, so it can still play.
+     */
+    fun keepAsCache(hash: String) {
+        val h = find(hash) ?: return
+        val meta = metas[hash] ?: return
+        when (ModeChange.toCache(modeFacts(hash, meta))) {
+            ModeStep.NONE -> Unit
+            ModeStep.CANCEL_PENDING -> saveMeta(meta.copy(keepPending = false))
+            ModeStep.DEFER -> saveMeta(meta.copy(cachePending = true))
+            ModeStep.NOW -> {
+                cacheInternal(h, meta)
+                scope.launch(Dispatchers.IO) { runCatching { trimCache(DEFAULT_CACHE_BUDGET) } }
+            }
+        }
+        refreshSnapshots()
+    }
+
+    private fun modeFacts(hash: String, meta: TorrentMeta) = ModeFacts(
+        isDownload = meta.mode == TorrentMode.DOWNLOAD,
+        claimed = streams.containsKey(hash) || starting.containsKey(hash),
+        keepPending = meta.keepPending,
+        cachePending = meta.cachePending,
+    )
+
+    private fun cacheInternal(h: TorrentHandle, meta: TorrentMeta) {
+        // Not queued, not running: a cache entry no player reads stays paused (§7.2).
+        h.unsetFlags(TorrentFlags.AUTO_MANAGED)
+        h.pause()
+        val snapshotFile = snapshot(meta.infoHash)?.fileIndex
+        saveMeta(
+            meta.copy(
+                mode = TorrentMode.STREAM,
+                fullTorrent = false, wantedFiles = emptyList(), wantedHints = emptyList(), pendingFileIntent = false,
+                userPaused = false, pausedForSpace = false, seedingDone = false, keepPending = false, cachePending = false,
+                streamFileIndex = ModeChange.cacheStreamFile(meta.streamFileIndex, meta.wantedFiles, snapshotFile),
+                lastUsedAt = ModeChange.cacheLastUsedAt(System.currentTimeMillis(), meta.lastUsedAt),
+            ),
+        )
+        h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+        Log.i(TAG, "kept as stream cache ${meta.infoHash}")
     }
 
     private fun keepInternal(h: TorrentHandle, meta: TorrentMeta, intent: com.kirtanya.reel.core.stream.FileIntent) {
@@ -452,16 +503,18 @@ class TorrentEngine(private val context: Context) {
         // Moving the files while a player reads them breaks the player: do it when the stream ends.
         if (streams.containsKey(key) || starting.containsKey(key)) {
             val wanted = if (intent.fullTorrent || (intent.wantedFiles.isEmpty() && intent.wantedHints.isEmpty())) intent.copy(fullTorrent = true) else intent
-            saveMeta(meta.copy(keepPending = true).withIntent(wanted))
+            saveMeta(meta.copy(keepPending = true, cachePending = false).withIntent(wanted))
             return
         }
-        // Never overwrite a file of the same name already in Downloads.
-        h.moveStorage(downloadsDir().absolutePath, org.libtorrent4j.MoveFlags.FAIL_IF_EXIST)
+        // Never overwrite a file of the same name already in Downloads. A download that was kept as
+        // stream cache never left the Downloads folder (§7.3a): nothing to move.
+        val current = meta.savePath?.let { runCatching { File(it).canonicalPath }.getOrNull() }
+        if (current != downloadsDir().canonicalPath) h.moveStorage(downloadsDir().absolutePath, org.libtorrent4j.MoveFlags.FAIL_IF_EXIST)
         h.setFlags(TorrentFlags.AUTO_MANAGED)
         h.resume()
         // A stream added for one file downloads nothing else: say explicitly what Keep wants.
         val keepIntent = if (intent.fullTorrent || (intent.wantedFiles.isEmpty() && intent.wantedHints.isEmpty())) intent.copy(fullTorrent = true) else intent
-        saveMeta(meta.copy(mode = TorrentMode.DOWNLOAD, savePath = downloadsDir().absolutePath, pendingFileIntent = true, keepPending = false).withIntent(keepIntent))
+        saveMeta(meta.copy(mode = TorrentMode.DOWNLOAD, savePath = downloadsDir().absolutePath, pendingFileIntent = true, keepPending = false, cachePending = false).withIntent(keepIntent))
         applyFileIntent(h)
     }
 
@@ -722,6 +775,7 @@ class TorrentEngine(private val context: Context) {
                 if (meta.keepPending) keepInternal(h, meta, meta.intent)
             } else if (meta != null) {
                 restoreDownloadFlags(h, meta, stream.raisedFile)
+                if (meta.cachePending) metas[hash]?.let { cacheInternal(h, it) }
             }
         }
         Log.i(TAG, "stream stopped ${stream.info.file.name}")

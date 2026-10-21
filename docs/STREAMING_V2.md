@@ -184,6 +184,7 @@ Owner key:
 | `suspend fun addTorrentFile(bytes, mode): String` | same | Canonical key; adds trackers only when not private. |
 | `fun pause(hash)` / `fun resume(hash)` | same | Post. Persist `userPaused`. `resume` on a queued torrent calls `queuePositionTop()`. `resume` during GUARD sets `userOverride` (8.1). |
 | `fun remove(hash, deleteFiles)` / `fun keep(hash)` | same | Post. Keep is deferred while claimed. |
+| — | `fun keepAsCache(hash)` | Post. "Keep as stream cache" (7.3a): a download becomes a stream-cache entry in place. Deferred while claimed; `keep` and `keepAsCache` cancel each other's pending wish. |
 | `fun files(hash): List<TorrentFileEntry>` | same | Cached at metadata, no JNI. |
 | `fun snapshot(hash): TorrentSnapshot?` | same | |
 | `fun downloadsDir(): File` | same | |
@@ -263,6 +264,7 @@ data class BenchRequest(val magnet: String, val fileIdx: Int? = null, val filena
 //   pendingFileIntent: Boolean = false /* explicit priorities still owed once metadata arrives */,
 //   userPaused: Boolean = false, pausedForStream: Boolean = false, pausedForSpace: Boolean = false,
 //   seedingDone: Boolean = false, keepPending: Boolean = false, wasAutoManaged: Boolean? = null,
+//   cachePending: Boolean = false /* keepAsCache asked while claimed (7.3a) */,
 //   createdBy: String = "user" /* user|stream|prewarm|hedge */, lastStoppedAt: Long = 0, lastPosFrac: Float? = null,
 //   durationMs: Long? = null, savePath: String? = null, name: String? = null, schema: Int = 2
 // Migration on load (schema < 2), in Phase 1:
@@ -1100,6 +1102,27 @@ UPLOAD_MODE is never left set while streaming.
      - path generation++ (readers reopen); delete the source after a copy;
      - device-check log: `status(QUERY_PIECES).pieces().count()` must equal the pre-keep count and `state != CHECKING_FILES`, logged as `ev=keep pieces=a/b state=…`.
   6. On failure: stay STREAM, set `notice = "Couldn't save: …"`, delete the partial copy.
+
+### 7.3a Converting between download and stream cache (Downloads screen)
+Two user actions on the Downloads screen move a torrent between the modes. The decisions are pure (`core/stream/ModeChange`); the engine only applies them.
+
+- **Save as download** (a stream-cache entry → Downloads) is Keep (7.3), unchanged: the pieces already fetched are reused and the whole torrent (or the wanted files) continues downloading as a DOWNLOAD (AUTO_MANAGED, resumed unless `userPaused`). If the entry's `savePath` already is the downloads folder (it was a download kept as cache, below), no storage move is issued.
+- **Keep as stream cache** (a download → stream cache), `keepAsCache(hash)`:
+  1. `ModeChange.toCache(ModeFacts(isDownload, claimed, keepPending, cachePending))`:
+     - `NONE` (already STREAM, nothing pending) → nothing;
+     - `CANCEL_PENDING` (STREAM with `keepPending`) → `keepPending = false` (the later wish wins);
+     - `DEFER` (a player claims it: ACTIVE, BACKGROUND, External or Starting) → `cachePending = true` (persisted), applied in `stopStream` where `keepPending` is applied;
+     - `NOW` → step 2.
+  2. **In place, no file move.** The data stays where it is (`savePath` unchanged). A move from the public Downloads folder to `files/streams/<key>` crosses mounts on both devices, i.e. a full copy needing the file's size again in free space, and the user asked to *stop keeping* the file, not to spend space on it. Eviction deletes through `remove(DELETE_FILES)` on the entry's own `savePath`, and the orphan sweep (7.4) only touches `streams/*`, so an entry outside `streams/` is safe.
+  3. `unsetFlags(AUTO_MANAGED)`, `pause()` (a stream-cache entry that no player reads is paused, 7.2).
+  4. Meta: `mode = STREAM`, `fullTorrent = false`, `wantedFiles = wantedHints = []`, `pendingFileIntent = false`, `userPaused = pausedForSpace = seedingDone = false`, `keepPending = cachePending = false`, `streamFileIndex = ModeChange.cacheStreamFile(streamFileIndex, wantedFiles, snapshot.fileIndex)`, `lastUsedAt = ModeChange.cacheLastUsedAt(now, lastUsedAt)`; `lastStoppedAt` is left alone, so the entry is not protected like a title stopped mid-watch. `saveResumeData(SAVE_INFO_DICT)`.
+  5. File priorities are left as they are; the next `prepareStream` sets the STREAM vector (only the played file wanted).
+  6. Post `trimCache(DEFAULT)`: from now on the normal cache policy (7.4) applies, so a converted download larger than the budget can be evicted on that trim (LRU: older entries go first).
+- **Change source** (Downloads → Sources page in download context for the same film / episode; `core/library/SourceSwap`): the download's origin (`type`, `tmdbId`, `season`, `episode`) is stored by the app in `files/download_origins.json` when the download starts from a Sources page or the launcher API; downloads added from a magnet link have none and get no Change source.
+  - `SAME_FILE` → nothing.
+  - `SAME_TORRENT` (another file of the same torrent) → `addMagnet(DOWNLOAD, fileIdx)`: added to the wanted files (never narrows, 3.2), nothing fetched is lost.
+  - `NEW_TORRENT` / `DIRECT` → after the user confirms ("The X downloaded so far will be lost"): start the new download first (`addMagnet(DOWNLOAD)` or the download manager); only when that succeeds, `remove(old, deleteFiles = true)`. A failed start leaves the old download untouched.
+- **Tests:** JVM only (`DownloadChangesTest`): every ModeStep branch, the cache file choice, swap kinds and confirmation text, origin round-trip. No test creates a session or adds a torrent, so none can start P2P traffic.
 
 ### 7.4 Cache policy (pure `CachePolicy`)
 ```

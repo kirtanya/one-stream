@@ -63,6 +63,8 @@ data class TorrentMeta(
     val wasAutoManaged: Boolean? = null,
     /** Keep was asked while a player was reading: move to Downloads when the stream stops. */
     val keepPending: Boolean = false,
+    /** "Keep as stream cache" was asked while a player was reading: convert when the stream stops (STREAMING_V2 §7.3a). */
+    val cachePending: Boolean = false,
     /** user | stream: a stream-created torrent with nothing downloaded can be deleted on abandon. */
     val createdBy: String = "user",
     val lastStoppedAt: Long = 0,
