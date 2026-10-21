@@ -209,3 +209,42 @@ class ColorScanTest {
         assertFalse(ColorScan.isTokenFile("com/kirtanya/reel/player/PlayerKit.kt"))
     }
 }
+
+class IconContrastTest {
+    /** A 40×40 region of [bg] with a 24×24 icon box at (8, 8); the icon is a ring of [fg] 3 px thick inside it. */
+    private fun scene(fg: Int, bg: Int, glyph: (x: Int, y: Int) -> Boolean = { x, y -> x in 10..29 && y in 10..29 && !(x in 13..26 && y in 13..26) }): IntArray =
+        IntArray(40 * 40) { i -> val x = i % 40; val y = i / 40; if (glyph(x, y)) fg else bg }
+
+    private fun measure(px: IntArray) = IconContrast.measure(px, 40, 40, 8, 8, 32, 32, haloInner = 1, haloOuter = 5)
+
+    @Test fun lightIconOnDarkBar() {
+        val r = assertNotNull(measure(scene(0xFFCAC4D0.toInt(), 0xFF2B2930.toInt())))
+        assertTrue(r.ratio > 7, "got ${r.ratio}")
+        assertEquals(0xFFCAC4D0.toInt(), r.text)
+    }
+
+    @Test fun faintIconFails() {
+        val r = assertNotNull(measure(scene(0xFF4A4850.toInt(), 0xFF2B2930.toInt())))
+        assertTrue(r.ratio < IconContrast.REQUIRED, "got ${r.ratio}")
+    }
+
+    @Test fun invisibleIconIsOneToOne() {
+        val r = assertNotNull(measure(scene(0xFF2B2930.toInt(), 0xFF2B2930.toInt())))
+        assertEquals(1.0, r.ratio, 0.01)
+    }
+
+    @Test fun iconOnAPillIsMeasuredAgainstThePill() {
+        // A pill (the selected tab) fills the box and its surroundings; the bar further out is not the icon's background.
+        val pill = 0xFF4A4458.toInt(); val bar = 0xFFFFFFFF.toInt(); val icon = 0xFFE8DEF8.toInt()
+        val px = IntArray(40 * 40) { i ->
+            val x = i % 40; val y = i / 40
+            when {
+                x in 10..29 && y in 10..29 && !(x in 13..26 && y in 13..26) -> icon
+                x in 2..37 && y in 2..37 -> pill
+                else -> bar
+            }
+        }
+        val r = assertNotNull(measure(px))
+        assertEquals(Wcag.contrastOf(icon, pill), r.ratio, 0.05)
+    }
+}

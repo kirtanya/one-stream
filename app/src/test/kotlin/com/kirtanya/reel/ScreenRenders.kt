@@ -58,6 +58,10 @@ import org.robolectric.ParameterizedRobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performSemanticsAction
 
 /**
  * Renders every screen × state on the Mac with fixed data (no network), to check layouts without a device:
@@ -112,6 +116,8 @@ open class ScreenRenders(protected val variant: Variant) {
         /** Dialogs and sheets are windows of their own: capture the whole screen. */
         windows: Boolean = false,
         waitMs: Long = 1_800,
+        /** Scroll the page's list to its end first (the last row must clear the floating tab bar). */
+        scrollToEnd: Boolean = false,
         content: @Composable () -> Unit,
     ) {
         if (tv) assumeTrue("TV renders run once", variant == DEFAULT)
@@ -139,6 +145,13 @@ open class ScreenRenders(protected val variant: Variant) {
             }
         }
         settle(waitMs)
+        if (scrollToEnd) {
+            // The page's own vertical list (the first one; rows inside it scroll sideways).
+            val list = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange), useUnmergedTree = true)[0]
+            // Rows load and animate in: scroll, let them settle, scroll again, until the end really is the end.
+            repeat(3) { list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }; settle(900) }
+            settle(1_200)
+        }
         onScreenReady(name, tv, windows)
     }
 
@@ -159,6 +172,8 @@ open class ScreenRenders(protected val variant: Variant) {
             compose.mainClock.advanceTimeBy(100)
         }
     }
+
+    private fun assumeDark() = assumeTrue("dark only", variant.dark)
 
     private fun phone(nav: Navigator.() -> Unit = {}): @Composable () -> Unit = {
         PhoneApp(incomingMagnet = null, onIncomingHandled = {}, nav = Navigator().apply(nav))
@@ -192,6 +207,9 @@ open class ScreenRenders(protected val variant: Variant) {
     // ─── Phone ───────────────────────────────────────────────────────────────────────────────
 
     @Test fun home() = render("home", history = true, content = phone())
+    // Home and Search end renders are dark only: in light, the poster meta line (textTertiary, 4.27:1) is a known
+    // contrast issue, baselined on the collection grids and waiting on the user's call (DECISIONS 2026-10-21).
+    @Test fun homeEnd() = assumeDark().let { render("home-end", history = true, scrollToEnd = true, content = phone()) }
     @Test fun homeFirstRun() = render("home-first-run", content = phone())
     @Test fun homeLoading() = render("home-loading", catalog = FakeCatalog(Answer.Loading), content = phone())
     @Test fun homeError() = render("home-error", catalog = FakeCatalog(Answer.Fail), content = phone())
@@ -203,6 +221,7 @@ open class ScreenRenders(protected val variant: Variant) {
         render("search", content = phone { select(Tab.Search) })
     }
     @Test fun searchResults() = render("search-results") { PhoneTab(Tab.Search) { PhoneSearch(onOpen = {}, initialQuery = "dune") } }
+    @Test fun searchEnd() = assumeDark().let { render("search-end", scrollToEnd = true) { PhoneTab(Tab.Search) { PhoneSearch(onOpen = {}, initialQuery = "dune") } } }
     @Test fun searchNone() = render("search-none") { PhoneTab(Tab.Search) { PhoneSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
     @Test fun searchLoading() = render("search-loading", catalog = FakeCatalog(Answer.Loading)) { PhoneTab(Tab.Search) { PhoneSearch(onOpen = {}, initialQuery = "dune") } }
     @Test fun searchError() = render("search-error", catalog = FakeCatalog(Answer.Fail)) { PhoneTab(Tab.Search) { PhoneSearch(onOpen = {}, initialQuery = "dune") } }
@@ -299,12 +318,14 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun personError() = render("person-error", catalog = FakeCatalog(Answer.Fail), content = phone { open(Dest.Person(1, "Timothée Chalamet")) })
 
     @Test fun downloads() = render("downloads", data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
+    @Test fun downloadsEnd() = render("downloads-end", scrollToEnd = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
     @Test fun downloadsCache() = render("downloads-cache", data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
     /** Alone over the canvas: the design rules read a dialog's own window. */
     @Test fun downloadsMore() = render("downloads-more", windows = true) { com.kirtanya.reel.ui.MoreDialog(Fake.torrents[0], canChangeSource = true, {}, {}, {}) }
     @Test fun downloadsEmpty() = render("downloads-empty", data = RenderData(torrents = emptyList(), storage = 0L to 51_000_000_000L), content = phone { select(Tab.Downloads) })
 
     @Test fun settings() = render("settings", content = phone { select(Tab.Settings) })
+    @Test fun settingsEnd() = render("settings-end", scrollToEnd = true, content = phone { select(Tab.Settings) })
     private fun settingsPage(page: SettingsPage, data: RenderData? = RenderData(installed = Fake.installed, store = Fake.store)) =
         render("settings-${page.name.lowercase()}", data = data) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(page)) } }
     @Test fun settingsAppearance() = settingsPage(SettingsPage.Appearance)

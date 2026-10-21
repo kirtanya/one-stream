@@ -5,6 +5,31 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Phone: floating, icon-only tab bar (iOS-style)**
+Decision (user): replace the full-width Material bottom bar with a floating, fully rounded bar like iOS; no labels
+on any tab.
+Built (Claude): a 236 × 60 dp capsule centred 12 dp above the gesture bar (`Space.barGap`), four 56 × 48 dp
+icon-only tabs (each icon keeps its name for TalkBack: "Home", "Search", "Downloads", "Settings"). Surface
+`barGlass` = surfaceContainerHigh at 90 % (not the 72 % `glass`: there is no backdrop blur, and at 72 % row titles
+read through it), a hairline and a soft shadow (`barShadow`, scrim at 32 %): the one shadow in the app, because the
+bar hovers over scrolling content. Selected = filled icon in the accent on a soft accent pill (`barIndicator`,
+primary at 16 %) that slides between tabs over `Motion.stateMs`; the rest outlined in `textSecondary`. Still hidden
+on stacked pages (title, sources, grids). `Space.bottomBarClearance` is now system bar + gap + bar (read from the
+insets, so 3-button navigation is covered too) and every tab list keeps its extra space under the last row.
+Blur: skipped. Compose can only blur its own content; a real backdrop blur means drawing the screen twice
+(e.g. the Haze library), a cost on every scroll frame for a small gain over a 90 % surface.
+Checks: icon-only tabs had no words for the contrast rule, so the rule now also measures their icons
+(`core/design/IconContrast`, WCAG non-text 3:1, coverage read from the pixels around the icon). New renders scroll
+Home, Search, Downloads and Settings to the end (`*-end`) to prove the last row clears the bar.
+The checks also learnt two things the floating bar exposed: rows that sit next to / partly under the bar at a
+given scroll position are skipped there (touch and text contrast; the same rows are checked where they sit clear),
+and rows a lazy list keeps composed but unplaced after a scroll are ignored (they reported stale positions).
+Measured icon contrast: unselected 6.4–8.7:1, selected 4.2:1 (light) to 6.4:1 (dark).
+Open (user): the end renders showed the poster meta line ("★ 7.4 · 1998", `textTertiary`) at 4.27:1 in light mode on
+Home and Search too, the same known issue baselined on the collection grids; Home / Search end renders run dark
+only until the user decides on that grey (baselines not grown).
+Evidence: renders `phone/home|search|downloads|settings(-end)-<dark|light>-<100|130>.png`; `tool/check_design.sh`.
+
 **2026-10-21 · Subtitles on in English by default, OpenSubtitles built in, Change source in the player**
 Decision (user): subtitles didn't show even with a subtitle addon added; English should be the default with
 OpenSubtitles available out of the box; the player needs a way to change the source.

@@ -7,6 +7,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -34,10 +43,6 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -72,7 +77,7 @@ import com.kirtanya.reel.ui.sources.SourcesScreen
 import com.kirtanya.reel.ui.theme.Tokens
 
 /**
- * Phone root. Edge-to-edge screens; the navigation bar (Home · Search · Downloads · Settings) on
+ * Phone root. Edge-to-edge screens; the floating tab bar (Home · Search · Downloads · Settings) on
  * the main tabs; title, sources, grids and person pages stack on top full-bleed, cross-fading in.
  * [nav] can be passed in to open a particular screen (screen renders do).
  */
@@ -161,37 +166,68 @@ fun PhoneApp(
 /** Saved-state key for a grid: two genres can share a name (Drama films, Drama shows). */
 internal fun collectionKey(d: Dest.Collection) = "collection:${d.title}:${d.provider?.id}:${d.genre?.id}:${d.genreType}"
 
-/** Material 3 navigation bar: four destinations, a pill behind the selected one. */
+/**
+ * Floating tab bar (iOS-style): a capsule of four icon-only tabs, centred above the gesture bar. No
+ * labels; each icon carries its name for TalkBack. The selected tab's filled icon takes the accent,
+ * on a soft accent pill that slides between tabs. Glass (more opaque than over images: no blur) with
+ * a hairline and a soft shadow, so it reads over whatever scrolls under it.
+ */
 @Composable
 internal fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
     val engine = ReelApp.get(LocalContext.current).engine
     val torrents by engine.torrents.collectAsState()
     val downloading = torrents.any { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA }
-    NavigationBar(containerColor = Tokens.Colors.surface1, tonalElevation = 0.dp) {
-        listOf(
-            Triple(Tab.Home, Icons.Rounded.Home, Icons.Outlined.Home),
-            Triple(Tab.Search, Icons.Rounded.Search, Icons.Outlined.Search),
-            Triple(Tab.Downloads, Icons.Rounded.Download, Icons.Outlined.Download),
-            Triple(Tab.Settings, Icons.Rounded.Settings, Icons.Outlined.Settings),
-        ).forEach { (tab, filled, outlined) ->
-            val on = tab == selected
-            NavigationBarItem(
-                selected = on,
-                onClick = { onSelect(tab) },
-                icon = {
-                    BadgedBox(badge = { if (tab == Tab.Downloads && downloading) Badge(containerColor = Tokens.Colors.accent) }) {
-                        Icon(if (on) filled else outlined, contentDescription = null)
-                    }
-                },
-                label = { Text(tab.label, style = Tokens.Type.caption, maxLines = 1) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Tokens.Colors.onTonal,
-                    selectedTextColor = Tokens.Colors.text,
-                    indicatorColor = Tokens.Colors.tonal,
-                    unselectedIconColor = Tokens.Colors.textSecondary,
-                    unselectedTextColor = Tokens.Colors.textSecondary,
-                ),
+    val tabs = listOf(
+        Triple(Tab.Home, Icons.Rounded.Home, Icons.Outlined.Home),
+        Triple(Tab.Search, Icons.Rounded.Search, Icons.Outlined.Search),
+        Triple(Tab.Downloads, Icons.Rounded.Download, Icons.Outlined.Download),
+        Triple(Tab.Settings, Icons.Rounded.Settings, Icons.Outlined.Settings),
+    )
+    val index = tabs.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    val indicatorX by animateDpAsState(
+        Tokens.Size.barTabWidth * index,
+        tween(Tokens.Motion.stateMs, easing = FastOutSlowInEasing),
+        label = "tab indicator",
+    )
+    // Full width only to centre the capsule; it takes no touches itself, so rows beside the bar stay pressable.
+    Box(
+        Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = Tokens.Space.barGap),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .shadow(Tokens.Size.barElevation, CircleShape, ambientColor = Tokens.Colors.barShadow, spotColor = Tokens.Colors.barShadow)
+                .background(Tokens.Colors.barGlass, CircleShape)
+                .border(Tokens.Size.hairline, Tokens.Colors.hairline, CircleShape)
+                .padding(Tokens.Size.barPadding),
+        ) {
+            Box(
+                Modifier
+                    .offset(x = indicatorX)
+                    .size(Tokens.Size.barTabWidth, Tokens.Size.barTabHeight)
+                    .background(Tokens.Colors.barIndicator, CircleShape),
             )
+            Row(Modifier.selectableGroup()) {
+                tabs.forEach { (tab, filled, outlined) ->
+                    val on = tab == selected
+                    val tint by animateColorAsState(
+                        if (on) Tokens.Colors.accent else Tokens.Colors.textSecondary,
+                        tween(Tokens.Motion.stateMs),
+                        label = "tab tint",
+                    )
+                    Box(
+                        Modifier
+                            .size(Tokens.Size.barTabWidth, Tokens.Size.barTabHeight)
+                            .clip(CircleShape)
+                            .selectable(selected = on, role = Role.Tab, onClick = { onSelect(tab) }),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BadgedBox(badge = { if (tab == Tab.Downloads && downloading) Badge(containerColor = Tokens.Colors.accent) }) {
+                            Icon(if (on) filled else outlined, contentDescription = tab.label, tint = tint, modifier = Modifier.size(Tokens.Size.barIcon))
+                        }
+                    }
+                }
+            }
         }
     }
 }

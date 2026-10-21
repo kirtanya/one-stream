@@ -1,5 +1,9 @@
 package com.kirtanya.reel.ui.theme
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -8,6 +12,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kirtanya.reel.R
@@ -25,13 +30,23 @@ object Tokens {
     object Colors {
         private val c get() = AccentState.scheme
 
-        // Canvas and surface steps (depth from tonal steps + hairlines, never shadows).
+        // Canvas and surface steps (depth from tonal steps + hairlines; the floating tab bar is the
+        // one thing with a shadow, since it hovers over scrolling content).
         val canvas: Color get() = c.surface
         val surface1: Color get() = c.surfaceContainer
         val surface2: Color get() = c.surfaceContainerHigh
         val surface3: Color get() = c.surfaceContainerHighest
         /** Controls sitting on images. */
         val glass: Color get() = c.surfaceContainerHigh.copy(alpha = 0.72f)
+        /**
+         * The floating tab bar: [glass] made more opaque, because it always sits over moving rows and
+         * art (no backdrop blur here, so 72 % would let row titles read through it).
+         */
+        val barGlass: Color get() = c.surfaceContainerHigh.copy(alpha = 0.9f)
+        /** Behind the selected tab's icon: a soft wash of the accent. */
+        val barIndicator: Color get() = c.primary.copy(alpha = 0.16f)
+        /** The floating bar's soft shadow (Material scrim, i.e. black, faded). */
+        val barShadow: Color get() = c.scrim.copy(alpha = 0.32f)
         val hairline: Color get() = c.outlineVariant.copy(alpha = 0.55f)
         val hairlineStrong: Color get() = c.outlineVariant
 
@@ -114,8 +129,14 @@ object Tokens {
         val tvSafeV = 27.dp
         /** Phone side gutter. */
         val phoneGutter = 16.dp
-        /** Room the bottom navigation bar (80 dp + gesture area) takes, so content can scroll clear of it. */
-        val bottomBarClearance = 104.dp
+        /** Gap between the floating tab bar and the gesture / navigation bar under it. */
+        val barGap = 12.dp
+        /**
+         * Room the floating tab bar takes at the bottom (system bar + gap + bar), so the last row
+         * can scroll clear of it. Screens add their own breathing space on top.
+         */
+        val bottomBarClearance: Dp
+            @Composable get() = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + barGap + Size.barHeight
     }
 
     /** Material 3 shape scale. */
@@ -139,6 +160,13 @@ object Tokens {
         val focusBorder = 2.dp
         val ring = 2.dp
         val hairline = 1.dp
+        /** Floating tab bar (phone): one tab slot (a 48 dp touch height) and the bar's inner padding. */
+        val barTabWidth = 56.dp
+        val barTabHeight = 48.dp
+        val barPadding = 6.dp
+        val barHeight = barTabHeight + barPadding * 2
+        val barIcon = 24.dp
+        val barElevation = 10.dp
     }
 
     val fontFamily = FontFamily(

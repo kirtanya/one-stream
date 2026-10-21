@@ -26,9 +26,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.kirtanya.reel.core.design.Box
 import com.kirtanya.reel.core.design.DesignBaseline
 import com.kirtanya.reel.core.design.FocusDiff
+import com.kirtanya.reel.core.design.IconContrast
 import com.kirtanya.reel.core.design.TextContrast
 import com.kirtanya.reel.core.design.TextRules
 import com.kirtanya.reel.core.design.TouchArea
+import com.kirtanya.reel.ui.theme.Tokens
 import org.robolectric.Shadows.shadowOf
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -43,7 +45,12 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
     /** One capture of the top window: its semantics (unmerged) and pixels. */
     inner class Shot(val root: SemanticsNode, val pixels: IntArray, val width: Int, val height: Int) {
         val density = root.layoutInfo.density.density
-        val nodes: List<SemanticsNode> = buildList { fun walk(n: SemanticsNode) { add(n); n.children.forEach(::walk) }; walk(root) }
+        // Only what is laid out on screen: a lazy list keeps some rows composed but unplaced after a scroll
+        // (ready for reuse); they report a stale position and must not count as neighbours or content.
+        val nodes: List<SemanticsNode> = buildList {
+            fun walk(n: SemanticsNode) { if (!n.layoutInfo.isPlaced) return; add(n); n.children.forEach(::walk) }
+            walk(root)
+        }
         val screenPx = Rect(0f, 0f, width.toFloat(), height.toFloat())
         fun dp(px: Float) = px / density
         fun box(r: Rect) = Box(dp(r.left).toDouble(), dp(r.top).toDouble(), dp(r.right).toDouble(), dp(r.bottom).toDouble())
@@ -67,10 +74,18 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
         val targets = s.nodes.filter { it.isTouchTarget() }
         val others = targets.map { s.box(it.boundsInRoot) }
         val found = ArrayList<String>()
+        val skipped = ArrayList<String>()
         var checked = 0
+        val bar = floatingBar(s)
         for (n in targets) {
             // Partly scrolled out of view: its size can't be read from what shows (it's checked where it shows fully).
             if (!n.fullyShown(s)) continue
+            // Scrolling content that happens to sit at (or under) the floating tab bar: the bar takes the touches
+            // there only at this scroll position; the same row is checked in renders where it sits clear of it.
+            if (bar != null && n.inScroller(horizontal = false) && !n.isIconTab() && s.box(n.unclipped()).atLeast(TouchArea.MIN_DP).intersects(s.box(bar))) {
+                skipped += "${n.label()}: next to the floating tab bar at this scroll position"
+                continue
+            }
             checked++
             val own = s.box(n.unclipped())
             val area = TouchArea.effective(own, others, TouchArea.MIN_DP, s.box(s.screenPx))
@@ -78,7 +93,22 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
                 found += DesignBaseline.line(where, n.label(), "touch area ${fmt(area.width)} × ${fmt(area.height)} dp (drawn ${fmt(own.width)} × ${fmt(own.height)} dp)")
             }
         }
-        return Result(checked, found)
+        return Result(checked, found, skipped)
+    }
+
+    /** The phone's floating tab bar (its icon-only tabs plus the capsule's padding), when it is on screen. */
+    private fun floatingBar(s: Shot): Rect? {
+        val tabs = s.nodes.filter { it.isIconTab() }.map { it.unclipped() }
+        if (tabs.isEmpty()) return null
+        val pad = Tokens.Size.barPadding.value * s.density
+        return Rect(tabs.minOf { it.left } - pad, tabs.minOf { it.top } - pad, tabs.maxOf { it.right } + pad, tabs.maxOf { it.bottom } + pad)
+    }
+
+    /** A tab whose only label is its icon (the floating tab bar's tabs). */
+    private fun SemanticsNode.isIconTab(): Boolean {
+        if (config.getOrNull(SemanticsProperties.Role) != Role.Tab) return false
+        val inside = buildList { fun walk(n: SemanticsNode) { add(n); n.children.forEach(::walk) }; walk(this@isIconTab) }
+        return inside.none { it.config.contains(SemanticsProperties.Text) }
     }
 
     private fun SemanticsNode.isTouchTarget(): Boolean {
@@ -148,6 +178,7 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
         var checked = 0
         val inner = ceil(s.density).toInt()
         val outer = (TextContrast.RING_DP * s.density).roundToInt()
+        val bar = floatingBar(s)
         for (n in s.nodes) {
             val layout = n.textLayout() ?: continue
             val full = layout.layoutInput.text.text
@@ -155,6 +186,9 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
             val element = "text \"${full.short()}\""
             if (n.disabled()) { skipped += "$element: disabled (WCAG exempts inactive controls)"; continue }
             if (!n.fullyShown(s)) continue
+            // Partly under the floating tab bar: the bar's glass would count as its background (fully under it is
+            // caught below as covered). The same row is checked where it sits clear of the bar.
+            if (bar != null && n.unclipped().overlaps(bar)) { skipped += "$element: partly under the floating tab bar"; continue }
             val m = measure(s, n, layout, inner, outer)
             if (m == null) { skipped += "$element: too little of it on screen"; continue }
             val declared = layout.layoutInput.style.color
@@ -172,7 +206,41 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
                 found += DesignBaseline.line(where, element, "%.2f:1, needs %.1f:1 (%s on %s, %.0f sp)".format(m.ratio, need, hex(m.text), hex(m.worstBackground), sp))
             }
         }
+        checked += iconTabs(s, found, skipped)
         return Result(checked, found, skipped)
+    }
+
+    /**
+     * Tabs whose only label is an icon (the phone's floating tab bar): the icon must stand out from
+     * what is right around it by [IconContrast.REQUIRED]:1 (WCAG non-text contrast), selected or not.
+     */
+    private fun iconTabs(s: Shot, found: MutableList<String>, skipped: MutableList<String>): Int {
+        var checked = 0
+        val outer = (TextContrast.RING_DP * s.density).roundToInt()
+        for (tab in s.nodes) {
+            if (!tab.isIconTab()) continue
+            val inside = buildList { fun walk(n: SemanticsNode) { add(n); n.children.forEach(::walk) }; walk(tab) }
+            val icon = inside.firstOrNull { it.config.getOrNull(SemanticsProperties.Role) == Role.Image && it.config.contains(SemanticsProperties.ContentDescription) } ?: continue
+            val element = "tab icon \"${icon.config[SemanticsProperties.ContentDescription].joinToString(" ").short()}\""
+            if (tab.disabled()) { skipped += "$element: disabled (WCAG exempts inactive controls)"; continue }
+            if (!icon.fullyShown(s)) continue
+            val r = icon.unclipped()
+            val x0 = (r.left.roundToInt() - outer).coerceAtLeast(0); val y0 = (r.top.roundToInt() - outer).coerceAtLeast(0)
+            val x1 = (r.right.roundToInt() + outer).coerceAtMost(s.width); val y1 = (r.bottom.roundToInt() + outer).coerceAtMost(s.height)
+            val rw = x1 - x0; val rh = y1 - y0
+            if (rw <= 0 || rh <= 0) continue
+            val px = IntArray(rw * rh) { s.pixels[(y0 + it / rw) * s.width + x0 + it % rw] }
+            val m = IconContrast.measure(
+                px, rw, rh, r.left.roundToInt() - x0, r.top.roundToInt() - y0, r.right.roundToInt() - x0, r.bottom.roundToInt() - y0,
+                haloInner = ceil(s.density).toInt(), haloOuter = outer,
+            )
+            if (m == null) { skipped += "$element: too little of it on screen"; continue }
+            checked++
+            if (m.ratio < IconContrast.REQUIRED) {
+                found += DesignBaseline.line(where, element, "%.2f:1, needs %.1f:1 (%s on %s, icon)".format(m.ratio, IconContrast.REQUIRED, hex(m.text), hex(m.worstBackground)))
+            }
+        }
+        return checked
     }
 
     private fun measure(s: Shot, n: SemanticsNode, layout: TextLayoutResult, inner: Int, outer: Int): TextContrast.Result? {

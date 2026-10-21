@@ -76,6 +76,7 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
      edge outside a sideways scroller. Long names may end in "…" (DESIGN_STYLE §4.7).
   3. Text contrast from the rendered pixels (ring 1–2.5 dp around the glyphs, worst 10 %): 4.5:1 under
      18 sp, 3:1 from 18 sp. Text covered by something else (under the nav bar) and disabled text are skipped.
+     Icon-only tabs (the phone's floating tab bar) are measured too: icon vs what's around it, 3:1.
   4. Tokens only: no hard-coded colours in `ui/**`, `player/**`, `MainActivity.kt` outside `ui/theme/` and
      `player/PlayerColors.kt` (`Color.Transparent` / `TRANSPARENT` and bit masks are fine).
   5. TV focus always visible: each focusable element (≤ 3 per row) focused vs not must change pixels

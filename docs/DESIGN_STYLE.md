@@ -19,6 +19,7 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
 | `canvas` | surface |
 | `surface1 / 2 / 3` | surfaceContainer / High / Highest |
 | `glass` | surfaceContainerHigh at 72 % (controls on images) |
+| `barGlass` / `barIndicator` / `barShadow` | surfaceContainerHigh at 90 % / primary at 16 % / scrim at 32 % (floating tab bar) |
 | `hairline` / `hairlineStrong` | outlineVariant (55 % / 100 %) |
 | `text` / `textSecondary` / `textTertiary` | onSurface / onSurfaceVariant / outline |
 | `accent`, `accentBright` / `onAccent` | primary / onPrimary |
@@ -62,7 +63,7 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
 - **RingAvatar:** primary → tertiary ring.
 - **GradientProgress:** primary on surfaceHighest.
 - **EmptyState:** icon in a tonal circle.
-- **Phone navigation:** Material `NavigationBar` (Home, Search, Downloads, Settings) with a pill indicator. "Add a magnet / .torrent" is the + in the Home header (no FAB: it covered row titles).
+- **Phone navigation:** a floating, fully rounded tab bar (iOS-style), centred 12 dp above the gesture bar (`Space.barGap`): four icon-only tabs (Home, Search, Downloads, Settings; no labels, each icon named for TalkBack), 56 × 48 dp each (`Size.barTabWidth / barTabHeight`) in a 236 × 60 dp capsule. Surface = `barGlass` (surfaceContainerHigh at 90 %: no blur, so more opaque than `glass`) + hairline + a soft shadow (`barShadow`, the only shadow in the app). Selected = filled icon in the accent on a soft accent pill (`barIndicator`, primary at 16 %) that slides between tabs (`Motion.stateMs`); the rest outlined in `textSecondary`. Hidden on pages stacked on top (title, sources…). Lists clear it with `Space.bottomBarClearance` (system bar + gap + bar). "Add a magnet / .torrent" is the + in the Home header (no FAB: it covered row titles).
 - **TV navigation:** tabs across the top. The selected tab is a filled primary pill, the rest plain text; focus lifts the tab and adds a ring.
 - **Title page (phone):** a Material top app bar (solid, with the title) appears once the header scrolls away.
 
