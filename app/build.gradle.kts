@@ -17,8 +17,8 @@ android {
         applicationId = "com.kirtanya.reel"
         minSdk = 28
         targetSdk = 36
-        versionCode = 48
-        versionName = "0.9.6"
+        versionCode = 49
+        versionName = "0.9.7"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
     }
 

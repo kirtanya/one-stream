@@ -47,11 +47,6 @@ internal object PlayerColors {
     const val CONTROL_SHADOW = 0x66000000
 
 
-    // Subtitles: white on a 60 % black box, with a black drop shadow.
-    const val SUBTITLE_TEXT = 0xFFFFFFFF.toInt()
-    const val SUBTITLE_BOX = 0x99000000.toInt()
-    const val SUBTITLE_EDGE = 0xFF000000.toInt()
-
     /** [c] with alpha [a] (0..255). */
     fun withAlpha(c: Int, a: Int) = (c and 0x00FFFFFF) or (a shl 24)
 }
