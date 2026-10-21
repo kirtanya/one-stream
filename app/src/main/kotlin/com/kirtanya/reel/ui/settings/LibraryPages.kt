@@ -143,7 +143,9 @@ internal fun LazyListScope.sourcePrefsItems(isTv: Boolean) {
         val prefs by app.sourcePrefs.state.collectAsState()
         val installed = installedSources(app)
         val names = remember(installed) {
-            (installed.addons.mapNotNull { runCatching { it.manifest.name }.getOrNull() } + installed.plugins.map { it.name }).distinct()
+            // The same short labels the ranker and the Sources page chips use ("Comet | Real-Debrid" → "Comet").
+            (installed.addons.mapNotNull { runCatching { it.manifest.name }.getOrNull() } + installed.plugins.map { it.name })
+                .map(com.kirtanya.reel.core.sources.SourceFacts::providerLabel).distinct()
         }
         Section("Addons and plugins", note = "Preferred ones come first among equally good sources; blocked ones are never asked.") {
             if (names.isEmpty()) Text("Add addons or plugins first.", style = Tokens.Type.body, color = Tokens.Colors.textTertiary)
