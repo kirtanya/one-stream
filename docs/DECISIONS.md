@@ -5,6 +5,48 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-22 · Player: skip intro / credits, auto-play next, sleep timer, per-title memory, audio tools**
+Decision (user): build the player items of the feature brainstorm (roadmap A).
+Built (Claude): Skip intro / recap / credits chip, Up next at the credits, countdown 5 / 10 / 20 s, Still watching?,
+sleep timer, per-title tracks / picture / speed / delays, speeds 0.75–2×, skip step 10 / 15 / 30 s, night mode,
+voice boost, audio delay, subtitle delay, Search subtitles again. Logic in `core/player/` (tests:
+`PlayerFeaturesTest`); player in `player/` (PlayerOverlays, PlayerStore, DelayRenderers, AudioEffects).
+Also decided (Claude):
+- Intro learning uses only the user's own skips. A burst of seeks (remote presses less than 2.5 s apart) is one jump.
+  A forward jump of 30–150 s that starts in the first 6 minutes of an episode is an intro skip. The window is the
+  median start and median end over the last 8 episodes, kept per show. So the chip shows from the 2nd episode.
+  The chip's own skip is never learned (it would only confirm itself). MKV chapters come first: media3 1.11 puts
+  them in each track's Format.metadata as `Chapter`, and titles like Intro / Opening / OP / Recap / Credits / ED
+  count. MP4 chapters aren't exposed by media3, so they aren't used.
+- Credits: when the user starts the next episode by hand (Play now, Skip credits, Next) with 10 s – 10 min left, that
+  remaining time is stored. Up next then appears at the median from the next episode on (never later than the last
+  30 s), its button reads "Skip credits", and the countdown starts there.
+- Still watching?: counts episodes that ended with no key press or touch, carried from one player to the next through
+  the intent. After 3 it asks instead of auto-playing. No answer in 60 s pauses and closes the player, so the TV can
+  go to its screensaver.
+- Sleep timer: minutes run on the clock and carry into the next episode. End of episode stops auto-play. The last
+  10 s fade the volume, then playback pauses.
+- Per-title tracks, picture and speed go in the shared `TitlePrefsStore` (data session, `0ff0396`), and are written only
+  on an explicit panel choice: automatic picks never become "remembered". Picture also stays the global default.
+  The shared store has no delay or skip fields, so the player keeps its own `files/player_memory.json`
+  (`core/player/PlayerMemory`: per-title audio / subtitle delay, per-show learned intro / credits).
+  **Proposal to the data session:** add `audioDelayMs` / `subtitleDelayMs` to `TitlePrefs` (and sync it phone → TV),
+  then the player moves its delays there. Learned skips can stay per device.
+- Countdown, skip step, night mode and voice boost are app-wide `PlayerOptions` in SharedPreferences "player_options"
+  (`player/PlayerStore`), not in `data/PlaybackSettings`, which belongs to the data session.
+- Audio delay: media3 1.11 has no audio offset. A ForwardingAudioSink reports its position + the delay; video follows
+  the audio clock, so the sound lands later. Subtitle delay: the text renderer (a ForwardingRenderer) is asked for cues
+  at position − delay. Both are live and per title.
+- Night mode / voice boost: `DynamicsProcessing` on the player's audio session (API 28+). Night mode is one
+  full-band compressor (4:1 above −28 dB, +9 dB make-up gain). Voice boost is a pre-EQ (+5 dB at 1–4 kHz, −3 dB
+  under 250 Hz). Either one adds a limiter at −1 dB. If they're on when a video starts, Dolby / DTS is decoded
+  in-app (PCM only), because effects never touch bitstream passthrough. If the device refuses the effect, the rows
+  turn into "Not available on this device" (ReelStats `audioFx ok=false`). Unverified on the R4 (no device run).
+- Design suite: the TV focus check now measures a control where focus scrolls it to. The panel got taller than the
+  TV screen, and the old check measured the pre-scroll spot (0.9 % / out-of-bounds).
+Telemetry: ReelStats `skipChip`, `skipUsed`, `introLearned`, `creditsLearned`, `upNextAtCredits`, `chapters`,
+`stillWatching`, `sleepTimer`, `audioFx`, `subsResearch`, `titlePrefs`, `titlePrefSaved`.
+
 **2026-10-21 · Long-press opens an options sheet**
 Decision (user): long-pressing a Continue watching card shows more options (first item from the feature brainstorm).
 Built (Claude): one `OptionsSheet` (`ui/common/OptionsSheet.kt`). On the phone it's a bottom sheet with the title art on top.
