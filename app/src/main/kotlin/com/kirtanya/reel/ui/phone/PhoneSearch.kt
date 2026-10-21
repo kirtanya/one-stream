@@ -1,6 +1,12 @@
 package com.kirtanya.reel.ui.phone
 
 import android.content.Context
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.rounded.Mic
+import com.kirtanya.reel.ui.common.focusCard
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -169,7 +175,7 @@ fun GenreBrowser(kind: SearchKind, rows: Int, onOpen: (Genre, MediaType) -> Unit
 
 /** Pill search field: icon, text, clear button. On TV it gets the focus ring like every other control. */
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, onSubmit: () -> Unit = {}, height: Dp = 48.dp, placeholder: String = "Films, shows, people…") {
+fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, onSubmit: () -> Unit = {}, height: Dp = 48.dp, placeholder: String = "Films, shows, people…", voice: Boolean = true) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
     var focused by remember { mutableStateOf(false) }
     Row(
@@ -191,6 +197,26 @@ fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = 
                 keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+        if (value.isEmpty() && voice) {
+            // Voice search (the TV remote's mic and the phone's): the first thing heard fills the field.
+            val context = LocalContext.current
+            val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+                r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { onChange(it); onSubmit() }
+            }
+            val intent = remember {
+                Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+                    .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a film, show or person")
+            }
+            if (remember { intent.resolveActivity(context.packageManager) != null }) {
+                Icon(
+                    Icons.Rounded.Mic, "Search by voice", tint = Tokens.Colors.textSecondary,
+                    modifier = Modifier.minimumInteractiveComponentSize().size(28.dp).focusCard(shape = RoundedCornerShape(Tokens.Radius.pill), onClick = {
+                        runCatching { listen.launch(intent) }
+                    }),
+                )
+            }
         }
         if (value.isNotEmpty()) {
             Icon(
@@ -220,7 +246,8 @@ fun SearchResults(
     val (load, retry) = rememberLoad(query) {
         if (query.isEmpty()) catalog.home().firstOrNull()?.items.orEmpty() else catalog.search(query)
     }
-    val results = (load as? Load.Ready)?.value.orEmpty().filter {
+    val hidden = com.kirtanya.reel.ui.home.rememberHiddenKeys()
+    val results = (load as? Load.Ready)?.value.orEmpty().filter { it.ref.toString() !in hidden }.filter {
         when (kind) {
             SearchKind.All -> true
             SearchKind.Films -> it.ref.type == MediaType.MOVIE

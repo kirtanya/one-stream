@@ -1,5 +1,6 @@
 package com.kirtanya.reel.ui.tv
 
+import com.kirtanya.reel.ui.home.withoutHidden
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +60,9 @@ import com.kirtanya.reel.ui.common.rememberLoad
 import com.kirtanya.reel.ui.common.rememberWatchlist
 import com.kirtanya.reel.ui.common.summaryParts
 import com.kirtanya.reel.ui.nav.Dest
+import com.kirtanya.reel.ui.home.HomeLayout
+import com.kirtanya.reel.ui.home.RowIds
+import com.kirtanya.reel.ui.home.TitleRow
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.delay
 
@@ -97,14 +101,19 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
     val (load, retry) = rememberLoad(Unit) { catalog.home() }
     val continueItems = rememberContinueWatching()
     val myList = rememberWatchlist()
+    val because = com.kirtanya.reel.ui.home.rememberBecauseYouWatched()
+    val hidden = com.kirtanya.reel.ui.home.rememberHiddenKeys()
+    // Shows you follow (My list, Continue watching) with an episode out this week or coming soon.
+    val followed = (myList.map { it.ref } + com.kirtanya.reel.ui.home.continueTitles(continueItems).map { it.ref }).filter { it.type == com.kirtanya.reel.core.tmdb.MediaType.TV }
+    val newEpisodes = com.kirtanya.reel.ui.home.rememberNewEpisodes(followed)
     when (load) {
         Load.Loading -> LoadingBox(Modifier.padding(top = TvTopBarHeight))
         is Load.Failed -> TvHomeProblem("Couldn't load today's titles", load.message) { retry() }
         is Load.Ready -> {
             // TMDB answered but with nothing to show (e.g. a regional hiccup): say so instead of crashing.
-            val rows = load.value.filter { it.items.isNotEmpty() }
+            val rows = load.value.map { it.copy(items = it.items.withoutHidden(hidden)) }.filter { it.items.isNotEmpty() }
             if (rows.isEmpty()) TvHomeProblem("Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.") { retry() }
-            else TvHomeContent(rows.map { it.title to it.items }, continueItems, myList, onOpen, onOpenDest)
+            else TvHomeContent(rows.map { it.title to it.items }, continueItems, myList, because?.let { it.first to it.second.withoutHidden(hidden) }?.takeIf { it.second.isNotEmpty() }, newEpisodes, onOpen, onOpenDest)
         }
     }
 }
@@ -125,6 +134,8 @@ private fun TvHomeContent(
     rows: List<Pair<String, List<TitleSummary>>>,
     continueItems: List<ContinueItem>,
     myList: List<TitleSummary>,
+    because: Pair<String, List<TitleSummary>>?,
+    newEpisodes: List<com.kirtanya.reel.core.tmdb.CalendarEntry>,
     onOpen: (TitleSummary) -> Unit,
     onOpenDest: (Dest) -> Unit,
 ) {
@@ -196,45 +207,46 @@ private fun TvHomeContent(
                 contentPadding = PaddingValues(top = Tokens.Space.l, bottom = Tokens.Space.tvSafeV),
                 verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
             ) {
-                if (continueItems.isNotEmpty()) {
-                    item(key = "continue") {
-                        ContinueRow(
-                            continueItems,
-                            cardWidth = 240.dp,
-                            sidePadding = Tokens.Space.tvSafeH,
-                            onOpenDest = onOpenDest,
-                            onFocus = { focused = it.info() },
-                            firstFocus = firstCard,
-                            listState = continueState,
-                        )
+                // Rows in the order chosen in Settings → Home screen; hidden ones left out.
+                val available = buildList {
+                    if (continueItems.isNotEmpty()) add(RowIds.CONTINUE)
+                    if (newEpisodes.isNotEmpty()) add(RowIds.NEW_EPISODES)
+                    if (myList.isNotEmpty()) add(RowIds.MY_LIST)
+                    if (because != null) add(RowIds.BECAUSE)
+                    rows.forEachIndexed { i, r ->
+                        add(RowIds.tmdb(r.first))
+                        if (i == 0) add(RowIds.SERVICES)
                     }
                 }
-                if (myList.isNotEmpty()) {
-                    item(key = "mylist") {
-                        PosterRow(
-                            "My list", myList, posterWidth = 112.dp, sidePadding = Tokens.Space.tvSafeH, onOpen = onOpen, showText = false,
-                            onFocus = { focused = it.info() },
-                            onSeeAll = { onOpenDest(Dest.Collection("My list", items = myList)) },
-                        )
-                    }
-                }
-                itemsIndexed(rows, key = { _, row -> row.first }) { i, (title, items) ->
-                    PosterRow(
-                        title = title,
-                        items = items,
-                        posterWidth = 112.dp,
-                        sidePadding = Tokens.Space.tvSafeH,
-                        onOpen = onOpen,
-                        showText = false,
-                        onFocus = { focused = it.info() },
-                        firstFocus = if (i == 0 && continueItems.isEmpty()) firstCard else null,
-                        onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) },
-                        listState = if (i == 0) firstRowState else rememberLazyListState(),
-                    )
-                    // "On your services" after the first row, like a second hero.
-                    if (i == 0) {
-                        Spacer(Modifier.height(Tokens.Space.l))
-                        ServicesRow(Tokens.Space.tvSafeH, 60.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
+                val arranged = HomeLayout.arrange(available)
+                // The remote starts on the first row that has cards (services are avatars, not a start point).
+                val firstRow = arranged.firstOrNull { it != RowIds.SERVICES }
+                val firstTmdb = arranged.firstOrNull { it.startsWith("tmdb:") }
+                arranged.forEach { id ->
+                    item(key = id) {
+                        val first = if (id == firstRow) firstCard else null
+                        when (id) {
+                            RowIds.CONTINUE -> ContinueRow(
+                                continueItems, cardWidth = 240.dp, sidePadding = Tokens.Space.tvSafeH, onOpenDest = onOpenDest,
+                                onFocus = { focused = it.info() }, firstFocus = first, listState = continueState,
+                            )
+                            RowIds.MY_LIST -> TitleRow(
+                                "My list", myList, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first,
+                                onSeeAll = { onOpenDest(Dest.Collection("My list", items = myList)) },
+                            )
+                            RowIds.BECAUSE -> because?.let { (title, items) ->
+                                TitleRow(title, items, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first, onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) })
+                            }
+                            RowIds.NEW_EPISODES -> com.kirtanya.reel.ui.home.NewEpisodesRow(newEpisodes, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first)
+                            RowIds.SERVICES -> ServicesRow(Tokens.Space.tvSafeH, 60.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
+                            else -> rows.firstOrNull { RowIds.tmdb(it.first) == id }?.let { (title, items) ->
+                                TitleRow(
+                                    title, items, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first,
+                                    onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) },
+                                    listState = if (id == firstTmdb) firstRowState else rememberLazyListState(),
+                                )
+                            }
+                        }
                     }
                 }
             }

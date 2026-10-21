@@ -26,6 +26,10 @@
         <!-- One Launcher reads our launcher provider: we must see it to check its signing certificate. -->
         <package android:name="com.kirtanya.one_launcher" />
         <package android:name="com.kirtanya.one_launcher.tv" />
+        <!-- Voice search in Search (the mic shows only when something can listen). -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 
     <!-- One APK for phone and TV. -->

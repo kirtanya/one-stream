@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
         val isTv = forceTv || ReelApp.get(this).isTv
         if (forceTv) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         com.kirtanya.reel.ui.theme.AccentState.init(this, tv = isTv)
+        com.kirtanya.reel.ui.home.HomeLayout.init(this)
         if (!isTv && Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {

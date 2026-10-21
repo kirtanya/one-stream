@@ -10,6 +10,8 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -40,4 +42,22 @@ fun <T> LoadView(load: Load<T>, retry: Retry, modifier: Modifier = Modifier, con
         is Load.Failed -> ErrorBox(load.message, { retry() }, modifier)
         is Load.Ready -> content(load.value)
     }
+}
+
+/** True while the device has no validated internet (Home says "You're offline" instead of an error). */
+@Composable
+fun rememberOffline(): Boolean {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+    fun online() = cm?.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    var offline by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(!online()) }
+    androidx.compose.runtime.DisposableEffect(cm) {
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) { offline = !online() }
+            override fun onLost(network: android.net.Network) { offline = !online() }
+        }
+        runCatching { cm?.registerDefaultNetworkCallback(callback) }
+        onDispose { runCatching { cm?.unregisterNetworkCallback(callback) } }
+    }
+    return offline
 }

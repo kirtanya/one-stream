@@ -34,6 +34,9 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Extension
@@ -108,20 +111,23 @@ enum class SettingsPage(val title: String, val icon: ImageVector) {
     Appearance("Appearance", Icons.Rounded.Palette),
     Playback("Playback", Icons.Rounded.PlayCircle),
     Subtitles("Subtitles", Icons.Rounded.Subtitles),
+    History("History", Icons.Rounded.History),
+    SourcePrefs("Source preferences", Icons.Rounded.Tune),
     Addons("Addons", Icons.Rounded.Hub),
     Store("Addon store", Icons.Rounded.Storefront),
     Plugins("Plugins", Icons.Rounded.Extension),
     PhoneTv("Phone & TV", Icons.Rounded.Devices),
     HomeStorage("Home storage", Icons.Rounded.Dns),
+    HomeLayout("Home screen", Icons.Rounded.Dashboard),
     Storage("Storage", Icons.Rounded.Storage),
     About("About", Icons.Rounded.Info),
 }
 
 private val GROUPS = listOf(
-    "Watching" to listOf(SettingsPage.Playback, SettingsPage.Subtitles),
-    "Sources" to listOf(SettingsPage.Addons, SettingsPage.Store, SettingsPage.Plugins),
+    "Watching" to listOf(SettingsPage.Playback, SettingsPage.Subtitles, SettingsPage.History),
+    "Sources" to listOf(SettingsPage.SourcePrefs, SettingsPage.Addons, SettingsPage.Store, SettingsPage.Plugins),
     "Devices" to listOf(SettingsPage.PhoneTv, SettingsPage.HomeStorage),
-    "App" to listOf(SettingsPage.Appearance, SettingsPage.Storage, SettingsPage.About),
+    "App" to listOf(SettingsPage.Appearance, SettingsPage.HomeLayout, SettingsPage.Storage, SettingsPage.About),
 )
 
 /**
@@ -213,6 +219,9 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
         SettingsPage.PhoneTv -> devices
         SettingsPage.Storage -> if (cacheBytes < 0) "Stream cache" else "Stream cache · ${formatBytes(cacheBytes)}"
         SettingsPage.HomeStorage -> homeStorageSummary(home, isTv)
+        SettingsPage.HomeLayout -> homeLayoutSummary(isTv)
+        SettingsPage.History -> historySummary(app)
+        SettingsPage.SourcePrefs -> sourcePrefsSummary(app.sourcePrefs.state.value)
         SettingsPage.About -> "One Stream ${BuildConfig.VERSION_NAME}"
     }
 
@@ -500,25 +509,31 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
             SettingsPage.PhoneTv -> item { Section { SyncContent(isTv) } }
 
             SettingsPage.HomeStorage -> homeStorageItems(isTv)
+            SettingsPage.HomeLayout -> homeLayoutItems(isTv)
+            SettingsPage.History -> historyItems()
+            SettingsPage.SourcePrefs -> sourcePrefsItems(isTv)
 
-            SettingsPage.Storage -> item {
-                Section {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Stream cache", style = Tokens.Type.label, color = Tokens.Colors.text)
-                            Text(formatBytes(cacheBytes), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
-                        }
-                        ReelButton("Clear", {
-                            scope.launch {
-                                withContext(Dispatchers.IO) { app.engine.trimCache(0) }
-                                cacheBytes = withContext(Dispatchers.IO) { app.engine.cacheBytes() }
-                                message = "Stream cache cleared"
+            SettingsPage.Storage -> {
+                item {
+                    Section {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Stream cache", style = Tokens.Type.label, color = Tokens.Colors.text)
+                                Text(formatBytes(cacheBytes), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
                             }
-                        }, kind = ButtonKind.Ghost, icon = Icons.Rounded.Delete)
+                            ReelButton("Clear", {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { app.engine.trimCache(0) }
+                                    cacheBytes = withContext(Dispatchers.IO) { app.engine.cacheBytes() }
+                                    message = "Stream cache cleared"
+                                }
+                            }, kind = ButtonKind.Ghost, icon = Icons.Rounded.Delete)
+                        }
                     }
                 }
+    
+                autoDownloadItems(isTv)
             }
-
             SettingsPage.About -> item {
                 Section {
                     Text("One Stream ${BuildConfig.VERSION_NAME}", style = Tokens.Type.heading, color = Tokens.Colors.text, modifier = Modifier.focusCard(scale = 1f) {})

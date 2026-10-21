@@ -33,6 +33,12 @@ interface Catalog {
     suspend fun person(id: Int): PersonDetails
     /** A title by IMDb id (launcher links); null when TMDB doesn't know it. */
     suspend fun findByImdb(imdbId: String, type: MediaType): TitleSummary?
+    /** A film series' parts, in release order. Defaults keep render fakes short. */
+    suspend fun collection(id: Int): com.kirtanya.reel.core.tmdb.CollectionDetails = throw UnsupportedOperationException()
+    /** Discover with filters (genre grids with sort / rating / decade chips); 20 a page. */
+    suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int = 1): List<TitleSummary> = byGenre(filter.type, filter.genres.first(), page)
+    /** Episodes of [shows] airing (or aired) between [from] and [to]. */
+    suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate): List<com.kirtanya.reel.core.tmdb.CalendarEntry> = emptyList()
 }
 
 /** Null in the app (screens use TMDB); renders provide fixed data. */
@@ -56,4 +62,7 @@ private class TmdbCatalog(private val tmdb: TmdbRepository) : Catalog {
     override suspend fun byGenre(type: MediaType, genreId: Int, page: Int) = tmdb.byGenre(type, genreId, page)
     override suspend fun person(id: Int) = tmdb.person(id)
     override suspend fun findByImdb(imdbId: String, type: MediaType) = tmdb.findByImdb(imdbId, type)
+    override suspend fun collection(id: Int) = tmdb.collection(id)
+    override suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int) = tmdb.discover(filter, page)
+    override suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate) = tmdb.calendar(shows, from, to)
 }

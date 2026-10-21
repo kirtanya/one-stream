@@ -1,5 +1,6 @@
 package com.kirtanya.reel.ui.phone
 
+import com.kirtanya.reel.ui.home.withoutHidden
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -70,6 +71,12 @@ import com.kirtanya.reel.ui.common.rememberWatchlistToggle
 import com.kirtanya.reel.ui.common.summaryParts
 import com.kirtanya.reel.ui.common.watchlistIcon
 import com.kirtanya.reel.ui.nav.Dest
+import com.kirtanya.reel.ui.home.HeroSource
+import com.kirtanya.reel.ui.home.HomeLayout
+import com.kirtanya.reel.ui.home.RowIds
+import com.kirtanya.reel.ui.home.TitleRow
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.CloudOff
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.delay
 
@@ -83,6 +90,11 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd:
     val (load, retry) = rememberLoad(Unit) { catalog.home() }
     val continueItems = rememberContinueWatching()
     val myList = rememberWatchlist()
+    val because = com.kirtanya.reel.ui.home.rememberBecauseYouWatched()
+    val hidden = com.kirtanya.reel.ui.home.rememberHiddenKeys()
+    // Shows you follow (My list, Continue watching) with an episode out this week or coming soon.
+    val followed = (myList.map { it.ref } + com.kirtanya.reel.ui.home.continueTitles(continueItems).map { it.ref }).filter { it.type == com.kirtanya.reel.core.tmdb.MediaType.TV }
+    val newEpisodes = com.kirtanya.reel.ui.home.rememberNewEpisodes(followed)
     val gutter = Tokens.Space.phoneGutter
     val heroHeight = rememberHeroHeight()
 
@@ -91,19 +103,25 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd:
         is Load.Failed -> HomeProblem("Couldn't load today's titles", load.message, onAdd) { retry() }
         is Load.Ready -> {
             // TMDB answered but with nothing to show (e.g. a regional hiccup): say so instead of crashing.
-            val rows = load.value.filter { it.items.isNotEmpty() }
+            val rows = load.value.map { it.copy(items = it.items.withoutHidden(hidden)) }.filter { it.items.isNotEmpty() }
             if (rows.isEmpty()) {
                 HomeProblem("Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.", onAdd) { retry() }
                 return
             }
-            val hero = rows.first().items.take(6)
+            // Settings → Home screen picks what the hero shows (falls back to trending when that's empty).
+            val hero = when (HomeLayout.hero) {
+                HeroSource.MyList -> myList
+                HeroSource.Continue -> com.kirtanya.reel.ui.home.continueTitles(continueItems)
+                HeroSource.Trending -> emptyList()
+            }.ifEmpty { rows.first().items }.take(6)
+            val surprise = { (rows.flatMap { it.items } + myList).randomOrNull()?.let(onOpen) }
             val pager = rememberPagerState { hero.size }
             // The whole app takes the colour of the title in the hero (Settings → Appearance).
             rememberAmbientColor(TmdbImages.poster(hero.getOrNull(pager.currentPage)?.posterPath, "w185"))
             val list = rememberLazyListState()
             // Only while the hero is on screen: otherwise the app's colour would keep changing under the rows.
             val heroShowing by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
-            AutoAdvance(pager, enabled = heroShowing)
+            AutoAdvance(pager, enabled = heroShowing && HomeLayout.heroAutoAdvance)
 
             LazyColumn(
                 Modifier.fillMaxSize().background(Tokens.Colors.canvas),
@@ -119,24 +137,35 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd:
                                     if (item.ref.type == MediaType.MOVIE) onOpenDest(Dest.Sources(item.ref)) else onOpen(item)
                                 })
                             }
-                            HomeHeader(onAdd)
+                            HomeHeader(onAdd, onSurprise = { surprise() })
                         }
                         PagerDots(hero.size, pager.currentPage, Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
-                if (continueItems.isNotEmpty()) {
-                    item(key = "continue") { ContinueRow(continueItems, cardWidth = 220.dp, sidePadding = gutter, onOpenDest = onOpenDest) }
-                }
-                if (myList.isNotEmpty()) {
-                    item(key = "mylist") {
-                        PosterRow("My list", myList, posterWidth = 104.dp, sidePadding = gutter, onOpen = onOpen, onSeeAll = { onOpenDest(Dest.Collection("My list", items = myList)) })
+                // Rows in the order chosen in Settings → Home screen; hidden ones left out.
+                val available = buildList {
+                    if (continueItems.isNotEmpty()) add(RowIds.CONTINUE)
+                    if (newEpisodes.isNotEmpty()) add(RowIds.NEW_EPISODES)
+                    if (myList.isNotEmpty()) add(RowIds.MY_LIST)
+                    if (because != null) add(RowIds.BECAUSE)
+                    rows.forEachIndexed { i, r ->
+                        add(RowIds.tmdb(r.title))
+                        if (i == 0) add(RowIds.SERVICES)
                     }
                 }
-                item(key = "services") {
-                    ServicesRow(gutter, 52.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
-                }
-                items(rows, key = { it.title }) { row ->
-                    PosterRow(row.title, row.items, posterWidth = 104.dp, sidePadding = gutter, onOpen = onOpen, onSeeAll = { onOpenDest(Dest.Collection(row.title, items = row.items)) })
+                HomeLayout.arrange(available).forEach { id ->
+                    item(key = id) {
+                        when (id) {
+                            RowIds.CONTINUE -> ContinueRow(continueItems, cardWidth = 220.dp, sidePadding = gutter, onOpenDest = onOpenDest)
+                            RowIds.MY_LIST -> TitleRow("My list", myList, gutter, onOpen, isTv = false, onSeeAll = { onOpenDest(Dest.Collection("My list", items = myList)) })
+                            RowIds.BECAUSE -> because?.let { (title, items) -> TitleRow(title, items.withoutHidden(hidden), gutter, onOpen, isTv = false, onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) }) }
+                            RowIds.NEW_EPISODES -> com.kirtanya.reel.ui.home.NewEpisodesRow(newEpisodes, gutter, onOpen, isTv = false)
+                            RowIds.SERVICES -> ServicesRow(gutter, 52.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
+                            else -> rows.firstOrNull { RowIds.tmdb(it.title) == id }?.let { row ->
+                                TitleRow(row.title, row.items, gutter, onOpen, isTv = false, onSeeAll = { onOpenDest(Dest.Collection(row.title, items = row.items)) })
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -164,7 +193,7 @@ private fun AutoAdvance(pager: PagerState, enabled: Boolean) {
 
 /** Brand on the left, Add a link on the right; floats over the hero's top scrim. */
 @Composable
-private fun HomeHeader(onAdd: () -> Unit) {
+private fun HomeHeader(onAdd: () -> Unit, onSurprise: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(start = Tokens.Space.phoneGutter, end = Tokens.Space.s, top = Tokens.Space.s),
         verticalAlignment = Alignment.CenterVertically,
@@ -175,6 +204,7 @@ private fun HomeHeader(onAdd: () -> Unit) {
             Text(greeting(), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
             Text("One Stream", style = Tokens.Type.title, color = Tokens.Colors.text, maxLines = 1)
         }
+        if (onSurprise != null) GlassIconButton(Icons.Rounded.Shuffle, "Surprise me", onSurprise)
         GlassIconButton(Icons.Rounded.Add, "Add a magnet or .torrent", onAdd)
     }
 }
@@ -267,9 +297,15 @@ private fun Bar(width: Dp, height: Dp, pill: Boolean = false) {
 /** Failed or empty Home: the header stays, with what happened and Try again. */
 @Composable
 private fun HomeProblem(title: String, body: String, onAdd: () -> Unit, onRetry: () -> Unit) {
+    val offline = com.kirtanya.reel.ui.common.rememberOffline()
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         HomeHeader(onAdd)
-        EmptyState(Icons.Rounded.Refresh, title, body, Modifier.align(Alignment.Center)) {
+        EmptyState(
+            if (offline) Icons.Rounded.CloudOff else Icons.Rounded.Refresh,
+            if (offline) "You're offline" else title,
+            if (offline) "Downloads still play. Home comes back when you're connected." else body,
+            Modifier.align(Alignment.Center),
+        ) {
             ReelButton("Try again", onRetry, kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
         }
     }

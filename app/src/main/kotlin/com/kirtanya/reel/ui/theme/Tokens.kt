@@ -215,6 +215,13 @@ object Tokens {
 
     /** The cinematic layer: heroes, title logos, the meta line. */
     object Cinema {
+        /** Poster widths in rows: phone roomy (3 across) / compact (4 across), TV. */
+        val posterRoomy = 104.dp
+        val posterCompact = 80.dp
+        val posterTv = 112.dp
+        /** Wide (16:9) cards when Home is set to Wide rows. */
+        val wideCardPhone = 200.dp
+        val wideCardTv = 240.dp
         /** Phone hero (Home) and title header, as a share of the screen height, with limits. */
         const val heroShare = 0.66f
         val heroMin = 460.dp

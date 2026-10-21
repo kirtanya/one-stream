@@ -48,6 +48,12 @@ import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
 import com.kirtanya.reel.ui.nav.Dest
+import com.kirtanya.reel.core.browse.Era
+import com.kirtanya.reel.core.browse.MinRating
+import com.kirtanya.reel.core.browse.TitleFilter
+import com.kirtanya.reel.core.browse.TitleSort
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Close
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.CancellationException
 
@@ -59,14 +65,21 @@ import kotlinx.coroutines.CancellationException
 fun CollectionScreen(dest: Dest.Collection, isTv: Boolean, onBack: () -> Unit, onOpen: (TitleSummary) -> Unit) {
     val catalog = rememberCatalog()
     if (dest.genre != null) {
-        val paging = rememberGenrePaging(dest, catalog)
-        val subtitle = (if (dest.genreType == MediaType.TV) "Shows" else "Films") + " · most popular first"
+        val filterState = rememberTitleFilter()
+        val paging = rememberGenrePaging(dest, catalog, filterState.value)
+        val subtitle = (if (dest.genreType == MediaType.TV) "Shows" else "Films") + " · " + when (filterState.value.sort) {
+            TitleSort.Popular -> "most popular first"
+            TitleSort.TopRated -> "top rated first"
+            TitleSort.Newest -> "newest first"
+            TitleSort.Az -> "A to Z"
+        }
         TitleGrid(
             isTv = isTv, onBack = onBack, onOpen = onOpen, items = paging.items,
             backdrop = paging.items.firstOrNull { it.backdropPath != null }?.backdropPath,
             poster = paging.items.firstOrNull()?.posterPath,
             header = { GridHeading(dest.title, subtitle, isTv) },
             onNearEnd = paging::loadMore,
+            filterState = filterState,
             footer = {
                 when {
                     paging.failed != null && paging.items.isEmpty() -> ErrorBox(paging.failed!!, paging::retry, Modifier.height(240.dp))
@@ -183,8 +196,15 @@ private fun TitleGrid(
     header: @Composable () -> Unit,
     footer: @Composable () -> Unit,
     onNearEnd: (() -> Unit)? = null,
+    filterState: androidx.compose.runtime.MutableState<TitleFilter> = rememberTitleFilter(),
 ) {
     rememberAmbientColor(TmdbImages.poster(poster, "w185"))
+    val filter = filterState.value
+    fun set(f: TitleFilter) { filterState.value = f }
+    val allItems = items
+    val hidden = com.kirtanya.reel.ui.home.rememberHiddenKeys()
+    // Not remembered: genre pages grow one list in place, so a cached result would go stale (cheap: ≤ 200 titles).
+    @Suppress("NAME_SHADOWING") val items = filter.apply(allItems.filterNot { it.ref.toString() in hidden })
     val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
     val firstFocus = remember { FocusRequester() }
     val first = items.firstOrNull()
@@ -216,10 +236,30 @@ private fun TitleGrid(
                     // TV: room under the heading for the first poster's focus lift.
                     Modifier.then(if (isTv) Modifier.padding(top = Tokens.Space.xxxl, bottom = Tokens.Space.m) else Modifier.statusBarsPadding().padding(top = 96.dp)),
                     verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
-                ) { header() }
+                ) {
+                    header()
+                    // Only worth it with enough titles to narrow down.
+                    if (allItems.size >= 8) {
+                        FilterChips(
+                            filter,
+                            onSort = { set(filter.copy(sort = it)) }, onRating = { set(filter.copy(rating = it)) }, onEra = { set(filter.copy(era = it)) },
+                            onClear = { set(TitleFilter()) },
+                            shown = items.size, of = allItems.size,
+                        )
+                    }
+                }
             }
             posterCells(items, firstFocus, onOpen)
-            item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { footer() } }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (items.isEmpty() && allItems.isNotEmpty()) {
+                        EmptyState(Icons.Rounded.Movie, "Nothing matches", "None of the ${allItems.size} titles loaded fit these choices.") {
+                            ReelButton("Clear", { set(TitleFilter()) }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Close)
+                        }
+                    }
+                    footer()
+                }
+            }
         }
         if (!isTv) {
             TopFade()
@@ -228,11 +268,46 @@ private fun TitleGrid(
     }
 }
 
+/**
+ * Sort, minimum rating and decade, as chips that step to the next choice when pressed (one press on
+ * the remote, no menus). Chips scroll sideways rather than squeezing.
+ */
+@Composable
+private fun FilterChips(
+    filter: TitleFilter,
+    onSort: (TitleSort) -> Unit,
+    onRating: (MinRating) -> Unit,
+    onEra: (Era) -> Unit,
+    onClear: () -> Unit,
+    shown: Int,
+    of: Int,
+) {
+    fun <T : Enum<T>> next(v: T, all: List<T>) = all[(all.indexOf(v) + 1) % all.size]
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+            item { ReelButton(filter.sort.label, { onSort(next(filter.sort, TitleSort.entries)) }, kind = if (filter.sort != TitleSort.Popular) ButtonKind.Primary else ButtonKind.Ghost, icon = Icons.AutoMirrored.Rounded.Sort) }
+            item { ReelButton(filter.rating.label, { onRating(next(filter.rating, MinRating.entries)) }, kind = if (filter.rating != MinRating.Any) ButtonKind.Primary else ButtonKind.Ghost) }
+            item { ReelButton(filter.era.label, { onEra(next(filter.era, Era.entries)) }, kind = if (filter.era != Era.Any) ButtonKind.Primary else ButtonKind.Ghost) }
+            if (!filter.isDefault) item { ReelButton("Clear", onClear, kind = ButtonKind.Ghost, icon = Icons.Rounded.Close) }
+        }
+        if (!filter.isDefault) Text("Showing $shown of $of loaded", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
+    }
+}
+
 private fun LazyGridScope.posterCells(items: List<TitleSummary>, firstFocus: FocusRequester, onOpen: (TitleSummary) -> Unit) {
     itemsIndexed(items, key = { _, it -> it.ref.toString() }) { i, item ->
         PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
     }
 }
+
+/** Sort / rating / decade chips, kept while you open a title and come back. */
+@Composable
+private fun rememberTitleFilter(): androidx.compose.runtime.MutableState<TitleFilter> = rememberSaveable(
+    saver = androidx.compose.runtime.saveable.Saver(
+        save = { listOf(it.value.sort.name, it.value.rating.name, it.value.era.name) },
+        restore = { mutableStateOf(TitleFilter(TitleSort.valueOf(it[0]), MinRating.valueOf(it[1]), Era.valueOf(it[2]))) },
+    ),
+) { mutableStateOf(TitleFilter()) }
 
 /** Pages of a genre (20 a page, up to 10 pages), fetched as the grid nears its end. */
 private class GenrePaging(private val load: suspend (page: Int) -> List<TitleSummary>) {
@@ -283,8 +358,12 @@ private class GenrePaging(private val load: suspend (page: Int) -> List<TitleSum
 }
 
 @Composable
-private fun rememberGenrePaging(dest: Dest.Collection, catalog: Catalog): GenrePaging {
-    val paging = remember(dest) { GenrePaging { page -> catalog.byGenre(dest.genreType ?: MediaType.MOVIE, dest.genre!!.id, page) } }
+private fun rememberGenrePaging(dest: Dest.Collection, catalog: Catalog, filter: TitleFilter): GenrePaging {
+    // A new choice of chips starts the pages again, asked of TMDB with those filters.
+    val paging = remember(dest, filter) {
+        val type = dest.genreType ?: MediaType.MOVIE
+        GenrePaging { page -> if (filter.isDefault) catalog.byGenre(type, dest.genre!!.id, page) else catalog.discover(filter.toDiscover(type, dest.genre!!.id), page) }
+    }
     LaunchedEffect(paging, paging.request) { paging.next() }
     return paging
 }

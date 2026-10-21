@@ -109,7 +109,7 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         PageList(isTv) {
             item { PageTitle("Addon store", "Addons from Stremio's official catalog and any catalogs you add.", isTv, onBack) }
-            item { SearchField(query.text, { query = query.copy(text = it) }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus), placeholder = "Search addons") }
+            item { SearchField(query.text, { query = query.copy(text = it) }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus), placeholder = "Search addons", voice = false) }
             item { StoreChips(facets, query) { query = it } }
             item {
                 when {
