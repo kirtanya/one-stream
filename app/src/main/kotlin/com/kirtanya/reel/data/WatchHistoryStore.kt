@@ -40,6 +40,16 @@ class WatchHistoryStore(context: Context) {
         update { list -> (listOf(entry) + list.filterNot { it.playback.key == playback.key }).take(MAX_ENTRIES) }
     }
 
+    /**
+     * Counts a film / episode as watched without playing it. [playback] is the history entry if it has
+     * one, else `Playback.watchedMarker(...)`. Then Continue watching shows the next episode (Up next).
+     */
+    fun markWatched(playback: Playback, runtimeMs: Long? = null) =
+        update { list -> com.kirtanya.reel.core.playback.WatchMarks.watched(list, playback, runtimeMs, System.currentTimeMillis()).take(MAX_ENTRIES) }
+
+    /** Forgets one film / episode ([Playback.key]): it starts from the top again. */
+    fun markUnwatched(key: String) = update { list -> com.kirtanya.reel.core.playback.WatchMarks.unwatched(list, key) }
+
     /** Removes everything for a film or show from Continue watching. */
     fun removeTitle(titleKey: String) = update { list -> list.filterNot { it.playback.titleKey == titleKey } }
 

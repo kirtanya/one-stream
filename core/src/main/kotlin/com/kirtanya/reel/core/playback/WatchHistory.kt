@@ -34,6 +34,24 @@ sealed interface ContinueItem {
     data class UpNext(override val entry: WatchEntry, val next: EpisodeNumber) : ContinueItem
 }
 
+/** "Mark watched" / "Mark unwatched" without playing (the long-press options sheet). */
+object WatchMarks {
+    /**
+     * [entries] with [playback] counted as finished, newest. A film / episode already in history keeps
+     * its real source (so "Last played" still knows it); otherwise [playback] is the stand-in from
+     * [Playback.watchedMarker]. [runtimeMs] unknown → 1 ms, still finished.
+     */
+    fun watched(entries: List<WatchEntry>, playback: Playback, runtimeMs: Long?, now: Long): List<WatchEntry> {
+        val old = entries.firstOrNull { it.playback.key == playback.key }
+        val duration = old?.durationMs?.takeIf { it > 0 } ?: runtimeMs?.takeIf { it > 0 } ?: 1L
+        val p = old?.playback?.takeUnless { it.markedOnly }?.copy(next = playback.next ?: old.playback.next) ?: playback
+        return listOf(WatchEntry(p, duration, duration, now)) + entries.filterNot { it.playback.key == playback.key }
+    }
+
+    /** Forgets [key] (a film or one episode): it plays from the start and Continue watching moves back. */
+    fun unwatched(entries: List<WatchEntry>, key: String): List<WatchEntry> = entries.filterNot { it.playback.key == key }
+}
+
 object ContinueWatching {
     private const val MIN_WATCHED_MS = 60_000L
     private const val MAX_AGE_MS = 90L * 24 * 60 * 60 * 1000

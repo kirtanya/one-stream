@@ -38,7 +38,27 @@ data class Playback(
     /** "Game of Thrones · S1 E3" — what the player shows. */
     val displayTitle: String get() = listOfNotNull(title, episode?.label).joinToString(" · ")
 
+    /** Marked watched by hand, never played: there's no source to play again (see [watchedMarker]). */
+    val markedOnly: Boolean get() = source.provider == MARKED_PROVIDER
+
     companion object {
+        /** [Source.provider] of the stand-in source on an entry that was marked watched without playing. */
+        const val MARKED_PROVIDER = "marked-watched"
+
+        /**
+         * A film / episode marked watched without being played. Its stand-in source is a service link
+         * with no address, so nothing ever plays it: Up next searches sources afresh, and ranking,
+         * "Last played" and next-source picks never match it.
+         */
+        fun watchedMarker(
+            titleKey: String, key: String, title: String, tmdbType: String?, tmdbId: Int?, episode: EpisodeNumber?,
+            next: EpisodeNumber?, posterPath: String? = null, backdropPath: String? = null, stillPath: String? = null,
+        ) = Playback(
+            key = key, titleKey = titleKey, title = title, subtitle = episode?.label, tmdbType = tmdbType, tmdbId = tmdbId,
+            episode = episode, posterPath = posterPath, backdropPath = backdropPath, stillPath = stillPath, next = next,
+            source = Source(kind = SourceKind.EXTERNAL, title = "Marked watched", provider = MARKED_PROVIDER, quality = com.kirtanya.reel.core.sources.Quality()),
+        )
+
         fun keyFor(tmdbType: String, tmdbId: Int, episode: EpisodeNumber?) =
             "$tmdbType:$tmdbId" + if (episode != null) ":s${episode.season}e${episode.episode}" else ""
 
