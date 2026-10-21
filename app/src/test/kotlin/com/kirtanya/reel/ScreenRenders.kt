@@ -333,6 +333,24 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun downloadsEmpty() = render("downloads-empty", data = RenderData(torrents = emptyList(), storage = 0L to 51_000_000_000L), content = phone { select(Tab.Downloads) })
 
     @Test fun settings() = render("settings", content = phone { select(Tab.Settings) })
+    // Home screen, History, Source preferences (Settings), a rearranged Home in wide rows.
+    @Test fun settingsHomeLayout() {
+        com.kirtanya.reel.ui.home.HomeLayout.init(app); com.kirtanya.reel.ui.home.HomeLayout.reset()
+        com.kirtanya.reel.ui.home.HomeLayout.setShown(com.kirtanya.reel.ui.home.RowIds.SERVICES, false)
+        try { settingsPage(SettingsPage.HomeLayout) } finally { com.kirtanya.reel.ui.home.HomeLayout.reset() }
+    }
+    @Test fun settingsHistory() {
+        app.hidden.hide(Fake.titles(1, seed = 3).first())
+        try { render("settings-history", history = true, data = RenderData(installed = Fake.installed)) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.History)) } } }
+        finally { Fake.titles(1, seed = 3).first().let { app.hidden.unhide(it.ref) } }
+    }
+    @Test fun settingsSourcePrefs() = settingsPage(SettingsPage.SourcePrefs)
+    @Test fun homeWide() {
+        com.kirtanya.reel.ui.home.HomeLayout.init(app); com.kirtanya.reel.ui.home.HomeLayout.reset()
+        com.kirtanya.reel.ui.home.HomeLayout.choosePosterStyle(com.kirtanya.reel.ui.home.PosterStyle.Wide)
+        com.kirtanya.reel.ui.home.HomeLayout.chooseHero(com.kirtanya.reel.ui.home.HeroSource.MyList)
+        try { render("home-wide", history = true, content = phone()) } finally { com.kirtanya.reel.ui.home.HomeLayout.reset() }
+    }
     @Test fun settingsEnd() = render("settings-end", scrollToEnd = true, content = phone { select(Tab.Settings) })
     private fun settingsPage(page: SettingsPage, data: RenderData? = RenderData(installed = Fake.installed, store = Fake.store)) =
         render("settings-${page.name.lowercase()}", data = data) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(page)) } }
@@ -454,6 +472,16 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvContinueUndo() = render("continue-undo", tv = true, history = true) { UndoScene { tvApp()() } }
     @Test @Config(qualifiers = TV) fun tvDownloadsEmpty() = render("downloads-empty", tv = true, data = RenderData(torrents = emptyList(), storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettings() = render("settings", tv = true, content = tvApp { select(Tab.Settings) })
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeLayout() = render("settings-homelayout", tv = true) {
+        TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeLayout)) }
+    }
+    @Test @Config(qualifiers = TV) fun tvScreensaver() {
+        com.kirtanya.reel.ui.home.HomeLayout.init(app)
+        render("screensaver", tv = true, history = true) {
+            val w = androidx.compose.runtime.remember { com.kirtanya.reel.ui.tv.IdleWatch().apply { dreaming = true } }
+            com.kirtanya.reel.ui.tv.TvScreensaver(w, enabled = false)
+        }
+    }
     private fun tvSettingsPage(page: SettingsPage) =
         render("settings-${page.name.lowercase()}", tv = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(page)) } }
     @Test @Config(qualifiers = TV) fun tvSettingsAppearance() = tvSettingsPage(SettingsPage.Appearance)

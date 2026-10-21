@@ -201,7 +201,7 @@ private fun HomeHeader(onAdd: () -> Unit, onSurprise: (() -> Unit)? = null) {
         BrandMark(36.dp)
         Spacer(Modifier.width(Tokens.Space.m))
         Column(Modifier.weight(1f)) {
-            Text(greeting(), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
+            Text(greeting(), style = Tokens.Type.caption, color = Tokens.Colors.text, maxLines = 1)
             Text("One Stream", style = Tokens.Type.title, color = Tokens.Colors.text, maxLines = 1)
         }
         if (onSurprise != null) GlassIconButton(Icons.Rounded.Shuffle, "Surprise me", onSurprise)

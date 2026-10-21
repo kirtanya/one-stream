@@ -88,7 +88,7 @@ private fun HistoryRow(e: WatchEntry, onDelete: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(p.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val detail = listOfNotNull(p.subtitle ?: p.episode?.label, if (e.finished) "Watched" else "${(e.progress * 100).toInt()}% watched").joinToString(" · ")
-            Text(detail, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(detail, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         GlassIconButton(Icons.Rounded.Close, "Remove ${p.title} from history", onDelete)
     }

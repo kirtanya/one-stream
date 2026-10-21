@@ -15,7 +15,7 @@ enum class PosterStyle(val label: String) { Posters("Posters"), Wide("Wide") }
 enum class Density(val label: String, val across: Int) { Roomy("Roomy", 3), Compact("Compact", 4) }
 
 /** Where the TV app opens. */
-enum class TvStart(val label: String) { Home("Home"), Continue("Continue watching"), Search("Search") }
+enum class TvStart(val label: String) { Home("Home"), Search("Search"), Downloads("Downloads") }
 
 /**
  * Home screen layout, chosen in Settings → Home screen (per device; the TV keeps its own).

@@ -71,10 +71,26 @@ class FakeCatalog(private val answer: Answer = Answer.Data, private val logos: B
     override suspend fun byGenre(type: MediaType, genreId: Int, page: Int) = give(Fake.titles(20, seed = genreId * 31 + page), emptyList())
     override suspend fun person(id: Int) = give(Fake.person, Fake.person.copy(biography = "", credits = emptyList()))
     override suspend fun findByImdb(imdbId: String, type: MediaType) = give(Fake.details(if (type == MediaType.TV) Fake.show else Fake.film).summary, null)
+    override suspend fun collection(id: Int) = give(
+        com.kirtanya.reel.core.tmdb.CollectionDetails(Fake.franchise, "Two films.", listOf(Fake.details(Fake.film).summary.copy(title = "Dune", year = 2021)) + Fake.details(Fake.film).summary + Fake.titles(1, seed = 70)),
+        com.kirtanya.reel.core.tmdb.CollectionDetails(Fake.franchise, "", emptyList()),
+    )
+    override suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int) = give(Fake.titles(20, seed = filter.genres.firstOrNull() ?: 0 + page), emptyList())
+    /** "New episodes": one aired yesterday, one today, two coming. */
+    override suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate) = give(
+        Fake.titles(4, seed = 5, type = MediaType.TV).mapIndexed { i, t ->
+            com.kirtanya.reel.core.tmdb.CalendarEntry(
+                t, com.kirtanya.reel.core.tmdb.AiringEpisode(2, 3 + i, if (i == 1) "The One Where Everything That Could Possibly Go Wrong Goes Wrong" else "Lord Snow", null, "/still_${40 + i}.jpg"),
+                java.time.LocalDate.now().plusDays((i - 1).toLong()),
+            )
+        },
+        emptyList(),
+    )
 }
 
 object Fake {
     const val FILM_ID = 1001
+    val franchise = com.kirtanya.reel.core.tmdb.CollectionRef(77, "Dune Collection", "/poster_0.jpg", "/backdrop_0.jpg")
     const val SHOW_ID = 2002
     const val LONG_ID = 3003
     val film = TitleRef(MediaType.MOVIE, FILM_ID)
@@ -182,6 +198,7 @@ object Fake {
             logoPath = "/logo_Dune:_Part_Two.png",
             videos = videos,
             recommendations = titles(12, seed = 30),
+            collection = franchise,
             genreList = listOf(Genre(878, "Science Fiction"), Genre(12, "Adventure"), Genre(18, "Drama")),
             backdrops = listOf("/backdrop_0.jpg", "/backdrop_6.jpg", "/backdrop_9.jpg"),
         )

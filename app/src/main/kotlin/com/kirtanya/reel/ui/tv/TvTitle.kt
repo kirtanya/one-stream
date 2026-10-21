@@ -163,6 +163,7 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
                                 ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost)
                             }
                         }
+                        com.kirtanya.reel.ui.title.SeasonWatched(d, season, side)
                     }
                 }
                 item(key = "episodes") {
@@ -219,6 +220,9 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
                         }
                     }
                 }
+            }
+            if (d.collection != null) {
+                item(key = "franchise") { com.kirtanya.reel.ui.title.FranchiseRow(d, side, Tokens.Cinema.posterTv, onOpen, onOpenDest, showText = false) }
             }
             if (d.recommendations.isNotEmpty()) {
                 item(key = "more") { PosterRow("More like this", d.recommendations, posterWidth = 112.dp, sidePadding = side, onOpen = onOpen) }

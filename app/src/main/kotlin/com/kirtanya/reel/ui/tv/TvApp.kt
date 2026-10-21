@@ -23,6 +23,9 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +76,20 @@ fun TvApp(
     LaunchedEffect(openSearch) {
         openSearch?.let { nav.openSearch(it); onSearchHandled() }
     }
+    // Settings → Home screen → Open on: once per launch, unless something asked for a screen.
+    var started by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (started) return@LaunchedEffect
+        started = true
+        if (openDest == null && openTab == null && openSearch == null && nav.stack.isEmpty() && nav.tab == Tab.Home) {
+            when (com.kirtanya.reel.ui.home.HomeLayout.tvStart) {
+                com.kirtanya.reel.ui.home.TvStart.Search -> nav.select(Tab.Search)
+                com.kirtanya.reel.ui.home.TvStart.Downloads -> nav.select(Tab.Downloads)
+                com.kirtanya.reel.ui.home.TvStart.Home -> Unit
+            }
+        }
+    }
+    val idle = remember { IdleWatch() }
     val activity = LocalContext.current as? Activity
     BackHandler { if (!nav.back()) activity?.finish() }
     val openTitle: (com.kirtanya.reel.core.tmdb.TitleSummary) -> Unit = { nav.open(Dest.Title(it.ref)) }
@@ -87,7 +104,7 @@ fun TvApp(
     ) {
     val back: () -> Unit = { nav.back() }
     val open: (Dest) -> Unit = { nav.open(it) }
-    Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
+    Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas).idleWatch(idle)) {
         // Screen to screen: a short cross-fade with a slight zoom; each screen keeps its state underneath.
         androidx.compose.animation.AnimatedContent(nav.top ?: nav.tab, transitionSpec = { pageTransition() }, label = "screen") { screen ->
             when (screen) {
@@ -119,6 +136,8 @@ fun TvApp(
             undo, isTv = true,
             Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.tvSafeH, vertical = Tokens.Space.tvSafeV),
         )
+        // Browse screens only (the player is its own activity; Sources may be mid-search).
+        TvScreensaver(idle, enabled = nav.top == null || nav.top is Dest.Title || nav.top is Dest.Collection)
     }
     }
 

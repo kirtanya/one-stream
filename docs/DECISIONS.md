@@ -47,6 +47,19 @@ Also decided (Claude):
 Telemetry: ReelStats `skipChip`, `skipUsed`, `introLearned`, `creditsLearned`, `upNextAtCredits`, `chapters`,
 `stillWatching`, `sleepTimer`, `audioFx`, `subsResearch`, `titlePrefs`, `titlePrefSaved`.
 
+**2026-10-22 · Home you can arrange, TV start screen, screensaver, browse filters**
+Decision (user): build the rest of the feature brainstorm. Split by file owner: player items to the player session,
+stores / TMDB to the data session, screens here (`b505e3f`, `acbaff3`, this commit).
+Built (Claude): Settings → Home screen (`ui/home/HomeLayout.kt`: hero source, auto-advance, posters / wide rows, size,
+row order + hide, per device); Home rows Because you watched, New episodes (calendar, `core/browse/AirDates`); genre grids
+page through TMDB discover with sort / rating / decade chips (`core/browse/TitleFilter`), every grid also filters what's
+loaded; History + Not interested, Source preferences, auto-download settings; voice search; franchise row and
+"3 of 10 watched" on title pages; TV opens on Home, Search or Downloads; TV screensaver (My list / Continue watching
+backdrops + clock) after 2 / 5 / 10 idle minutes on browse screens.
+Why: "Continue watching" as a TV start screen was dropped: it's already the first row on Home, so it equals Home. Our own
+screensaver comes before the system's so the screen shows your titles; any key only wakes it (never clicks through).
+Filter chips step to the next choice on each press because menus are slow with a remote.
+
 **2026-10-21 · Long-press opens an options sheet**
 Decision (user): long-pressing a Continue watching card shows more options (first item from the feature brainstorm).
 Built (Claude): one `OptionsSheet` (`ui/common/OptionsSheet.kt`). On the phone it's a bottom sheet with the title art on top.
