@@ -1101,14 +1101,14 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         phoneControls?.setToggles(listOf(picture, cinema))
         phoneControls?.syncZoom(prefs.picture == com.kirtanya.reel.core.playback.PictureMode.FILL)
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))
-        // The same small chips as the TV, under the top bar on the right.
-        buildTvChips(root, topMarginDp = 64)
+        // The same small chips as the TV, top right (the phone controls keep the top clear).
+        buildTvChips(root)
         buildErrorPanel(root)
         return root
     }
 
     /**
-     * Every status chip is small and sits at the top right (under the top bar on phones), side by side: Up next, Start over,
+     * Every status chip is small and sits at the top right, side by side: Up next, Start over,
      * then the buffering chip (spinner + speed) at the corner.
      */
     private fun buildTvChips(root: FrameLayout, topMarginDp: Int = 20) {

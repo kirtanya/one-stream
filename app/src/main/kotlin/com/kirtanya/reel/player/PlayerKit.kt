@@ -31,7 +31,7 @@ import java.util.Locale
 
 /*
  * The One Stream player kit, shared by the TV strip and the phone controls: rounded filled icons
- * (res/drawable/ic_pl_*), a round play button, skip buttons with the seconds inside the arrow, a
+ * (res/drawable/ic_pl_*), round buttons, skip buttons with the seconds inside the arrow, a
  * seek bar with a time bubble, and the settings panel.
  */
 
@@ -97,20 +97,6 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
     }
 }
 
-/** The main button: a filled disc in the foreground colour with the icon cut out of it. */
-@SuppressLint("ViewConstructor")
-internal class PlayButton(context: Context, sizeDp: Int) : RoundButton(context, R.drawable.ic_pl_pause, "Play or pause", sizeDp, (sizeDp * 0.46f).toInt()) {
-    override fun tint(c: Int) {
-        val inverse = if (TvControls.luminance(c) > 0.5f) TvControls.DARK else PlayerColors.FOREGROUND
-        image.imageTintList = ColorStateList.valueOf(inverse)
-        background = StateListDrawable().apply {
-            val on = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c); setStroke(context.dp(3), withAlpha(inverse, 0x99)) }
-            addState(intArrayOf(android.R.attr.state_focused), on)
-            addState(intArrayOf(), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(withAlpha(c, 0xF2)) })
-        }
-    }
-}
-
 /** Back / forward N seconds: the circular arrow with the number inside it. */
 @SuppressLint("ViewConstructor")
 internal class SkipButton(context: Context, forward: Boolean, seconds: Int, sizeDp: Int, iconDp: Int, font: Typeface?) :
@@ -158,6 +144,12 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
      */
     var edge = false; set(v) { field = v; invalidate() }
 
+    /**
+     * Phone: the same hairline as [edge], but across the middle of its (48 dp) touch area, so a
+     * finger anywhere on that area grabs it; thumb, halo and track show while it's touched.
+     */
+    var line = false; set(v) { field = v; invalidate() }
+
     var scrubbing = false; private set
     private var scrubPos = 0L
     private var color = PlayerColors.FOREGROUND
@@ -189,7 +181,7 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     private fun shown() = if (scrubbing) scrubPos else position
 
     override fun onDraw(canvas: Canvas) {
-        if (edge) { drawEdge(canvas); return }
+        if (edge || line) { drawEdge(canvas); return }
         val pad = context.dpf(9f)
         val w = width - 2 * pad
         val cy = height / 2f
@@ -221,7 +213,8 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     private fun drawEdge(canvas: Canvas) {
         if (duration <= 0) return
         val h = context.dpf(3f) + context.dpf(3f) * active
-        val bottom = height.toFloat()
+        // Edge: on the bottom edge, growing upwards. Line: centred, growing both ways.
+        val bottom = if (line) height / 2f + h / 2 else height.toFloat()
         val cy = bottom - h / 2
         fun x(ms: Long) = width * (ms.coerceIn(0, duration).toFloat() / duration)
         // The rest of the line stays clear; while focused, a faint track and the buffered part show where it can go.
@@ -301,7 +294,7 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (duration <= 0) return false
-        val pad = if (edge) 0f else context.dpf(9f)
+        val pad = if (edge || line) 0f else context.dpf(9f)
         fun at(x: Float) = ((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f).let { (it * duration).toLong() }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); begin(); move(at(e.x)) }
@@ -328,6 +321,9 @@ internal class PanelToggle(
 
 /** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
 internal const val REPORT_ROW = "Report a problem"
+
+/** The phone settings panel's picture-in-picture row (the button left the controls row). */
+internal const val PIP_ROW = "Picture in picture"
 
 /**
  * Settings panel (subtitles, audio, speed, extras), two levels: a list of settings, each opening its
@@ -407,7 +403,11 @@ internal class SettingsPanel(
             })
         }
         for ((label, action) in extras()) {
-            val icon = if (label == REPORT_ROW) R.drawable.ic_pl_report else R.drawable.ic_pl_external
+            val icon = when (label) {
+                REPORT_ROW -> R.drawable.ic_pl_report
+                PIP_ROW -> R.drawable.ic_pl_pip
+                else -> R.drawable.ic_pl_external
+            }
             list.addView(row(icon, label, null, null) { onExtra(); action() })
         }
     }

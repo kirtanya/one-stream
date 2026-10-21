@@ -14,7 +14,8 @@ import org.robolectric.shadows.ShadowLooper
 
 /**
  * The design rules on the player controls, in the scenes the renders use (PlayerScenes).
- * Phone (landscape, 800 × 360 dp): touch areas, clipping, contrast. TV: contrast and focus.
+ * Phone (landscape 800 × 360 dp and portrait 360 × 800 dp, font 100 % and 130 %): touch areas,
+ * clipping, contrast. TV: contrast and focus.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -48,6 +49,32 @@ class PlayerDesignRules {
         scene.release()
     }
 
+    @Test @Config(sdk = [34], qualifiers = PHONE, fontScale = 1.3f)
+    fun phoneControls130() = phone("player/phone-controls-130", panel = false)
+
+    /** A finger on the seek bar: thumb, halo and time bubble. */
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneScrubbing() = phone("player/phone-scrub", panel = false, scrub = true)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortrait() = phone("player/phone-portrait", panel = false)
+
+    /** Portrait without a next episode: one row of seven. */
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitMovie() = phone("player/phone-portrait-movie", panel = false, next = false)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortrait130() = phone("player/phone-portrait-130", panel = false)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitSettings() = phone("player/phone-portrait-settings", panel = true)
+
+    private fun phone(where: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false) {
+        val scene = PlayerScenes.phone(panel, withPlayer = true, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null)
+        check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
     /** The choices one level down (Speed). */
     @Test @Config(sdk = [34], qualifiers = PHONE)
     fun phoneSpeedChoices() {
@@ -77,6 +104,7 @@ class PlayerDesignRules {
 
     companion object {
         const val PHONE = "w800dp-h360dp-land-xxhdpi"
+        const val PHONE_PORTRAIT = "w360dp-h800dp-port-xxhdpi"
         const val TV = "w960dp-h540dp-land-television-xhdpi"
     }
 }

@@ -31,15 +31,26 @@ internal object PlayerScenes {
     private fun playerView(activity: ComponentActivity) =
         PlayerView(activity).apply { useController = false; setShutterBackgroundColor(Color.TRANSPARENT); setBackgroundColor(Color.TRANSPARENT) }
 
-    /** Phone landscape. [withPlayer] attaches a (silent) ExoPlayer so the settings panel has its rows. */
-    fun phone(panel: Boolean, withPlayer: Boolean = false): Phone {
+    /**
+     * The phone controls in whatever screen the test's qualifiers give (landscape or portrait, font
+     * scale). [withPlayer] attaches a (silent) ExoPlayer so the settings panel has its rows; [next]
+     * makes a next episode ready; [scrubAtMs] puts a finger on the seek bar there.
+     */
+    fun phone(panel: Boolean, withPlayer: Boolean = false, next: Boolean = true, scrubAtMs: Long? = null): Phone {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
         root.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF6E8FB5.toInt(), 0xFF2B3A55.toInt(), 0xFFC98B5E.toInt()))
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         val c = PhoneControls(activity, playerView, TITLE, { null }, { listOf("Open in another player" to {}) },
-            onBack = {}, onPip = {}, nextLabel = { "Next · S1 E4" }, onNext = {})
+            onBack = {}, onPip = {}, nextLabel = { if (next) "Next · S1 E4" else null }, onNext = {})
+        // The rows the activity adds (PlayerActivity.buildLayout), so the panel shows its real length.
+        val modes = com.kirtanya.reel.core.playback.PictureMode.entries
+        val levels = com.kirtanya.reel.core.playback.Ambient.Level.entries
+        c.setToggles(listOf(
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Picture", modes.map { it.label }, { 0 }, asList = true) {},
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Cinema mode", levels.map { it.label }, { 0 }) {},
+        ))
         root.addView(c, FrameLayout.LayoutParams(-1, -1))
         activity.setContentView(root)
         val exo = if (withPlayer) ExoPlayer.Builder(activity).build().also { c.attach(it) } else null
@@ -50,8 +61,18 @@ internal object PlayerScenes {
         if (panel) c.openPanelForPreview()
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
         scene.midFilm()
+        if (scrubAtMs != null) {
+            c.previewScrub(scrubAtMs)
+            ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
+            // The (empty) player's refresh may have cleared the length: put it back, then move the finger.
+            scene.midFilm()
+            c.previewScrub(scrubAtMs)
+        }
         return scene
     }
+
+    /** Where a scrub render puts the finger: an hour in. */
+    const val SCRUB_MS = 3_600_000L
 
     /** TV strip over a picture [picture] (top → bottom); always white with its small shadow. */
     fun tv(picture: IntArray, panel: Boolean = false): Tv {
