@@ -249,6 +249,40 @@ open class ScreenRenders(protected val variant: Variant) {
             }
         }
     }
+    /** Trailers and extras in their own section at the end; never the Recommended pick. */
+    @Test fun sourcesExtras() = render(
+        "sources-extras",
+        data = RenderData(sourceSearch = {
+            val req = com.kirtanya.reel.core.sources.SourceRequest(Fake.film.id, null, Fake.film.type, "Dune", 2021)
+            val trailers = listOf("Dune Official Trailer 4K", "Dune Teaser", "Dune Featurette: The Sandworm").map {
+                com.kirtanya.reel.core.sources.SourceExtras.mark(com.kirtanya.reel.core.sources.Source(com.kirtanya.reel.core.sources.SourceKind.DIRECT, it, "Trailers addon", com.kirtanya.reel.core.sources.Quality(2160), url = "https://x/${it.hashCode()}.mp4"), req)
+            }
+            Fake.manySources.copy(sources = com.kirtanya.reel.core.sources.SourceRanker.rank(trailers + Fake.sources(5)))
+        }),
+        content = phone { open(Dest.Sources(Fake.film)) },
+    )
+    /** The user's own tags first on each row: last played, favourite, starred, downloaded. */
+    @Test fun sourcesPersonalTags() = render("sources-personal-tags") {
+        androidx.compose.foundation.layout.Column(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 24.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        ) {
+            val personal = listOf(listOf("Last played"), listOf("Favourite", "Starred"), listOf("Downloading 42%"), listOf("Downloaded", "Starred"), listOf("Same as last episode"))
+            Fake.sources(6).drop(1).forEachIndexed { i, s ->
+                com.kirtanya.reel.ui.sources.SourceRow(com.kirtanya.reel.core.sources.SourceBrowser.view(s, personal[i]), fits = true, action = com.kirtanya.reel.ui.sources.SourceAction.PLAY, onClick = {}, onLongClick = {})
+            }
+        }
+    }
+    /** Long-press menu: play, download, stream only, favourite, star, share. */
+    @Test fun sourceOptions() = render("source-options", windows = true) {
+        val s = Fake.sources(3)[1]
+        val req = com.kirtanya.reel.core.sources.SourceRequest(Fake.film.id, null, Fake.film.type, "Dune", 2021)
+        com.kirtanya.reel.ui.sources.SourceOptionsDialog(
+            com.kirtanya.reel.core.sources.SourceBrowser.view(s, listOf("Last played")), req,
+            com.kirtanya.reel.core.library.SourceMark(req.key, "movie:${Fake.film.id}", s.key, starred = true),
+            "Dune", onPlay = {}, onDownload = {}, onDismiss = {},
+        )
+    }
     @Test fun sourcesStarting() = render("sources-starting", data = RenderData(sourceSearch = { null }), content = phone { open(Dest.Sources(Fake.film)) })
 
     @Test fun castStarting() = render("cast-starting", data = RenderData(sourceSearch = { Fake.searching }), content = phone { open(Dest.Cast(castFilm)) })

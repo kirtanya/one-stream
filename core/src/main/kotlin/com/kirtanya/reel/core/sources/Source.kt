@@ -56,7 +56,12 @@ data class Source(
     val seeders: Int? = null,
     val subtitles: List<SubtitleTrack> = emptyList(),
     val bingeGroup: String? = null,
+    /** Set when this is a trailer, teaser, sample or other extra, not the film / episode itself ("Trailer"). */
+    val extra: String? = null,
 ) {
+    /** A trailer or other extra (see [SourceExtras]): never recommended or picked automatically. */
+    val isExtra: Boolean get() = extra != null
+
     /** Two sources with the same key are the same file. */
     val key: String
         get() = when (kind) {

@@ -5,6 +5,28 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Trailers are never the best match; source tags and a long-press menu**
+Decision (user): trailers / teasers counted as real sources and were often recommended — sources must
+prioritise the film / episode itself and keep extras separate. Also: tags on sources (e.g. last played) and a
+long-press menu (download, stream only, play, favourite, star, share).
+Built (Claude): `core/sources/SourceExtras` marks trailers, teasers, TV spots, featurettes, behind the scenes,
+deleted scenes, bloopers, interviews, promos, clips, samples, extras and YouTube links (`Source.extra`); words
+that are part of the searched title don't count ("Trailer Park Boys", "Extras"). The ranker puts extras last;
+Recommended, Up next, the launcher's best and cast picks skip them; the Sources page lists them under
+"Trailers & extras". `core/library/SourceMarks` + `data/SourceMarksStore`: one **favourite** per film / episode
+(becomes Recommended when it comes back; for shows it follows the same release to other episodes via binge
+group) and any number of **starred** sources (listed first). Row tags, before release tags: Last played / Same as
+last episode (history), Favourite, Starred, Downloaded / Downloading N %. Long-press (hold OK on TV) or the ⋯ on
+Recommended opens Play · Download file · Stream only (not saved) · Make favourite · Star · Share link.
+Also decided here (Claude): "Only download for stream" = **Stream only**: the player's own start in stream mode
+(stream cache, not Downloads), stopped after 20 min if nobody plays it (like the launcher's prepare, longer);
+it follows the network rule like Play. Favourite vs star: favourite = the pick, star = a bookmark that sorts first.
+Share sends the magnet / direct link / service page (a debrid link includes the user's key; their choice).
+Why: the user's report and request. Evidence: SourceExtrasTest, SourceMarksTest, renders sources-extras,
+sources-personal-tags, source-options.
+
+---
+
 **2026-10-21 · Home disk phase 2 (set up now, no disk) and the product answers**
 Decision (user, product questions of HOME_DISK §21): "On this phone" on mobile data waits for Wi-Fi by default,
 with "Start now anyway"; an unknown Wi-Fi is asked once per network (answer remembered by fingerprint); the

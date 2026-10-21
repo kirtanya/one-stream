@@ -43,6 +43,7 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val addonStore by lazy { com.kirtanya.reel.data.AddonStore(this, fetcher) }
     val history by lazy { WatchHistoryStore(this) }
     val watchlist by lazy { com.kirtanya.reel.data.WatchlistStore(this) }
+    val sourceMarks by lazy { com.kirtanya.reel.data.SourceMarksStore(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
     /** Which title / episode each download is for (Downloads → Change source). */
     val downloadOrigins by lazy { com.kirtanya.reel.data.DownloadOriginStore(this) }

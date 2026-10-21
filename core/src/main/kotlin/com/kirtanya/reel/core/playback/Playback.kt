@@ -85,7 +85,7 @@ fun hasAired(episode: EpisodeNumber, lastAired: Pair<Int, Int>?): Boolean =
  * provider at the same resolution, then the same provider, then the best overall.
  */
 fun pickNextSource(previous: Source?, ranked: List<Source>): Source? {
-    val playable = ranked.filter { it.kind != SourceKind.EXTERNAL }
+    val playable = ranked.filter { it.kind != SourceKind.EXTERNAL && !it.isExtra }
     if (previous == null) return playable.firstOrNull()
     previous.bingeGroup?.let { group -> playable.firstOrNull { it.bingeGroup == group }?.let { return it } }
     playable.firstOrNull { it.provider == previous.provider && it.quality.resolution == previous.quality.resolution }?.let { return it }

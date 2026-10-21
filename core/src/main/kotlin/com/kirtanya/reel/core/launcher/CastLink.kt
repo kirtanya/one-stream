@@ -101,7 +101,7 @@ object CastChoice {
     /** Download: the hinted source if it can be downloaded, else the ranker's best downloadable one (size doesn't matter). */
     fun forDownload(ranked: List<Source>, hint: CastHint): Source? {
         val hinted = matchHint(ranked, hint)?.takeIf(LauncherPage::downloadable)
-        return hinted ?: ranked.firstOrNull(LauncherPage::downloadable)
+        return hinted ?: ranked.firstOrNull { LauncherPage.downloadable(it) && !it.isExtra }
     }
 
     /**
@@ -110,6 +110,7 @@ object CastChoice {
      */
     fun decide(ranked: List<Source>, done: Boolean, request: CastRequest, fits: (Source) -> Boolean): Decision {
         val hinted = matchHint(ranked, request.hint)
+        // A hint naming a trailer is taken as asked (the launcher chose that row); only automatic picks skip extras.
         val early = if (request.download) hinted?.takeIf(LauncherPage::downloadable)
             else hinted?.takeIf { it.kind != SourceKind.EXTERNAL && fits(it) }
         if (early != null) return Decision.Take(early)

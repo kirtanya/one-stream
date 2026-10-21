@@ -89,7 +89,7 @@ class SourceAggregator(private val timeoutMs: Long = 30_000, private val maxPara
                 lock.withLock {
                     pending.remove(provider.name)
                     outcome.onSuccess { list ->
-                        list.forEach { s ->
+                        list.map { SourceExtras.mark(it, req) }.forEach { s ->
                             val existing = byKey[s.key]
                             if (existing == null || (s.seeders ?: -1) > (existing.seeders ?: -1)) byKey[s.key] = s
                         }

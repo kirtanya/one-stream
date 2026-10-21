@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
@@ -69,13 +70,15 @@ fun SourceRow(
     action: SourceAction,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Long-press (touch) / hold OK (remote): the source's options. */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(Tokens.Radius.media)
     val (label, icon) = actionFor(v, action)
     Row(
         modifier
             .fillMaxWidth()
-            .focusCard(shape = shape, scale = 1.02f, onClick = onClick)
+            .focusCard(shape = shape, scale = 1.02f, onLongClick = onLongClick, onClick = onClick)
             .background(Tokens.Colors.surface1)
             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
             .padding(Tokens.Space.m),
@@ -119,6 +122,8 @@ fun RecommendedCard(
     focus: FocusRequester,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The ⋯ button next to the main one: the source's options (download, favourite, share…). */
+    onMore: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val (label, icon) = actionFor(v, action)
@@ -150,11 +155,14 @@ fun RecommendedCard(
         Text(releaseName(v.source.title), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (!fits) Text("Too big to stream on this device. Pick a smaller one below.", style = Tokens.Type.caption, color = Tokens.Colors.warn)
         // TV: a wide button would grow over its neighbours when focused (it lifts by 6 %).
-        ReelButton(
-            label, onClick,
-            (if (isTv) Modifier.widthIn(min = 220.dp) else Modifier.fillMaxWidth()).padding(top = Tokens.Space.xs).focusRequester(focus),
-            kind = ButtonKind.Primary, icon = icon, large = true,
-        )
+        Row(Modifier.padding(top = Tokens.Space.xs), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
+            ReelButton(
+                label, onClick,
+                (if (isTv) Modifier.widthIn(min = 220.dp) else Modifier.weight(1f)).focusRequester(focus),
+                kind = ButtonKind.Primary, icon = icon, large = true,
+            )
+            if (onMore != null) com.kirtanya.reel.ui.common.GlassIconButton(androidx.compose.material.icons.Icons.Rounded.MoreVert, "More options", onMore)
+        }
     }
 }
 

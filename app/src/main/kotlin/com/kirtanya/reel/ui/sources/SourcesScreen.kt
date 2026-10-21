@@ -31,6 +31,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,12 +43,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ReelApp
+import com.kirtanya.reel.core.library.DownloadTag
+import com.kirtanya.reel.core.library.LastPlayed
+import com.kirtanya.reel.core.library.SourceMarks
 import com.kirtanya.reel.core.library.DownloadOrigin
 import com.kirtanya.reel.core.library.SourceSwap
 import com.kirtanya.reel.core.library.SwapKind
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.sources.FilterChip
 import com.kirtanya.reel.core.sources.Source
+import com.kirtanya.reel.core.sources.SourceView
 import com.kirtanya.reel.core.sources.SourceBrowser
 import com.kirtanya.reel.core.sources.SourceFilters
 import com.kirtanya.reel.core.sources.SourceRanker
@@ -124,11 +129,39 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     var filters by remember(req.key) { mutableStateOf(fixed?.sourceFilters ?: SourceFilters()) }
     var confirm by remember { mutableStateOf<Source?>(null) }
 
-    val ranked = search?.sources.orEmpty()
-    // Playing: recommend one this device can stream; downloading: size doesn't matter.
-    val best = remember(ranked, action) { SourceBrowser.recommended(ranked) { action != SourceAction.PLAY || SourceRanker.fits(it, prefs) } }
-    val bestView = remember(best) { best?.let(SourceBrowser::view) }
-    val rows = remember(ranked, best) { ranked.filter { it.key != best?.key }.map(SourceBrowser::view) }
+    val app = ReelApp.get(context)
+    // The user's own marks and history: favourite / starred sources, what was played last, what's downloaded.
+    val marks by app.sourceMarks.marks.collectAsState()
+    val historyEntries by app.history.entries.collectAsState()
+    val liveTorrents by app.engine.torrents.collectAsState()
+    val torrents = fixed?.torrents ?: liveTorrents
+    val last = remember(historyEntries, req) {
+        LastPlayed(
+            same = historyEntries.firstOrNull { it.playback.key == req.key }?.playback?.source,
+            latestOfShow = historyEntries.firstOrNull { it.playback.titleKey == SourceMarks.titleKey(req) }?.playback?.source,
+        )
+    }
+    val downloads = remember(torrents) {
+        torrents.filter { it.mode == com.kirtanya.reel.engine.TorrentMode.DOWNLOAD }.associate {
+            it.infoHash.lowercase() to DownloadTag(it.progress, it.phase == TorrentPhase.FINISHED || it.phase == TorrentPhase.SEEDING)
+        }
+    }
+    fun viewOf(s: Source) = SourceBrowser.view(
+        s, SourceMarks.tags(s, req, marks, last, if (s.kind == com.kirtanya.reel.core.sources.SourceKind.TORRENT) s.infoHash?.lowercase()?.let(downloads::get) else null),
+    )
+    var options by remember { mutableStateOf<SourceView?>(null) }
+
+    // Starred sources first; the ranker's order otherwise.
+    val ranked = remember(search, marks) { SourceMarks.order(search?.sources.orEmpty(), marks, req) }
+    // Playing: recommend one this device can stream; downloading: size doesn't matter. The user's favourite wins if it came back.
+    val best = remember(ranked, action, marks) {
+        val canUse = { s: Source -> action != SourceAction.PLAY || SourceRanker.fits(s, prefs) }
+        SourceMarks.favourite(ranked, marks, req)?.takeIf(canUse) ?: SourceBrowser.recommended(search?.sources.orEmpty(), canUse)
+    }
+    val bestView = remember(best, marks, last, downloads) { best?.let(::viewOf) }
+    // Trailers, teasers and other extras get their own section at the end; filters and counts cover the real thing only.
+    val rows = remember(ranked, best, marks, last, downloads) { ranked.filter { it.key != best?.key && !it.isExtra }.map(::viewOf) }
+    val extras = remember(ranked, marks, last, downloads) { ranked.filter { it.isExtra }.map(::viewOf) }
     val facets = remember(rows) { SourceBrowser.facets(rows) }
     LaunchedEffect(facets) { filters = SourceBrowser.prune(filters, facets) }
     val shown = remember(rows, filters) { SourceBrowser.apply(rows, filters) }
@@ -184,6 +217,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                         bestView != null -> RecommendedCard(
                             bestView, SourceRanker.fits(bestView.source, prefs), action, glow, isTv, mainFocus,
                             onClick = { choose(bestView.source) }, modifier = Modifier.widthIn(max = maxWidth),
+                            onMore = { options = bestView },
                         )
                         search?.done == true -> NothingFound(search, rescan, Modifier.widthIn(max = maxWidth))
                     }
@@ -196,7 +230,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                         when {
                             filters.active -> "Showing ${shown.size} of ${rows.size} other sources"
                             else -> com.kirtanya.reel.ui.plural(rows.size, "other source")
-                        },
+                        } + if (isTv) " · hold OK for options" else " · long-press for options",
                         style = Tokens.Type.label, color = Tokens.Colors.textSecondary,
                         modifier = Modifier.padding(horizontal = side),
                     )
@@ -206,6 +240,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                 SourceRow(
                     v, fits = SourceRanker.fits(v.source, prefs), action = action, onClick = { choose(v.source) },
                     modifier = Modifier.padding(horizontal = side).widthIn(max = maxWidth),
+                    onLongClick = { options = v },
                 )
             }
             if (rows.isNotEmpty() && shown.isEmpty()) {
@@ -218,12 +253,36 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                     )
                 }
             }
+            if (extras.isNotEmpty()) {
+                item(key = "extras-title") {
+                    Text(
+                        "Trailers & extras · ${extras.size}",
+                        style = Tokens.Type.label, color = Tokens.Colors.textSecondary,
+                        modifier = Modifier.padding(horizontal = side).padding(top = Tokens.Space.l),
+                    )
+                }
+                items(extras, key = { "extra:" + it.source.key }) { v ->
+                    SourceRow(
+                        v, fits = SourceRanker.fits(v.source, prefs), action = action, onClick = { choose(v.source) },
+                        modifier = Modifier.padding(horizontal = side).widthIn(max = maxWidth),
+                        onLongClick = { options = v },
+                    )
+                }
+            }
             if (search?.done == true && ranked.isNotEmpty()) {
                 item(key = "again") { Box(Modifier.padding(horizontal = side)) { ReelButton("Search again", rescan, kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh) } }
             }
         }
     }
 
+    options?.let { v ->
+        SourceOptionsDialog(
+            v, req, SourceMarks.markFor(marks, req, v.source), label,
+            onPlay = { play(context, playbackOf(v.source)) },
+            onDownload = { where.download(v.source) },
+            onDismiss = { options = null },
+        )
+    }
     confirm?.let { s -> ReplaceDialog(replacing!!, s, label, origin, onDismiss = { confirm = null }, onDone = { confirm = null; onDone() }) }
 }
 
@@ -294,12 +353,14 @@ private fun NothingFound(search: SourceSearch, rescan: () -> Unit, modifier: Mod
         when {
             search.total == 0 -> "No sources for this yet"
             allFailed -> "Your sources didn't answer"
+            search.sources.isNotEmpty() && search.sources.all { it.isExtra } -> "Only trailers and extras found"
             search.sources.isNotEmpty() -> "Only services have this"
             else -> "Nothing found"
         },
         when {
             search.total == 0 -> "Add addons or plugins in Settings to find places to play this."
             allFailed -> "Check your connection and search again."
+            search.sources.isNotEmpty() && search.sources.all { it.isExtra } -> "Your sources only had trailers or extras for this. They're listed below."
             search.sources.isNotEmpty() -> "It's on a streaming service: open it from the list below."
             search.total == 1 -> "Your only source didn't have this. Try again later, or add more sources in Settings."
             else -> "None of your ${search.total} sources had this. Try again later, or add more sources in Settings."

@@ -51,23 +51,26 @@ data class SearchStatus(val headline: String, val detail: String?, val progress:
  * The input list is already ranked best-first (SourceRanker), so "Best" keeps its order.
  */
 object SourceBrowser {
-    fun view(s: Source) = SourceView(
+    /** [personal]: the user's own tags first ("Last played", "Favourite"…), see SourceMarks.tags. */
+    fun view(s: Source, personal: List<String> = emptyList()) = SourceView(
         source = s,
         bucket = QualityBucket.of(s.quality),
         health = SeedHealth.of(s),
         type = SourceType.of(s),
         provider = SourceFacts.providerLabel(s.provider),
         languages = SourceFacts.languages(s),
-        tags = SourceFacts.tags(s),
+        // A trailer's row says so first.
+        tags = personal + listOfNotNull(s.extra) + SourceFacts.tags(s),
     )
 
     /**
      * The ranker's winner that can start in the app (services open another app, so never recommended).
      * To play, also one this device can stream ([playable], e.g. not a 4K REMUX on the TV) — recommending
      * one and then warning "too big" was the user's complaint; only if none fits, the ranker's winner.
+     * Trailers and other extras are never recommended (null if that's all there is).
      */
     fun recommended(ranked: List<Source>, playable: (Source) -> Boolean = { true }): Source? {
-        val inApp = ranked.filter { it.kind != SourceKind.EXTERNAL }
+        val inApp = ranked.filter { it.kind != SourceKind.EXTERNAL && !it.isExtra }
         return inApp.firstOrNull(playable) ?: inApp.firstOrNull()
     }
 

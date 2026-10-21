@@ -26,6 +26,8 @@ object SourceRanker {
         source.kind != SourceKind.TORRENT || prefs.maxBytes == null || (source.sizeBytes ?: 0) <= prefs.maxBytes
 
     fun score(s: Source, prefs: RankPrefs): Double {
+        // Trailers and other extras go last: below everything, services included.
+        if (s.isExtra) return -2000.0
         if (s.kind == SourceKind.EXTERNAL) return -1000.0
         var score = 0.0
         if (!fits(s, prefs)) score -= 500

@@ -124,8 +124,8 @@ object LauncherPage {
     /** What the app's own Download button handles: torrents (engine) and direct links (DownloadManager). */
     fun downloadable(s: Source) = s.kind == SourceKind.TORRENT || (s.kind == SourceKind.DIRECT && s.url != null)
 
-    /** Best match exactly like the Sources screen: the first non-service source of the ranked list. */
-    fun best(ranked: List<Source>): Source? = ranked.firstOrNull { it.kind != SourceKind.EXTERNAL }
+    /** Best match exactly like the Sources screen: the first non-service source of the ranked list that isn't a trailer or extra. */
+    fun best(ranked: List<Source>): Source? = ranked.firstOrNull { it.kind != SourceKind.EXTERNAL && !it.isExtra }
 
     /** The first non-blank line of an addon's description (the release name). */
     fun name(s: Source) = s.title.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: s.title.trim()
