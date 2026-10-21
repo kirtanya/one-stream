@@ -446,6 +446,7 @@ open class ScreenRenders(protected val variant: Variant) {
         render("settings-${page.name.lowercase()}", tv = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(page)) } }
     @Test @Config(qualifiers = TV) fun tvSettingsAppearance() = tvSettingsPage(SettingsPage.Appearance)
     @Test @Config(qualifiers = TV) fun tvSettingsAddons() = tvSettingsPage(SettingsPage.Addons)
+    @Test @Config(qualifiers = TV) fun tvSettingsSubtitles() = tvSettingsPage(SettingsPage.Subtitles)
     @Test @Config(qualifiers = TV) fun tvSettingsStore() = tvSettingsPage(SettingsPage.Store)
     @Test @Config(qualifiers = TV) fun tvSettingsStoreFiltered() = render(
         "settings-store-filtered", tv = true,

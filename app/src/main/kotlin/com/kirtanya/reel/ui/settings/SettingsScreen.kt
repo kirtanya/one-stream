@@ -81,7 +81,6 @@ import com.kirtanya.reel.BuildConfig
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.data.PlaybackSettings
 import com.kirtanya.reel.data.SourceSetupException
-import com.kirtanya.reel.data.SubtitleSize
 import com.kirtanya.reel.ui.common.AmbientGlow
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.GlassIconButton
@@ -205,7 +204,8 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
         SettingsPage.Playback -> if (playback.autoplayNext) "Next episode plays by itself" else "Next episode: ask first"
         SettingsPage.Subtitles -> listOf(
             PlaybackSettings.LANGUAGES.firstOrNull { it.first == playback.subtitleLanguage }?.second ?: "Off",
-            playback.subtitleSize.label,
+            playback.caption.size.label,
+            if (playback.caption.system) "Android style" else com.kirtanya.reel.core.playback.CaptionStyle.Preset.of(playback.caption)?.label ?: "Custom style",
         ).joinToString(" · ")
         SettingsPage.Addons -> sources.addons.size.let { if (it == 0) "None yet" else "$it added · ${sources.addons.count { a -> a.enabled }} on" }
         SettingsPage.Store -> "Find addons and add them in one tap"
@@ -431,15 +431,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                         }
                     }
                 }
-                item {
-                    Section("Size") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                            SubtitleSize.entries.forEach { size ->
-                                ReelButton(size.label, { app.playbackSettings.update { it.copy(subtitleSize = size) } }, kind = if (playback.subtitleSize == size) ButtonKind.Primary else ButtonKind.Ghost)
-                            }
-                        }
-                    }
-                }
+                captionStyleItems(playback.caption, isTv) { style -> app.playbackSettings.update { it.copy(caption = style) } }
                 if (sources.addons.none { it.enabled && runCatching { it.manifest.hasSubtitles }.getOrDefault(false) }) item {
                     Section(note = "Subtitles come from sources and subtitle addons. OpenSubtitles v3 is the official, free one.") {
                         ReelButton("Add OpenSubtitles v3", { run { app.sources.addAddon(OPENSUBTITLES).let { "Added ${it.manifest.name}" } } }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Add, enabled = !busy)

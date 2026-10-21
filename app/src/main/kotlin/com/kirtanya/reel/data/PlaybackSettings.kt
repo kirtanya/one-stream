@@ -2,14 +2,11 @@ package com.kirtanya.reel.data
 
 import android.content.Context
 import androidx.core.content.edit
+import com.kirtanya.reel.core.playback.CaptionStyle
 import com.kirtanya.reel.core.sources.SubtitleLanguagePref
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-
-enum class SubtitleSize(val label: String, val fraction: Float) {
-    SMALL("Small", 0.045f), MEDIUM("Medium", 0.0533f), LARGE("Large", 0.065f)
-}
 
 data class PlaybackPrefs(
     val autoplayNext: Boolean = true,
@@ -18,12 +15,16 @@ data class PlaybackPrefs(
      * (stored through SubtitleLanguagePref, where Off is its own value).
      */
     val subtitleLanguage: String? = SubtitleLanguagePref.DEFAULT,
-    val subtitleSize: SubtitleSize = SubtitleSize.MEDIUM,
+    /** Size, colours, outline, font and position of subtitles (Settings → Subtitles). */
+    val caption: CaptionStyle = CaptionStyle(),
     /** Cinema mode: how strongly the bars around a video glow with its colours (player/AmbientGlow). */
     val cinemaGlow: com.kirtanya.reel.core.playback.Ambient.Level = com.kirtanya.reel.core.playback.Ambient.Level.SUBTLE,
     /** How the picture fills the screen (Fit, Fill, Stretch, forced shapes); remembered between videos. */
     val picture: com.kirtanya.reel.core.playback.PictureMode = com.kirtanya.reel.core.playback.PictureMode.FIT,
-)
+) {
+    /** Older callers (the player before caption styles) only knew the size. */
+    val subtitleSize: CaptionStyle.Size get() = caption.size
+}
 
 /** Player preferences (SharedPreferences: small, read once per playback). */
 class PlaybackSettings(context: Context) {
@@ -37,7 +38,7 @@ class PlaybackSettings(context: Context) {
         prefs.edit {
             putBoolean("autoplayNext", next.autoplayNext)
             putString("subtitleLanguage", SubtitleLanguagePref.encode(next.subtitleLanguage))
-            putString("subtitleSize", next.subtitleSize.name)
+            putString("caption", next.caption.encode())
             putString("cinemaGlow", next.cinemaGlow.name)
             putString("picture", next.picture.name)
         }
@@ -46,7 +47,7 @@ class PlaybackSettings(context: Context) {
     private fun read() = PlaybackPrefs(
         autoplayNext = prefs.getBoolean("autoplayNext", true),
         subtitleLanguage = SubtitleLanguagePref.decode(prefs.getString("subtitleLanguage", null)),
-        subtitleSize = runCatching { SubtitleSize.valueOf(prefs.getString("subtitleSize", null)!!) }.getOrDefault(SubtitleSize.MEDIUM),
+        caption = CaptionStyle.decode(prefs.getString("caption", null), legacySize = prefs.getString("subtitleSize", null)),
         cinemaGlow = com.kirtanya.reel.core.playback.Ambient.Level.of(prefs.getString("cinemaGlow", null)),
         picture = com.kirtanya.reel.core.playback.PictureMode.of(prefs.getString("picture", null)),
     )

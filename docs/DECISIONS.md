@@ -5,6 +5,19 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Caption style (phone and TV)**
+Decision (user): customise how subtitles look, on both devices.
+Built (Claude): `core/playback/CaptionStyle` (size Small–Extra large, text colour, background None / Light box /
+Box / Solid, outline None / Outline / Shadow / Raised / Sunken, font, position Low / Normal / High, or Android's
+own caption style), presets Classic · Cinema · Yellow · Boxed (size and position stay the user's), saved as
+`key=value` in prefs "playback" (old `subtitleSize` carries over). Settings → Subtitles → Style shows a live
+preview drawn by Media3's SubtitleView via `captions/CaptionLook` — the same call the player makes, so the preview
+is what plays. Also decided (Claude): no box + no outline is shown with a shadow (unreadable on bright scenes);
+embedded ASS/SSA styles and sizes are ignored so the user's choice wins.
+Evidence: CaptionStyleTest, renders settings-subtitles (phone, TV).
+
+---
+
 **2026-10-21 · Phone: floating, icon-only tab bar (iOS-style)**
 Decision (user): replace the full-width Material bottom bar with a floating, fully rounded bar like iOS; no labels
 on any tab.
