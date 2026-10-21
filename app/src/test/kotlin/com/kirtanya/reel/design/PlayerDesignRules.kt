@@ -105,6 +105,71 @@ class PlayerDesignRules {
         scene.release()
     }
 
+    // Roadmap A overlays and the delay sliders.
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneSkipChip() = phoneOverlay("player/phone-skip", PlayerScenes.Overlay.SKIP)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneSkipOverBand() = phoneOverlay("player/phone-skip-band", PlayerScenes.Overlay.SKIP_OVER_BAND)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitSkipOverBand() = phoneOverlay("player/phone-portrait-skip-band", PlayerScenes.Overlay.SKIP_OVER_BAND)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneStillWatching() = phoneOverlay("player/phone-still-watching", PlayerScenes.Overlay.STILL_WATCHING)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitStillWatching() = phoneOverlay("player/phone-portrait-still-watching", PlayerScenes.Overlay.STILL_WATCHING)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneSleepChip() = phoneOverlay("player/phone-sleep", PlayerScenes.Overlay.SLEEP)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneUpNextCredits() = phoneOverlay("player/phone-up-next-credits", PlayerScenes.Overlay.UP_NEXT_CREDITS)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneAudioDelay() = phoneSlider("player/phone-audio-delay", "Audio delay")
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortraitSubtitleDelay130() = phoneSlider("player/phone-portrait-subtitle-delay-130", "Subtitle delay")
+
+    private fun phoneOverlay(where: String, overlay: PlayerScenes.Overlay) {
+        val scene = PlayerScenes.phone(panel = false, withPlayer = true, overlay = overlay)
+        check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
+    private fun phoneSlider(where: String, slider: String) {
+        val scene = PlayerScenes.phone(panel = true, withPlayer = true, slider = slider)
+        check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvSkipChip() = tvOverlay("player/tv-skip", PlayerScenes.MID, PlayerScenes.Overlay.SKIP)
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvStillWatching() = tvOverlay("player/tv-still-watching", PlayerScenes.MID, PlayerScenes.Overlay.STILL_WATCHING)
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvUpNextCredits() = tvOverlay("player/tv-up-next-credits", PlayerScenes.MID, PlayerScenes.Overlay.UP_NEXT_CREDITS)
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvSleepChip() = tvOverlay("player/tv-sleep", PlayerScenes.DARK, PlayerScenes.Overlay.SLEEP)
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvAudioDelay() {
+        val scene = PlayerScenes.tv(PlayerScenes.MID, panel = true, slider = "Audio delay")
+        check("player/tv-audio-delay", ViewChecks(scene.root, "player/tv-audio-delay"), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
+        scene.release()
+    }
+
+    private fun tvOverlay(where: String, picture: IntArray, overlay: PlayerScenes.Overlay) {
+        val scene = PlayerScenes.tv(picture, overlay = overlay, strip = true)
+        check(where, ViewChecks(scene.root, where), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
+        scene.release()
+    }
+
     @Test @Config(sdk = [34], qualifiers = TV)
     fun tvOnBrightPicture() = tv("player/tv-bright", PlayerScenes.BRIGHT, panel = false)
 

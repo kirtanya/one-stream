@@ -31,8 +31,19 @@ class TvControlsRender {
     @Test fun renderSettingsSource() = render("tv_controls_settings_source", PlayerScenes.MID, panel = true, panelEnd = true)
     @Test fun renderSettingsFile() = render("tv_controls_settings_file", PlayerScenes.MID, panel = true, panelEnd = true, file = true)
 
-    private fun render(name: String, picture: IntArray, panel: Boolean = false, panelEnd: Boolean = false, file: Boolean = false) {
-        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd)
+    // Roadmap A: Skip intro (focused), Still watching?, sleep chip, Up next at the credits, delay sliders.
+    @Test fun renderSkip() = render("tv_skip_intro", PlayerScenes.BRIGHT, overlay = PlayerScenes.Overlay.SKIP)
+    @Test fun renderStillWatching() = render("tv_still_watching", PlayerScenes.MID, overlay = PlayerScenes.Overlay.STILL_WATCHING)
+    @Test fun renderSleep() = render("tv_sleep_chip", PlayerScenes.DARK, overlay = PlayerScenes.Overlay.SLEEP)
+    @Test fun renderUpNextCredits() = render("tv_up_next_credits", PlayerScenes.MID, overlay = PlayerScenes.Overlay.UP_NEXT_CREDITS)
+    @Test fun renderAudioDelay() = render("tv_controls_audio_delay", PlayerScenes.MID, panel = true, slider = "Audio delay")
+    @Test fun renderSubtitleDelay() = render("tv_controls_subtitle_delay", PlayerScenes.MID, panel = true, slider = "Subtitle delay")
+
+    private fun render(
+        name: String, picture: IntArray, panel: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
+        overlay: PlayerScenes.Overlay? = null, slider: String? = null,
+    ) {
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

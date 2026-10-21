@@ -99,7 +99,7 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
 
 /** Back / forward N seconds: the circular arrow with the number inside it. */
 @SuppressLint("ViewConstructor")
-internal class SkipButton(context: Context, forward: Boolean, seconds: Int, sizeDp: Int, iconDp: Int, font: Typeface?) :
+internal class SkipButton(context: Context, private val forward: Boolean, seconds: Int, sizeDp: Int, iconDp: Int, font: Typeface?) :
     RoundButton(context, if (forward) R.drawable.ic_pl_forward else R.drawable.ic_pl_replay, if (forward) "Forward $seconds seconds" else "Back $seconds seconds", sizeDp, iconDp) {
     private val number = TextView(context).apply {
         text = seconds.toString()
@@ -112,6 +112,12 @@ internal class SkipButton(context: Context, forward: Boolean, seconds: Int, size
     init {
         addView(number, LayoutParams(-2, -2, Gravity.CENTER).apply { topMargin = context.dp((iconDp * 0.1f).toInt()) })
         tint(PlayerColors.FOREGROUND)
+    }
+
+    /** The skip step changed (Settings → Playback): the number inside the arrow says it. */
+    fun setSeconds(seconds: Int) {
+        number.text = seconds.toString()
+        contentDescription = (if (forward) "Forward" else "Back") + " $seconds seconds"
     }
 
     override fun tint(c: Int) {
@@ -317,13 +323,25 @@ internal class PanelToggle(
     val current: () -> Int,
     val asList: Boolean = false,
     val set: (Int) -> Unit,
-)
+) : PanelRow
+
+/** A row of the settings panel: a toggle / list ([PanelToggle]), an action ([PanelExtra]) or a delay slider ([PanelSlider]). */
+internal sealed interface PanelRow
+
+/** A delay row: opens a slider over [delay]'s range (the remote's ←/→ or a finger), with Reset. */
+internal class PanelSlider(
+    val icon: Int,
+    val label: String,
+    val delay: com.kirtanya.reel.core.player.Delay,
+    val current: () -> Int,
+    val set: (Int) -> Unit,
+) : PanelRow
 
 /**
  * An extra row at the end of the settings panel. [action] null = shown but off, with [note] under the
  * label saying why (e.g. Change source for a file without TMDB info).
  */
-internal class PanelExtra(val label: String, val note: String? = null, val action: (() -> Unit)?)
+internal class PanelExtra(val label: String, val note: String? = null, val icon: Int? = null, val action: (() -> Unit)?) : PanelRow
 
 /** The settings panel's "Change source" row: the Sources page, the pick plays from here. */
 internal const val CHANGE_SOURCE_ROW = "Change source"
@@ -371,6 +389,22 @@ internal class SettingsPanel(
     /** Rows after Speed that step through a few values in place on OK (e.g. Cinema mode). */
     var toggles: List<PanelToggle> = emptyList()
 
+    /** Rows under the Subtitles track (delay, search again), the Audio track (night mode, voice boost, delay) and Speed (sleep timer). */
+    var subtitleRows: List<PanelRow> = emptyList()
+    var audioRows: List<PanelRow> = emptyList()
+    var playbackRows: List<PanelRow> = emptyList()
+
+    /** The user picked a subtitle / audio track ("sub" / "audio") or a speed ("speed"), after the player has it. */
+    var onChoice: ((String) -> Unit)? = null
+
+    /** Rebuilds the list in place (a value changed elsewhere), keeping the focused row. */
+    fun refresh() {
+        if (!open || submenu != null) return
+        val focused = list.findFocus()?.tag as? String
+        buildMain()
+        (focused?.let { list.findViewWithTag<View>(it) } ?: return).requestFocus()
+    }
+
     fun show(section: String? = null) {
         panel.visibility = View.VISIBLE
         panel.alpha = 0f
@@ -394,48 +428,96 @@ internal class SettingsPanel(
         return true
     }
 
+    /** Sections: Subtitles, Audio, Playback (speed, sleep timer, picture), then the extra rows under More. */
     private fun buildMain() {
         list.removeAllViews()
         val p = player() ?: return
-        list.addView(header("Settings"))
+        list.addView(header("Subtitles"))
         list.addView(row(R.drawable.ic_pl_subtitles, "Subtitles", current(p, C.TRACK_TYPE_TEXT) ?: "Off", "sub") { showTracks(C.TRACK_TYPE_TEXT) })
-        if (trackOptions(p, C.TRACK_TYPE_AUDIO).size > 1) {
-            list.addView(row(R.drawable.ic_pl_volume, "Audio", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
+        addRows(subtitleRows)
+        val audioTracks = trackOptions(p, C.TRACK_TYPE_AUDIO).size > 1
+        if (audioTracks || audioRows.isNotEmpty()) {
+            list.addView(header("Audio"))
+            if (audioTracks) list.addView(row(R.drawable.ic_pl_volume, "Audio track", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
+            addRows(audioRows)
         }
+        list.addView(header("Playback"))
         list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
-        for (t in toggles) {
-            list.addView(row(t.icon, t.label, t.values[t.current()], t.label) {
-                if (t.asList) {
-                    showList(t)
+        addRows(playbackRows)
+        addRows(toggles)
+        val more = extras()
+        if (more.isNotEmpty()) {
+            list.addView(header("More"))
+            addRows(more)
+        }
+    }
+
+    private fun addRows(rows: List<PanelRow>) {
+        for (r in rows) when (r) {
+            is PanelToggle -> list.addView(row(r.icon, r.label, r.values[r.current()], r.label) {
+                if (r.asList) {
+                    showList(r)
                 } else {
-                    t.set((t.current() + 1) % t.values.size)
+                    r.set((r.current() + 1) % r.values.size)
                     buildMain()
-                    list.findViewWithTag<View>(t.label)?.requestFocus()
+                    list.findViewWithTag<View>(r.label)?.requestFocus()
                 }
             })
-        }
-        for (extra in extras()) {
-            val icon = when (extra.label) {
-                REPORT_ROW -> R.drawable.ic_pl_report
-                PIP_ROW -> R.drawable.ic_pl_pip
-                CHANGE_SOURCE_ROW -> R.drawable.ic_pl_source
-                else -> R.drawable.ic_pl_external
+            is PanelSlider -> list.addView(row(r.icon, r.label, r.delay.label(r.current()), r.label) { showSlider(r) })
+            is PanelExtra -> {
+                val icon = r.icon ?: when (r.label) {
+                    REPORT_ROW -> R.drawable.ic_pl_report
+                    PIP_ROW -> R.drawable.ic_pl_pip
+                    CHANGE_SOURCE_ROW -> R.drawable.ic_pl_source
+                    else -> R.drawable.ic_pl_external
+                }
+                val action = r.action
+                list.addView(if (action != null) row(icon, r.label, null, r.label) { onExtra(); action() } else offRow(icon, r.label, r.note))
             }
-            val action = extra.action
-            list.addView(if (action != null) row(icon, extra.label, null, extra.label) { onExtra(); action() } else offRow(icon, extra.label, extra.note))
         }
+    }
+
+    /** A delay: the value, a slider (←/→ on the remote, drag on the phone) and Reset. */
+    private fun showSlider(s: PanelSlider) {
+        submenu = s.label
+        list.removeAllViews()
+        list.addView(header(s.label))
+        val value = text(22f, medium = true).apply {
+            text = s.delay.label(s.current())
+            gravity = Gravity.CENTER
+            setPadding(0, context.dp(4), 0, context.dp(4))
+        }
+        list.addView(value, LinearLayout.LayoutParams(-1, -2))
+        val slider = DelaySlider(context, s.delay, s.current()) { ms ->
+            s.set(ms)
+            value.text = s.delay.label(ms)
+        }
+        slider.tag = SELECTED
+        list.addView(slider, LinearLayout.LayoutParams(-1, context.dp(48)).apply { setMargins(context.dp(6), 0, context.dp(6), 0) })
+        val ends = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(context.dp(14), 0, context.dp(14), context.dp(4)) }
+        val hint = if (s.delay == com.kirtanya.reel.core.player.Delay.AUDIO) "Sound" else "Subtitles"
+        ends.addView(text(12f).apply { text = "$hint earlier"; setTextColor(PlayerColors.PANEL_VALUE) }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(text(12f).apply { text = "$hint later"; setTextColor(PlayerColors.PANEL_VALUE) })
+        list.addView(ends)
+        list.addView(choice("Reset", false) {
+            s.set(0)
+            slider.value = 0
+            value.text = s.delay.label(0)
+        })
+        slider.requestFocus()
     }
 
     private fun showTracks(type: Int) {
         val p = player() ?: return
         submenu = if (type == C.TRACK_TYPE_TEXT) "sub" else "audio"
         list.removeAllViews()
-        list.addView(header(if (type == C.TRACK_TYPE_TEXT) "Subtitles" else "Audio"))
+        list.addView(header(if (type == C.TRACK_TYPE_TEXT) "Subtitles" else "Audio track"))
         val options = trackOptions(p, type)
         if (type == C.TRACK_TYPE_TEXT) {
             val off = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT) || options.none { it.selected }
             list.addView(choice("Off", off) {
                 p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                onChoice?.invoke("sub")
                 back()
             })
         }
@@ -445,6 +527,7 @@ internal class SettingsPanel(
                     .setTrackTypeDisabled(type, false)
                     .setOverrideForType(TrackSelectionOverride(o.group.mediaTrackGroup, o.index))
                     .build()
+                onChoice?.invoke(if (type == C.TRACK_TYPE_TEXT) "sub" else "audio")
                 back()
             })
         }
@@ -458,8 +541,8 @@ internal class SettingsPanel(
         list.removeAllViews()
         list.addView(header("Speed"))
         val now = p.playbackParameters.speed
-        for (s in listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)) {
-            list.addView(choice(speedLabel(s), kotlin.math.abs(s - now) < 0.01f) { p.setPlaybackSpeed(s); back() })
+        for (s in com.kirtanya.reel.core.player.Speeds.ALL) {
+            list.addView(choice(speedLabel(s), kotlin.math.abs(s - now) < 0.01f) { p.setPlaybackSpeed(s); onChoice?.invoke("speed"); back() })
         }
         focusSelected()
     }
@@ -507,7 +590,7 @@ internal class SettingsPanel(
         return trackOptions(p, type).firstOrNull { it.selected }?.label
     }
 
-    private fun speedLabel(s: Float) = if (s == 1f) "Normal" else (if (s % 1f == 0f) "${s.toInt()}×" else "${s}×")
+    private fun speedLabel(s: Float) = com.kirtanya.reel.core.player.Speeds.label(s)
 
     private fun text(sp: Float, medium: Boolean = false) = TextView(context).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
@@ -602,5 +685,83 @@ internal class SettingsPanel(
 
     companion object {
         private const val SELECTED = "selected"
+    }
+}
+
+/**
+ * The delay slider: a track with a tick at 0 and a thumb at [value]. Remote: ←/→ one step (held keys
+ * repeat). Touch: drag anywhere on its 48 dp. Focused, the track and thumb grow (TV focus rule).
+ */
+@SuppressLint("ViewConstructor")
+internal class DelaySlider(
+    context: Context,
+    private val delay: com.kirtanya.reel.core.player.Delay,
+    initial: Int,
+    private val onChange: (Int) -> Unit,
+) : View(context) {
+    var value = delay.clamp(initial); set(v) { field = delay.clamp(v); invalidate() }
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private var active = 0f
+
+    init {
+        isFocusable = true
+        isClickable = true
+        contentDescription = "Delay"
+        setOnFocusChangeListener { _, f -> active = if (f) 1f else 0f; invalidate() }
+    }
+
+    private fun fraction(v: Int) = (v - delay.minMs).toFloat() / (delay.maxMs - delay.minMs)
+
+    override fun onDraw(canvas: Canvas) {
+        val pad = context.dpf(14f)
+        val w = width - 2 * pad
+        val cy = height / 2f
+        val h = context.dpf(4f) + context.dpf(2f) * active
+        rect.set(pad, cy - h / 2, pad + w, cy + h / 2)
+        paint.color = withAlpha(PlayerColors.FOREGROUND, if (active > 0f) 0x66 else 0x3D)
+        canvas.drawRoundRect(rect, h, h, paint)
+        // From 0 to the value: the part that's shifted.
+        val zero = pad + w * fraction(0)
+        val x = pad + w * fraction(value)
+        rect.set(minOf(zero, x), cy - h / 2, maxOf(zero, x), cy + h / 2)
+        paint.color = PlayerColors.FOREGROUND
+        canvas.drawRect(rect, paint)
+        // The 0 tick.
+        rect.set(zero - context.dpf(1f), cy - context.dpf(8f), zero + context.dpf(1f), cy + context.dpf(8f))
+        paint.color = withAlpha(PlayerColors.FOREGROUND, 0x99)
+        canvas.drawRect(rect, paint)
+        if (active > 0f) {
+            paint.color = withAlpha(PlayerColors.FOREGROUND, 0x40)
+            canvas.drawCircle(x, cy, context.dpf(14f), paint)
+        }
+        paint.color = PlayerColors.FOREGROUND
+        canvas.drawCircle(x, cy, context.dpf(7f) + context.dpf(2f) * active, paint)
+    }
+
+    private fun set(v: Int) {
+        val next = delay.clamp(v)
+        if (next == value) return
+        value = next
+        onChange(next)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { set(delay.step(value, -1)); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { set(delay.step(value, 1)); return true }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        val pad = context.dpf(14f)
+        fun at(x: Float) = delay.minMs + (((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f) * (delay.maxMs - delay.minMs)).toInt()
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { parent?.requestDisallowInterceptTouchEvent(true); set(at(e.x)) }
+            MotionEvent.ACTION_MOVE -> set(at(e.x))
+        }
+        return true
     }
 }

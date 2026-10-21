@@ -21,8 +21,8 @@ import kotlin.math.pow
  * TV player controls, nothing in the middle of the picture and no dimming:
  *  - the seek bar is a hairline along the very bottom edge, end to end (only the played part
  *    shows); elapsed time above its start, remaining time above its end;
- *  - above that, the title and "ends at" on the left, and every control on the right — back 10 s,
- *    play / pause, forward 10 s, next episode (when there is one), subtitles, settings — all the
+ *  - above that, the title and "ends at" on the left, and every control on the right — back N s,
+ *    play / pause, forward N s (N = Settings → Playback → Skip by), next episode (when there is one), subtitles, settings — all the
  *    same size: no button stands out.
  * Settings opens a panel above the controls. Everything is white with a small, tight shadow under it
  * (the user's choice: it never switches to black, and the shadow never spreads into a halo).
@@ -60,6 +60,24 @@ internal class TvControls(
 
     /** On/off rows in the settings panel (Cinema mode). */
     fun setToggles(list: List<PanelToggle>) { settingsPanel.toggles = list }
+
+    /** The panel's section rows (subtitle delay…, night mode…, sleep timer) and its choice callback. */
+    fun setRows(subtitle: List<PanelRow>, audio: List<PanelRow>, playback: List<PanelRow>, onChoice: (String) -> Unit) {
+        settingsPanel.subtitleRows = subtitle
+        settingsPanel.audioRows = audio
+        settingsPanel.playbackRows = playback
+        settingsPanel.onChoice = onChoice
+    }
+
+    fun refreshPanel() = settingsPanel.refresh()
+
+    /** One skip (Settings → Playback → Skip by): the ± buttons, their numbers and the remote's FF / REW keys. */
+    var seekStepMs = 10_000L
+        set(v) {
+            field = v
+            rew.setSeconds((v / 1000).toInt())
+            ffwd.setSeconds((v / 1000).toInt())
+        }
 
     private var swallowUp: Int? = null
 
@@ -113,8 +131,8 @@ internal class TvControls(
         seek.edge = true
         view.addView(seek, FrameLayout.LayoutParams(-1, context.dp(28), Gravity.BOTTOM))
 
-        rew.setOnClickListener { seekBy(-10_000); touch() }
-        ffwd.setOnClickListener { seekBy(10_000); touch() }
+        rew.setOnClickListener { seekBy(-seekStepMs); touch() }
+        ffwd.setOnClickListener { seekBy(seekStepMs); touch() }
         play.setOnClickListener { togglePlay(); touch() }
         next.setOnClickListener { hide(); onNext() }
         subs.setOnClickListener { openPanel("sub") }
@@ -201,7 +219,7 @@ internal class TvControls(
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                seekBy(if (code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD) 10_000 else -10_000)
+                seekBy(if (code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD) seekStepMs else -seekStepMs)
                 show(focus = null)
                 swallowUp = code
                 return true

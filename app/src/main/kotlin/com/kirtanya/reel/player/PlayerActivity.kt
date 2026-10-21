@@ -120,6 +120,36 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     /** We were stopped after handing off: an external player really took over (not a cancelled chooser). */
     private var stoppedSinceHandoff = false
 
+    // ---- roadmap A: skip intro / credits, auto-play next, sleep timer, per-title memory, audio
+    /** Night mode / voice boost, countdown, seek step, delays and learned skips (player/PlayerStore). */
+    private val store get() = PlayerStore.get(this)
+    private val options get() = store.options.value
+    /** This title's remembered tracks / picture / speed (the shared per-title store), read once at the start. */
+    private val saved by lazy { app.titlePrefs.get(playback.titleKey) }
+    private val delays = PlaybackDelays()
+    private val effects = AudioEffects { e, f -> stat(e, f) }
+    /** A key press or touch during this episode (Still watching? counts untouched episodes). */
+    private var interacted = false
+    /** Episodes before this one that played to the end untouched (carried from player to player). */
+    private var untouchedBefore = 0
+    /** Seeks the user made in a burst (remote presses), for learning the intro. */
+    private val seekBurst = com.kirtanya.reel.core.player.SeekBurst()
+    /** The next seek is ours (the Skip chip), not the user's: don't learn from it. */
+    private var ownSeek = false
+    /** Skippable chapters of this file (MKV chapter titles). */
+    private var chapterSkips: List<Pair<com.kirtanya.reel.core.player.SkipKind, com.kirtanya.reel.core.player.SkipWindow>> = emptyList()
+    private var chapterMarks: List<com.kirtanya.reel.core.player.ChapterMark> = emptyList()
+    /** The Skip chip showing now (kind + where it skips to). */
+    private var chipShown: Pair<com.kirtanya.reel.core.player.SkipKind, com.kirtanya.reel.core.player.SkipWindow>? = null
+    private var tickJob: Job? = null
+    private var sleepChoice = com.kirtanya.reel.core.player.SleepChoice.OFF
+    /** elapsedRealtime when the sleep timer was set (survives into the next episode's player). */
+    private var sleepSetAt = 0L
+    private var sleepFading = false
+    private var stillJob: Job? = null
+    /** The Up next card appeared at the learned / chapter credits, before the last 30 s. */
+    private var nextAtCredits = false
+
     private lateinit var playerView: PlayerView
     /** Cinema mode: the glow in the bars around the video. */
     private lateinit var ambient: AmbientGlow
@@ -127,12 +157,15 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private var tvControls: TvControls? = null
     /** Phone only: our controls and gestures (PlayerView's controller is off everywhere). */
     private var phoneControls: PhoneControls? = null
-    private lateinit var status: TextView
-    private lateinit var resumeChip: Button
-    private lateinit var nextCard: LinearLayout
-    private lateinit var nextTitle: TextView
-    private lateinit var nextCountdown: TextView
-    private lateinit var nextPlay: Button
+    /** Chips and small cards at the top right (and the phone's Skip chip): PlayerOverlays. */
+    private lateinit var overlays: PlayerOverlays
+    private val status get() = overlays.status
+    private val resumeChip get() = overlays.resumeChip
+    private val nextCard get() = overlays.nextCard
+    private val nextTitle get() = overlays.nextTitle
+    private val nextCountdown get() = overlays.nextCountdown
+    private val nextPlay get() = overlays.nextPlay
+    private val skipChip get() = overlays.skipChip
     private lateinit var errorPanel: LinearLayout
     private lateinit var errorText: TextView
     private lateinit var errorExternal: Button
@@ -146,6 +179,17 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             return
         }
         playback = decoded
+        untouchedBefore = intent.getIntExtra(EXTRA_UNTOUCHED, 0)
+        intent.getStringExtra(EXTRA_SLEEP)?.let { name ->
+            com.kirtanya.reel.core.player.SleepChoice.entries.firstOrNull { it.name == name }?.let {
+                sleepChoice = it
+                sleepSetAt = intent.getLongExtra(EXTRA_SLEEP_AT, now())
+            }
+        }
+        store.delays(playback.titleKey).let {
+            delays.audioUs = it.audioDelayMs * 1_000L
+            delays.subtitlesUs = it.subtitleDelayMs * 1_000L
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -192,7 +236,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 }
                 // Torrents spend seconds finding peers, so subtitles are usually ready by now; a direct
                 // link waits briefly, and only when a language should show (Off never holds the start up).
-                val wantSubs = prefs.subtitleLanguage != null ||
+                val wantSubs = wantedSubtitleLanguage() != null ||
                     (getSystemService(CAPTIONING_SERVICE) as? android.view.accessibility.CaptioningManager)?.isEnabled == true
                 val wait = Subtitles.startWaitMs(wantSubs)
                 val found = when {
@@ -306,7 +350,11 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     /** Does [tracks] contain the language the user wants to see by itself (not Off)? */
-    private fun wantedIn(tracks: List<SubtitleTrack>): Boolean = Subtitles.containsLanguage(tracks, prefs.subtitleLanguage)
+    private fun wantedIn(tracks: List<SubtitleTrack>): Boolean = Subtitles.containsLanguage(tracks, wantedSubtitleLanguage())
+
+    /** The subtitle language that shows by itself: this title's choice first, then Settings (null = off). */
+    private fun wantedSubtitleLanguage(): String? =
+        com.kirtanya.reel.core.player.TitleStart.subtitles(saved)?.let { if (it.off) null else it.language } ?: prefs.subtitleLanguage
 
     /** Rebuilds the item with [extra] subtitle tracks at the current position; [prepare] = false when the caller prepares. */
     private fun attachSubtitles(extra: List<SubtitleTrack>, why: String, prepare: Boolean = true) {
@@ -341,8 +389,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         subsStat("subsSelected", mapOf("selected" to selected, "tracks" to text.sumOf { it.length }, "want" to (prefs.subtitleLanguage ?: "off")))
     }
 
-    /** Subtitle telemetry: a ReelStats line (with the stream's key for torrents) and a ReelPlayer line. */
-    private fun subsStat(event: String, fields: Map<String, Any?>) {
+    private fun subsStat(event: String, fields: Map<String, Any?>) = stat(event, fields)
+
+    /** Player telemetry: a ReelStats line (with the stream's key for torrents) and a ReelPlayer line. */
+    private fun stat(event: String, fields: Map<String, Any?>) {
         val h = hash
         if (h != null) com.kirtanya.reel.engine.EngineStats.event(h, event, fields) else com.kirtanya.reel.engine.EngineStats.log(event, fields)
         Log.i(TAG, "$event ${fields.entries.joinToString(" ") { "${it.key}=${it.value}" }}")
@@ -392,7 +442,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             DefaultDataSource.Factory(this, http)
         }
         val sources = ReelDataSourceFactory(TorrentDataSource.Factory(app.engine), other)
-        val exo = ExoPlayer.Builder(this)
+        // Our renderers: audio / subtitle delay; Dolby decoded here while night mode / voice boost is on.
+        val exo = ExoPlayer.Builder(this, DelayRenderersFactory(this, delays, pcmOnly = options.nightMode || options.voiceBoost))
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(sources).setLoadErrorHandlingPolicy(ReelLoadErrorPolicy()))
             .build()
@@ -405,6 +456,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         phoneControls?.attach(exo)
         ambient.attach(exo)
         applySubtitlePrefs(exo)
+        applyTitlePrefs(exo)
+        applyEffects()
         exo.addListener(listener)
         val item = MediaItem.Builder()
             .setUri(url)
@@ -418,6 +471,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         startSignals()
         if (resumeAtMs > 0) showResumeChip(resumeAtMs)
         startProgressSaving()
+        startTicker()
         Log.i(TAG, "playing ${playback.key} from ${formatTime(resumeAtMs)} with ${subtitles.size} subtitle tracks")
     }
 
@@ -439,7 +493,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 }
                 Player.STATE_ENDED -> {
                     saveProgress(ended = true)
-                    if (nextReady?.second != null && !nextCancelled && prefs.autoplayNext) playNext()
+                    if (nextReady?.second != null && !nextCancelled && prefs.autoplayNext && !sleepAtEnd()) autoPlayNext()
                     else if (nextCard.visibility == View.VISIBLE) nextPlay.requestFocus()
                 }
             }
@@ -465,6 +519,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
             if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                if (ownSeek) ownSeek = false
+                else if (playback.episode != null) seekBurst.seek(oldPosition.positionMs, newPosition.positionMs, now())?.let(::learnIntro)
                 stats { it.seek(now()) }
                 preparedStream?.let { app.engine.onPlayerEvent(it, "seek") }
                 attachPendingSubtitles("seek")
@@ -479,6 +535,12 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
         override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
             logSelectedSubtitle(tracks)
+            readChapters(tracks)
+            applySavedSubtitleLabel(tracks)
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            applyEffects()
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -590,13 +652,17 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     // ---------------------------------------------------------------- next episode
 
-    /** From 80 % in (or 5 min left), finds the next episode's best matching source in the background. */
+    /**
+     * From 80 % in (or 5 min left, or a minute before the learned credits), finds the next episode's
+     * best matching source in the background.
+     */
     private fun maybePrepareNext(exo: ExoPlayer) {
         val next = playback.next ?: return
         if (nextJob != null || !prefs.autoplayNext) return
         val duration = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return
         val position = exo.currentPosition
-        if (position < duration * 0.8 && duration - position > 5 * 60_000) return
+        val credits = creditsStartMs(duration)
+        if (position < duration * 0.8 && duration - position > 5 * 60_000 && (credits == null || position < credits - 60_000)) return
         nextJob = lifecycleScope.launch {
             val nextPlayback = buildNextPlayback(next) ?: return@launch
             val req = sourceRequest(next) ?: return@launch
@@ -630,16 +696,32 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         )
     }
 
-    /** Shows the "Up next" card for the last 30 s; counts down 10 s, then plays the next episode. */
+    /** Where this episode's credits start: a "Credits" chapter, else what the user taught us (SkipPlan). */
+    private fun creditsStartMs(durationMs: Long): Long? {
+        if (playback.episode == null) return null
+        val learned = com.kirtanya.reel.core.player.SkipLearning.creditsRemainingMs(store.show(playback.titleKey))
+        return com.kirtanya.reel.core.player.SkipPlan.creditsStartMs(durationMs, chapterSkips, learned)
+    }
+
+    /**
+     * Shows the "Up next" card at the credits (learned or a chapter) or for the last 30 s; counts down
+     * (Settings → Playback, 5 / 10 / 20 s), then plays the next episode.
+     */
     private fun watchForCredits() {
         lifecycleScope.launch {
             while (isActive) {
                 val exo = player ?: return@launch
                 val duration = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 }
                 if (nextCancelled) return@launch
-                if (duration != null && duration - exo.currentPosition <= 30_000) {
-                    showNextCard()
-                    return@launch
+                if (duration != null) {
+                    val credits = creditsStartMs(duration)
+                    val at = com.kirtanya.reel.core.player.SkipPlan.upNextAtMs(duration, credits)
+                    if (exo.currentPosition >= at) {
+                        nextAtCredits = duration - exo.currentPosition > com.kirtanya.reel.core.player.SkipPlan.UP_NEXT_DEFAULT_MS + 2_000
+                        if (nextAtCredits) stat("upNextAtCredits", mapOf("remainingS" to (duration - exo.currentPosition) / 1000, "chapter" to chapterSkips.any { it.first == com.kirtanya.reel.core.player.SkipKind.CREDITS }))
+                        showNextCard()
+                        return@launch
+                    }
                 }
                 delay(1_000)
             }
@@ -658,17 +740,23 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         playerView.hideController()
         tvControls?.hide()
         phoneControls?.hideNow()
+        hideSkipChip()
         nextTitle.text = "Up next · ${next.subtitle ?: next.episode?.label.orEmpty()}"
-        nextPlay.text = if (source != null) "Play now" else "Choose a source"
+        // At the credits it says what it does there: skips them.
+        nextPlay.text = if (source == null) "Choose a source" else if (nextAtCredits) "Skip credits" else "Play now"
         nextCard.visibility = View.VISIBLE
         if (isTelevision()) nextPlay.requestFocus()
         if (source == null) {
             nextCountdown.text = "No matching source found automatically"
             return
         }
+        if (sleepAtEnd()) {
+            nextCountdown.text = "Sleep timer: stopping after this one"
+            return
+        }
         countdownJob?.cancel()
         countdownJob = lifecycleScope.launch {
-            var left = 10
+            var left = options.countdownS
             while (left > 0) {
                 nextCountdown.text = "Playing in $left…"
                 delay(1_000)
@@ -676,7 +764,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 // Paused by the user → the countdown waits too.
                 if (exo.isPlaying || exo.playbackState == Player.STATE_ENDED) left--
             }
-            playNext()
+            autoPlayNext()
         }
     }
 
@@ -692,13 +780,63 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         playerView.requestFocus()
     }
 
-    private fun playNext() {
+    /** The countdown ran out (or the episode ended): play on, unless enough untouched episodes went by to ask first. */
+    private fun autoPlayNext() {
+        val untouched = com.kirtanya.reel.core.player.AutoNext.untouchedAfter(untouchedBefore, interacted)
+        if (com.kirtanya.reel.core.player.AutoNext.askStillWatching(untouched)) showStillWatching()
+        else playNext(auto = true)
+    }
+
+    /**
+     * "Still watching?" with Continue / Stop instead of the next episode; nobody answers in 60 s → the
+     * player stops and closes (the TV can go to its screensaver).
+     */
+    private fun showStillWatching() {
+        if (overlays.stillCard.visibility == View.VISIBLE) return
+        hideNextCard()
+        overlays.stillCard.visibility = View.VISIBLE
+        if (isTelevision()) overlays.stillContinue.requestFocus()
+        stat("stillWatching", mapOf("asked" to true, "untouched" to untouchedBefore + 1))
+        stillJob?.cancel()
+        stillJob = lifecycleScope.launch {
+            delay(com.kirtanya.reel.core.player.AutoNext.ASK_TIMEOUT_MS)
+            stat("stillWatching", mapOf("answer" to "timeout"))
+            player?.pause()
+            saveProgress()
+            finish()
+        }
+    }
+
+    private fun answerStillWatching(keepGoing: Boolean) {
+        stillJob?.cancel()
+        overlays.stillCard.visibility = View.GONE
+        stat("stillWatching", mapOf("answer" to if (keepGoing) "continue" else "stop"))
+        if (keepGoing) playNext() else {
+            player?.pause()
+            saveProgress()
+            finish()
+        }
+    }
+
+    /**
+     * Plays the next episode. [auto] = the countdown did it (the untouched-episodes count carries on);
+     * by hand (Play now, Skip credits, Next) the remaining time teaches where this show's credits start.
+     */
+    private fun playNext(auto: Boolean = false) {
         val (next, source) = nextReady ?: return
         // Never jump to the next episode from the background.
         if (leavingForNext || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
         leavingForNext = true
         saveProgress()
-        if (source != null) startActivity(forPlayback(this, next)) else openSources(next.episode)
+        if (!auto) learnCredits()
+        flushIntroLearning()
+        val untouched = if (auto) com.kirtanya.reel.core.player.AutoNext.untouchedAfter(untouchedBefore, interacted) else 0
+        if (source != null) {
+            startActivity(forPlayback(this, next).putExtra(EXTRA_UNTOUCHED, untouched).apply {
+                // A sleep timer in minutes keeps running into the next episode.
+                if (sleepChoice.minutes != null) putExtra(EXTRA_SLEEP, sleepChoice.name).putExtra(EXTRA_SLEEP_AT, sleepSetAt)
+            })
+        } else openSources(next.episode)
         finish()
     }
 
@@ -708,18 +846,34 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private var seekKey: Int? = null
     private var lastSeekAt = 0L
 
+    /** Any touch counts as watching (Still watching? asks only after untouched episodes). */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) interacted = true
+        return super.dispatchTouchEvent(ev)
+    }
+
     /**
-     * TV remote: ←/→ skip 10 s while the controls are hidden (with them shown, the controls take
-     * the keys). Holding the key keeps skipping, about three times a second, 30 s at a time after 2 s.
+     * TV remote: ←/→ skip one step (Settings → Playback, 10 s by default) while the controls are hidden
+     * (with them shown, the controls take the keys). Holding the key keeps skipping, about three times a
+     * second, 30 s at a time after 2 s. OK presses the Skip chip while it shows and the strip is hidden.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) interacted = true
         val exo = player
+        val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER
+        if (ok && skipChip.visibility == View.VISIBLE && tvControls?.visible == false && nextCard.visibility != View.VISIBLE &&
+            overlays.stillCard.visibility != View.VISIBLE && resumeChip.visibility != View.VISIBLE
+        ) {
+            if (event.action == KeyEvent.ACTION_UP) skipNow()
+            return true
+        }
         val isSeekKey = event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
         if (isSeekKey && event.action == KeyEvent.ACTION_UP && seekKey == event.keyCode) {
             seekKey = null
             return true
         }
-        val overlayUp = nextCard.visibility == View.VISIBLE || resumeChip.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE
+        val overlayUp = nextCard.visibility == View.VISIBLE || resumeChip.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE ||
+            overlays.stillCard.visibility == View.VISIBLE
         val controls = tvControls
         // TV: the strip takes OK/↑/↓/Back/media keys first (unless a chip or card holds the remote).
         if (controls != null && exo != null && errorPanel.visibility != View.VISIBLE && (controls.visible || !overlayUp) && controls.handleKey(event)) return true
@@ -732,7 +886,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             if (event.repeatCount > 0 && now - lastSeekAt < 300) return true
             lastSeekAt = now
             val held = event.eventTime - event.downTime
-            val step = (if (held > 2_000) 30_000L else 10_000L) * (if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
+            val step = com.kirtanya.reel.core.player.SeekStep.remoteStepMs(options.seekStepS, held) * (if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
             val end = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
             val target = (exo.currentPosition + step).coerceIn(0, end)
             if (step < 0) {
@@ -878,6 +1032,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             phoneControls?.hideNow()
             status.visibility = View.GONE
             hideResumeChip()
+            hideSkipChip()
         }
     }
 
@@ -913,6 +1068,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     override fun onStop() {
         super.onStop()
         saveProgress()
+        flushIntroLearning()
         // Stop (not just pause): ends the loader and closes our reader, keeping the item and position.
         player?.stop()
         reconnectJob?.cancel()
@@ -927,6 +1083,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     override fun onDestroy() {
         if (::ambient.isInitialized) ambient.release()
+        effects.release()
+        stillJob?.cancel()
+        tickJob?.cancel()
         statsJob?.cancel()
         progressJob?.cancel()
         player?.removeListener(listener)
@@ -1015,11 +1174,300 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     override fun reportVideo(): android.view.SurfaceView? =
         if (::playerView.isInitialized) playerView.videoSurfaceView as? android.view.SurfaceView else null
 
+    // ---------------------------------------------------------------- per-title memory (tracks, speed, delays)
+
+    /**
+     * This title's remembered choices beat the app-wide ones: subtitles off / language, audio language,
+     * speed (TitleStart). The subtitle track's label, when saved, is matched once the tracks are known.
+     */
+    private fun applyTitlePrefs(exo: ExoPlayer) {
+        val subs = com.kirtanya.reel.core.player.TitleStart.subtitles(saved)
+        val audio = saved?.audioLanguage
+        if (subs != null || audio != null) {
+            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().apply {
+                if (subs?.off == true) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                else if (subs?.language != null) setPreferredTextLanguage(subs.language)
+                if (audio != null) setPreferredAudioLanguage(audio)
+            }.build()
+        }
+        val speed = com.kirtanya.reel.core.player.TitleStart.speed(saved)
+        if (speed != 1f) exo.setPlaybackSpeed(speed)
+        if (saved != null) stat("titlePrefs", mapOf("subs" to (saved?.subtitleLanguage ?: "-"), "audio" to (audio ?: "-"), "speed" to speed, "picture" to (saved?.picture ?: "-")))
+    }
+
+    private var savedLabelApplied = false
+
+    /** Two tracks in the remembered language (e.g. "SDH" and "Forced"): pick the one with the saved label. */
+    private fun applySavedSubtitleLabel(tracks: androidx.media3.common.Tracks) {
+        if (savedLabelApplied) return
+        val label = saved?.subtitleLabel ?: return
+        val lang = com.kirtanya.reel.core.player.TitleStart.subtitles(saved)?.takeIf { !it.off }?.language ?: return
+        val exo = player ?: return
+        for (g in tracks.groups) {
+            if (g.type != C.TRACK_TYPE_TEXT) continue
+            for (i in 0 until g.length) {
+                val f = g.getTrackFormat(i)
+                if (f.label == label && f.language?.startsWith(lang) == true) {
+                    savedLabelApplied = true
+                    if (!g.isTrackSelected(i)) exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                        .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, i)).build()
+                    return
+                }
+            }
+        }
+    }
+
+    /** The user picked a track or a speed in the panel: remember it for this title (and its next episodes). */
+    private fun onPanelChoice(kind: String) {
+        val exo = player ?: return
+        val params = exo.trackSelectionParameters
+        fun chosen(type: Int): androidx.media3.common.Format? =
+            params.overrides.values.firstOrNull { it.type == type && it.trackIndices.isNotEmpty() }?.let { it.mediaTrackGroup.getFormat(it.trackIndices[0]) }
+        when (kind) {
+            "sub" -> {
+                val off = params.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+                val f = chosen(C.TRACK_TYPE_TEXT)
+                app.titlePrefs.update(playback.titleKey) {
+                    if (off) it.copy(subtitleLanguage = com.kirtanya.reel.core.playback.TitlePrefs.SUBTITLES_OFF, subtitleLabel = null)
+                    else it.copy(subtitleLanguage = f?.language?.takeIf { l -> l != C.LANGUAGE_UNDETERMINED } ?: it.subtitleLanguage, subtitleLabel = f?.label)
+                }
+            }
+            "audio" -> chosen(C.TRACK_TYPE_AUDIO)?.language?.takeIf { it != C.LANGUAGE_UNDETERMINED }?.let { lang ->
+                app.titlePrefs.update(playback.titleKey) { it.copy(audioLanguage = lang) }
+            }
+            "speed" -> {
+                val speed = exo.playbackParameters.speed
+                app.titlePrefs.update(playback.titleKey) { it.copy(speed = if (speed == 1f) null else speed) }
+            }
+        }
+        stat("titlePrefSaved", mapOf("what" to kind))
+    }
+
+    // ---------------------------------------------------------------- settings panel rows (audio, subtitles, sleep)
+
+    private val onOff = listOf("Off", "On")
+
+    /** The panel's Subtitles / Audio / Playback rows; set again when something they show changes (effects refused). */
+    private fun setPanelRows() {
+        val subtitle = listOf<PanelRow>(
+            PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Subtitle delay", com.kirtanya.reel.core.player.Delay.SUBTITLES, { (delays.subtitlesUs / 1000).toInt() }) { ms ->
+                delays.subtitlesUs = ms * 1_000L
+                store.updateDelays(playback.titleKey) { it.copy(subtitleDelayMs = ms) }
+            },
+            if (playback.tmdbId != null) PanelExtra(SEARCH_SUBS_ROW, icon = com.kirtanya.reel.R.drawable.ic_pl_search) { searchSubtitlesAgain() }
+            else PanelExtra(SEARCH_SUBS_ROW, note = "Needs a film or show from search", icon = com.kirtanya.reel.R.drawable.ic_pl_search, action = null),
+        )
+        val fxRows = if (effects.available) listOf<PanelRow>(
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_night, "Night mode", onOff, { if (options.nightMode) 1 else 0 }) { i ->
+                store.updateOptions { it.copy(nightMode = i == 1) }
+                applyEffects()
+            },
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_voice, "Voice boost", onOff, { if (options.voiceBoost) 1 else 0 }) { i ->
+                store.updateOptions { it.copy(voiceBoost = i == 1) }
+                applyEffects()
+            },
+        ) else listOf<PanelRow>(
+            PanelExtra("Night mode", note = FX_UNAVAILABLE, icon = com.kirtanya.reel.R.drawable.ic_pl_night, action = null),
+            PanelExtra("Voice boost", note = FX_UNAVAILABLE, icon = com.kirtanya.reel.R.drawable.ic_pl_voice, action = null),
+        )
+        val audio = fxRows + PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Audio delay", com.kirtanya.reel.core.player.Delay.AUDIO, { (delays.audioUs / 1000).toInt() }) { ms ->
+            delays.audioUs = ms * 1_000L
+            store.updateDelays(playback.titleKey) { it.copy(audioDelayMs = ms) }
+        }
+        val sleeps = com.kirtanya.reel.core.player.SleepChoice.entries
+        val playbackRows = listOf<PanelRow>(
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_timer, "Sleep timer", sleeps.map { it.label }, { sleepChoice.ordinal }, asList = true) { i -> setSleep(sleeps[i]) },
+        )
+        tvControls?.setRows(subtitle, audio, playbackRows, ::onPanelChoice)
+        phoneControls?.setRows(subtitle, audio, playbackRows, ::onPanelChoice)
+    }
+
+    /** Night mode / voice boost on this player's audio session; a refusal turns the rows into notes. */
+    private fun applyEffects() {
+        val exo = player ?: return
+        val wasAvailable = effects.available
+        effects.apply(exo.audioSessionId, options.nightMode, options.voiceBoost)
+        if (wasAvailable && !effects.available) {
+            setPanelRows()
+            tvControls?.refreshPanel()
+            phoneControls?.refreshPanel()
+        }
+    }
+
+    /** "Search subtitles again": asks every subtitle addon afresh and adds what's new (one short re-buffer). */
+    private fun searchSubtitlesAgain() {
+        flashStatus("Searching for subtitles…")
+        lifecycleScope.launch {
+            val started = now()
+            val found = findSubtitles().tracks
+            val have = player?.currentMediaItem?.localConfiguration?.subtitleConfigurations.orEmpty().map { it.uri.toString() }.toSet()
+            val extra = found.filter { it.url !in have }
+            stat("subsResearch", mapOf("found" to found.size, "new" to extra.size, "ms" to now() - started))
+            if (extra.isEmpty()) {
+                flashStatus(if (found.isEmpty()) "No subtitles found" else "No new subtitles")
+            } else {
+                attachSubtitles(extra, "research")
+                flashStatus("Added ${extra.size} subtitle ${if (extra.size == 1) "track" else "tracks"}")
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- skip intro / recap / credits
+
+    /**
+     * Twice a second while playing: the Skip chip (chapters, then the learned intro), the sleep timer,
+     * and closing a quiet burst of seeks (learning the intro).
+     */
+    private fun startTicker() {
+        tickJob?.cancel()
+        tickJob = lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (isActive) {
+                    player?.let { exo ->
+                        seekBurst.flush(now())?.let(::learnIntro)
+                        updateSkipChip(exo)
+                        tickSleep(exo)
+                    }
+                    delay(500)
+                }
+            }
+        }
+    }
+
+    private fun updateSkipChip(exo: ExoPlayer) {
+        if (!firstFrameShown || exo.playbackState == Player.STATE_ENDED) return hideSkipChip()
+        // With a next episode the credits belong to Up next; a credits chapter only skips (to the end) otherwise.
+        val chapters = if (playback.next != null) chapterSkips.filter { it.first != com.kirtanya.reel.core.player.SkipKind.CREDITS } else chapterSkips
+        val learned = if (playback.episode != null) com.kirtanya.reel.core.player.SkipLearning.introWindow(store.show(playback.titleKey)) else null
+        val chip = com.kirtanya.reel.core.player.SkipPlan.chipAt(exo.currentPosition, chapters, learned)
+        val busy = nextCard.visibility == View.VISIBLE || overlays.stillCard.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE || isInPictureInPictureMode ||
+            phoneControls?.panelOpen == true || tvControls?.panelOpen == true
+        if (chip == null || busy) return hideSkipChip()
+        if (chip == chipShown) return
+        chipShown = chip
+        skipChip.text = chip.first.label
+        skipChip.visibility = View.VISIBLE
+        overlays.placeSkipChip(phoneControls?.coveredBottomPx() ?: 0)
+        // TV: focused (its ring shows OK will press it) unless the strip or another chip has the remote.
+        if (isTelevision() && tvControls?.visible != true && resumeChip.visibility != View.VISIBLE) skipChip.requestFocus()
+        stat("skipChip", mapOf("kind" to chip.first.name, "from" to if (chapters.any { it == chip }) "chapter" else "learned",
+            "startS" to chip.second.startMs / 1000, "endS" to chip.second.endMs / 1000))
+    }
+
+    private fun hideSkipChip() {
+        if (chipShown == null && skipChip.visibility != View.VISIBLE) return
+        chipShown = null
+        val hadFocus = skipChip.hasFocus()
+        skipChip.visibility = View.GONE
+        if (hadFocus) playerView.requestFocus()
+    }
+
+    /** The Skip chip: to the end of the intro / recap / credits (credits of a last episode or film: the end). */
+    private fun skipNow() {
+        val (kind, window) = chipShown ?: return
+        val exo = player ?: return
+        ownSeek = true
+        val end = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+        stat("skipUsed", mapOf("kind" to kind.name, "skippedS" to (window.endMs - exo.currentPosition) / 1000))
+        exo.seekTo(if (end != null) window.endMs.coerceAtMost(end) else window.endMs)
+        hideSkipChip()
+    }
+
+    /** A burst of the user's seeks ended: a 30–150 s jump in the first 6 minutes is this show's intro. */
+    private fun learnIntro(jump: Pair<Long, Long>) {
+        val (from, to) = jump
+        if (playback.episode == null || !com.kirtanya.reel.core.player.SkipLearning.isIntroSkip(from, to)) return
+        store.updateShow(playback.titleKey) { com.kirtanya.reel.core.player.SkipLearning.addIntro(it, com.kirtanya.reel.core.player.IntroSkip(playback.key, from, to)) }
+        stat("introLearned", mapOf("fromS" to from / 1000, "toS" to to / 1000,
+            "episodes" to store.show(playback.titleKey)?.intros?.size))
+    }
+
+    private fun flushIntroLearning() {
+        seekBurst.flush(now(), force = true)?.let(::learnIntro)
+    }
+
+    /** The user started the next episode by hand: how much was left says where this show's credits begin. */
+    private fun learnCredits() {
+        val exo = player ?: return
+        if (playback.episode == null) return
+        val d = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return
+        val left = d - exo.currentPosition
+        val before = store.show(playback.titleKey)
+        store.updateShow(playback.titleKey) { com.kirtanya.reel.core.player.SkipLearning.addCredits(it, playback.key, left) }
+        if (store.show(playback.titleKey) != before) stat("creditsLearned", mapOf("remainingS" to left / 1000,
+            "medianS" to com.kirtanya.reel.core.player.SkipLearning.creditsRemainingMs(store.show(playback.titleKey))?.div(1000)))
+    }
+
+    /** MKV chapters arrive as track metadata (media3 1.11): their titles say where intros / recaps / credits are. */
+    private fun readChapters(tracks: androidx.media3.common.Tracks) {
+        val marks = mutableListOf<com.kirtanya.reel.core.player.ChapterMark>()
+        for (g in tracks.groups) for (i in 0 until g.length) {
+            val meta = g.getTrackFormat(i).metadata ?: continue
+            for (e in 0 until meta.length()) {
+                val c = meta.get(e) as? androidx.media3.extractor.metadata.Chapter ?: continue
+                if (c.isHidden) continue
+                val end = c.endTimeMs.takeIf { it != C.TIME_UNSET && it > 0 }
+                marks += com.kirtanya.reel.core.player.ChapterMark(c.startTimeMs, end, c.title?.value)
+            }
+        }
+        val distinct = marks.distinct()
+        if (distinct == chapterMarks) return
+        chapterMarks = distinct
+        val d = player?.duration?.takeIf { it != C.TIME_UNSET && it > 0 }
+        chapterSkips = com.kirtanya.reel.core.player.ChapterSkips.windows(distinct, d)
+        stat("chapters", mapOf("count" to distinct.size, "skippable" to chapterSkips.joinToString(",") { it.first.name }))
+    }
+
+    // ---------------------------------------------------------------- sleep timer
+
+    private fun setSleep(choice: com.kirtanya.reel.core.player.SleepChoice) {
+        sleepChoice = choice
+        sleepSetAt = now()
+        if (sleepFading) { player?.volume = 1f; sleepFading = false }
+        if (choice == com.kirtanya.reel.core.player.SleepChoice.OFF) overlays.sleepChip.visibility = View.GONE
+        stat("sleepTimer", mapOf("set" to choice.name))
+    }
+
+    /** "End of episode": the countdown and auto-play stand aside; the episode fades out and stops. */
+    private fun sleepAtEnd() = sleepChoice == com.kirtanya.reel.core.player.SleepChoice.END_OF_EPISODE
+
+    /** The last 10 s fade the sound out, then playback pauses; under a minute a chip shows what's left. */
+    private fun tickSleep(exo: ExoPlayer) {
+        if (sleepChoice == com.kirtanya.reel.core.player.SleepChoice.OFF) return
+        val d = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+        val left = com.kirtanya.reel.core.player.SleepTimer.remainingMs(sleepChoice, sleepSetAt, now(), exo.currentPosition, d, exo.playbackParameters.speed) ?: return
+        val state = com.kirtanya.reel.core.player.SleepTimer.state(left)
+        overlays.sleepChip.text = "Sleep in " + formatTime(state.remainingMs + 999)
+        overlays.sleepChip.visibility = if (state.showChip && !state.done) View.VISIBLE else View.GONE
+        if (state.volume < 1f || sleepFading) {
+            sleepFading = true
+            exo.volume = state.volume
+        }
+        if (state.done) {
+            exo.pause()
+            exo.volume = 1f
+            sleepFading = false
+            sleepChoice = com.kirtanya.reel.core.player.SleepChoice.OFF
+            overlays.sleepChip.visibility = View.GONE
+            cancelNext()
+            saveProgress()
+            stat("sleepTimer", mapOf("done" to true))
+            flashStatus("Sleep timer · paused")
+        }
+    }
+
     // ---------------------------------------------------------------- picture (Fit / Fill / Stretch / shapes)
 
-    /** Picks and remembers how the picture fills the screen. */
+    /** How the picture fills the screen now: this title's choice, else the last one picked anywhere. */
+    private var pictureOverride: com.kirtanya.reel.core.playback.PictureMode? = null
+    private val currentPicture: com.kirtanya.reel.core.playback.PictureMode
+        get() = pictureOverride ?: com.kirtanya.reel.core.player.TitleStart.picture(saved, prefs.picture)
+
+    /** Picks and remembers how the picture fills the screen: for this title, and as the default for new ones. */
     private fun setPicture(mode: com.kirtanya.reel.core.playback.PictureMode) {
+        pictureOverride = mode
         app.playbackSettings.update { it.copy(picture = mode) }
+        app.titlePrefs.update(playback.titleKey) { it.copy(picture = mode.name) }
         phoneControls?.syncZoom(mode == com.kirtanya.reel.core.playback.PictureMode.FILL)
         applyPicture(mode)
     }
@@ -1029,7 +1477,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
      * forced shape (16:9, 4:3, 21:9) fits that shape instead of the file's (for files that say the
      * wrong one). Cinema mode looks for bars again afterwards (Fill / Stretch leave none).
      */
-    private fun applyPicture(mode: com.kirtanya.reel.core.playback.PictureMode = prefs.picture) {
+    private fun applyPicture(mode: com.kirtanya.reel.core.playback.PictureMode = currentPicture) {
         if (!::playerView.isInitialized) return
         playerView.resizeMode = when (mode) {
             com.kirtanya.reel.core.playback.PictureMode.FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -1051,10 +1499,6 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     // ---------------------------------------------------------------- Afterglow overlays (docs/DESIGN_STYLE.md)
-
-    private val accent get() = Tokens.Night.accent.toArgb()
-    private val glassColor get() = Tokens.Night.glass.toArgb()
-    private val hairline get() = Tokens.Night.hairline.toArgb()
 
     private var directRetries = 0
 
@@ -1180,13 +1624,14 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun buildLayout(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(PlayerColors.VIDEO_BACKGROUND) }
         val tv = isTelevision()
+        overlays = PlayerOverlays(this, ::font, tv)
         val levels = com.kirtanya.reel.core.playback.Ambient.Level.entries
         val cinema = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Cinema mode", levels.map { it.label }, { prefs.cinemaGlow.ordinal }) { i ->
             app.playbackSettings.update { it.copy(cinemaGlow = levels[i]) }
             ambient.level = levels[i]
         }
         val modes = com.kirtanya.reel.core.playback.PictureMode.entries
-        val picture = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Picture", modes.map { it.label }, { prefs.picture.ordinal }, asList = true) { i ->
+        val picture = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Picture", modes.map { it.label }, { currentPicture.ordinal }, asList = true) { i ->
             setPicture(modes[i])
         }
         playerView = PlayerView(this).apply {
@@ -1224,9 +1669,12 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 onNext = { playNext() },
             ).also {
                 it.setToggles(listOf(picture, cinema))
+                it.seekStepMs = options.seekStepS * 1_000L
                 root.addView(it.view, FrameLayout.LayoutParams(-1, -1))
             }
-            buildTvChips(root)
+            setPanelRows()
+            overlays.addTo(root)
+            wireOverlays()
             buildErrorPanel(root)
             return root
         }
@@ -1252,92 +1700,32 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             },
         )
         phoneControls?.setToggles(listOf(picture, cinema))
-        phoneControls?.syncZoom(prefs.picture == com.kirtanya.reel.core.playback.PictureMode.FILL)
+        phoneControls?.seekStepMs = options.seekStepS * 1_000L
+        phoneControls?.syncZoom(currentPicture == com.kirtanya.reel.core.playback.PictureMode.FILL)
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))
-        phoneControls?.onShown = { applyCaptionLook() }
-        // The same small chips as the TV, top right (the phone controls keep the top clear).
-        buildTvChips(root)
+        setPanelRows()
+        phoneControls?.onShown = {
+            applyCaptionLook()
+            overlays.placeSkipChip(phoneControls?.coveredBottomPx() ?: 0)
+        }
+        // The same small chips as the TV, top right (the phone controls keep the top clear); Skip above the band.
+        overlays.addTo(root)
+        wireOverlays()
         buildErrorPanel(root)
         return root
     }
 
-    /**
-     * Every status chip is small and sits at the top right, side by side: Up next, Start over,
-     * then the buffering chip (spinner + speed) at the corner.
-     */
-    private fun buildTvChips(root: FrameLayout, topMarginDp: Int = 20) {
-        val chips = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL or Gravity.END
-        }
-        root.addView(chips, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(topMarginDp), dp(24), 0) })
-        fun chipGap() = LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) }
-
-        nextCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(4), dp(4), dp(4))
-            background = glass(radius = 999)
-            visibility = View.GONE
-            nextTitle = text(12f, PlayerColors.FOREGROUND, medium = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = dp(220) }
-            nextCountdown = text(12f, Tokens.Night.textSecondary.toArgb()).apply { setPadding(dp(8), 0, dp(8), 0); maxLines = 1 }
-            addView(nextTitle)
-            addView(nextCountdown)
-            nextPlay = smallButton("Play now", primary = true) { playNext() }
-            addView(nextPlay)
-            addView(smallButton("Cancel") { cancelNext() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(4) })
-        }
-        chips.addView(nextCard, chipGap())
-
-        resumeChip = smallButton("") {
+    /** What the overlays' buttons do (PlayerOverlays builds them). */
+    private fun wireOverlays() {
+        nextPlay.setOnClickListener { playNext() }
+        overlays.nextCancel.setOnClickListener { cancelNext() }
+        resumeChip.setOnClickListener {
             player?.seekTo(0)
             hideResumeChip()
-        }.apply { visibility = View.GONE }
-        chips.addView(resumeChip, chipGap())
-
-        val statusChip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(6), dp(12), dp(6))
-            background = glass(radius = 999)
-            visibility = View.GONE
-            addView(android.widget.ProgressBar(context).apply {
-                isIndeterminate = true
-                indeterminateTintList = android.content.res.ColorStateList.valueOf(PlayerColors.FOREGROUND)
-            }, LinearLayout.LayoutParams(dp(12), dp(12)).apply { marginEnd = dp(8) })
         }
-        // The chip shows and hides with its text (every caller sets the text's visibility).
-        status = object : TextView(this) {
-            override fun setVisibility(visibility: Int) {
-                super.setVisibility(visibility)
-                statusChip.visibility = visibility
-            }
-        }.apply {
-            setTextColor(PlayerColors.FOREGROUND)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = font(medium = true)
-            maxLines = 1
-            maxWidth = dp(260)
-        }
-        statusChip.addView(status)
-        status.visibility = View.GONE
-        chips.addView(statusChip, chipGap())
-    }
-
-    private fun smallButton(label: String, primary: Boolean = false, onClick: () -> Unit) = button(label, primary, onClick).apply {
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-        minHeight = dp(30)
-        minimumHeight = dp(30)
-        minWidth = 0
-        minimumWidth = 0
-        setPadding(dp(12), dp(4), dp(12), dp(4))
-        if (!isTelevision()) {
-            // Phone: a 48 dp touch area around the same 30 dp pill (transparent bands above and below).
-            background = android.graphics.drawable.InsetDrawable(background, 0, dp(9), 0, dp(9))
-            minHeight = dp(48)
-            minimumHeight = dp(48)
-            setPadding(dp(12), dp(13), dp(12), dp(13))
-        }
+        skipChip.setOnClickListener { skipNow() }
+        overlays.stillContinue.setOnClickListener { answerStillWatching(true) }
+        overlays.stillStop.setOnClickListener { answerStillWatching(false) }
     }
 
     private fun buildErrorPanel(root: FrameLayout) {
@@ -1367,46 +1755,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun font(medium: Boolean) =
         androidx.core.content.res.ResourcesCompat.getFont(this, if (medium) com.kirtanya.reel.R.font.instrument_sans_semibold else com.kirtanya.reel.R.font.instrument_sans_regular)
 
-    private fun text(sizeSp: Float, color: Int, medium: Boolean = false) = TextView(this).apply {
-        setTextColor(color)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        typeface = font(medium)
-    }
+    private fun text(sizeSp: Float, color: Int, medium: Boolean = false) = overlays.text(sizeSp, color, medium)
 
-    /** Pill button: filled primary (Material) or glass; a bright ring when the remote focuses it. */
-    private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        typeface = font(medium = true)
-        setTextColor(if (primary) Tokens.Night.onAccent.toArgb() else PlayerColors.FOREGROUND)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        minHeight = dp(40)
-        minimumHeight = dp(40)
-        setPadding(dp(20), dp(8), dp(20), dp(8))
-        stateListAnimator = null
-        fun shape(focused: Boolean) = GradientDrawable().apply {
-            cornerRadius = dp(999).toFloat()
-            setColor(if (primary) Tokens.Night.accent.toArgb() else glassColor)
-            setStroke(dp(if (focused) 2 else 1), if (focused) PlayerColors.FOREGROUND else if (primary) Color.TRANSPARENT else hairline)
-        }
-        background = android.graphics.drawable.StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_focused), shape(true))
-            addState(intArrayOf(android.R.attr.state_pressed), shape(true))
-            addState(intArrayOf(), shape(false))
-        }
-        setOnClickListener { onClick() }
-    }
-
-    private fun glass(radius: Int) = GradientDrawable().apply {
-        setColor(glassColor)
-        cornerRadius = dp(radius).toFloat()
-        setStroke(dp(1), hairline)
-    }
-
-    private fun rounded(color: Int) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = dp(12).toFloat()
-    }
+    private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = overlays.button(label, primary, onClick)
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -1414,10 +1765,17 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     companion object {
         private const val TAG = "ReelPlayer"
+        private const val SEARCH_SUBS_ROW = "Search subtitles again"
+        private const val FX_UNAVAILABLE = "Not available on this device"
         /** Buffering this long while wanting to play saves a "stall" report. */
         private const val STALL_REPORT_MS = 15_000L
         private const val EXTRA_PLAYBACK = "playback"
         private const val EXTRA_START_MS = "startAtMs"
+        /** Untouched episodes so far (Still watching?), carried to the next episode's player. */
+        private const val EXTRA_UNTOUCHED = "untouched"
+        /** A sleep timer in minutes carried to the next episode: its choice and when it was set (elapsedRealtime). */
+        private const val EXTRA_SLEEP = "sleep"
+        private const val EXTRA_SLEEP_AT = "sleepAt"
         private val json = Json { ignoreUnknownKeys = true }
 
         fun formatTime(ms: Long): String {

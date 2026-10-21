@@ -196,10 +196,15 @@ internal class ViewChecks(private val root: View, private val where: String) {
         var checked = 0
         for (v in targets) {
             val r = rectOf(v)
+            // Focus scrolls a long list (the player's settings panel) to the control: measure it where it lands.
+            val scroller = generateSequence(v.parent) { it.parent }.firstOrNull { it is ScrollView } as? ScrollView
+            val scrollBefore = scroller?.scrollY ?: 0
+            if (!focus(v, afterMove)) { skipped += "${label(v)}: doesn't take focus"; continue }
+            r.offset(0, scrollBefore - (scroller?.scrollY ?: 0))
             // The control plus what lies near it: its ring and lift (RoundButton grows 12 %: 6 % per side).
             val mx = (FocusDiff.NEAR_DP * density + 0.06f * r.width()).roundToInt(); val my = (FocusDiff.NEAR_DP * density + 0.06f * r.height()).roundToInt()
-            val area = Rect(r.left - mx, r.top - my, r.right + mx, r.bottom + my).apply { intersect(0, 0, root.width, root.height) }
-            if (!focus(v, afterMove)) { skipped += "${label(v)}: doesn't take focus"; continue }
+            val area = Rect(r.left - mx, r.top - my, r.right + mx, r.bottom + my)
+            if (!area.intersect(0, 0, root.width, root.height)) { skipped += "${label(v)}: off screen"; continue }
             val on = crop(shot(), area)
             val other = targets.firstOrNull { it !== v && !Rect.intersects(rectOf(it), area) }
             if (other == null || !focus(other, afterMove) || v.isFocused) { skipped += "${label(v)}: no other control to move focus to"; continue }

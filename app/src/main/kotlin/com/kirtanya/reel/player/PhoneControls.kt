@@ -42,7 +42,7 @@ import kotlin.math.abs
  *  - Under the row, the seek bar: a hairline (played part only), thumb + halo and a time bubble
  *    while touched, a full 48 dp touch area; elapsed / remaining small above its ends.
  *
- * Gestures on the picture: tap shows / hides; double-tap the left or right third skips 10 s (taps
+ * Gestures on the picture: tap shows / hides; double-tap the left or right third skips one step (taps
  * in a row add up); drag sideways scrubs; drag up/down on the left sets brightness, on the right
  * volume; press and hold plays at 2× until released; pinch zooms to fill / back to fit. Lock hides
  * everything and ignores gestures until the lock is tapped again.
@@ -97,11 +97,30 @@ internal class PhoneControls(
     /** On/off rows in the settings panel (Picture, Cinema mode). */
     fun setToggles(list: List<PanelToggle>) { settingsPanel.toggles = list }
 
+    /** The panel's section rows (subtitle delay…, night mode…, sleep timer) and its choice callback. */
+    fun setRows(subtitle: List<PanelRow>, audio: List<PanelRow>, playback: List<PanelRow>, onChoice: (String) -> Unit) {
+        settingsPanel.subtitleRows = subtitle
+        settingsPanel.audioRows = audio
+        settingsPanel.playbackRows = playback
+        settingsPanel.onChoice = onChoice
+    }
+
+    fun refreshPanel() = settingsPanel.refresh()
+
+    /** One skip (Settings → Playback → Skip by): the ± buttons, their numbers and a double-tap. */
+    var seekStepMs = 10_000L
+        set(v) {
+            field = v
+            rew.setSeconds((v / 1000).toInt())
+            ffwd.setSeconds((v / 1000).toInt())
+        }
+
     private var locked = false
     private var zoomed = false
     private val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     val visible get() = controls.visibility == VISIBLE
+    val panelOpen get() = settingsPanel.open
 
     init {
         clipChildren = false
@@ -167,8 +186,8 @@ internal class PhoneControls(
         }
 
         back.setOnClickListener { onBack() }
-        rew.setOnClickListener { seekBy(-10_000); touch() }
-        ffwd.setOnClickListener { seekBy(10_000); touch() }
+        rew.setOnClickListener { seekBy(-seekStepMs); touch() }
+        ffwd.setOnClickListener { seekBy(seekStepMs); touch() }
         play.setOnClickListener { togglePlay(); touch() }
         subs.setOnClickListener { openPanel("sub") }
         tune.setOnClickListener { openPanel(null) }
@@ -406,7 +425,7 @@ internal class PhoneControls(
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (locked) { flashUnlock(); return true }
             if (settingsPanel.open) { closePanel(); return true }
-            // A tap while the skip bubble is up adds another 10 s on that side.
+            // A tap while the skip bubble is up adds another step on that side.
             val side = when { e.x < width / 3f -> -1; e.x > width * 2 / 3f -> 1; else -> 0 }
             if (tapSeekSide != 0 && side == tapSeekSide) { tapSeek(side); return true }
             if (visible) hide() else show()
@@ -515,8 +534,8 @@ internal class PhoneControls(
     private fun tapSeek(side: Int) {
         if (tapSeekSide != side) tapSeekTotal = 0
         tapSeekSide = side
-        tapSeekTotal += 10
-        seekBy(side * 10_000L)
+        tapSeekTotal += (seekStepMs / 1000).toInt()
+        seekBy(side * seekStepMs)
         val bubble = if (side < 0) leftBubble else rightBubble
         (if (side < 0) rightBubble else leftBubble).fade()
         bubble.text = if (side < 0) "«  $tapSeekTotal s" else "$tapSeekTotal s  »"
