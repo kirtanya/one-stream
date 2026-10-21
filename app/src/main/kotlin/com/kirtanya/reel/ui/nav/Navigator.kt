@@ -15,7 +15,8 @@ sealed interface Dest {
 
     /**
      * Where to play a film, or one episode of a show. [download] opens it for downloading;
-     * [replacing] (an info-hash) for a new source for that download (Downloads → Change source).
+     * [replacing] (an info-hash) for a new source for that download (Downloads → Change source);
+     * [resumeAtMs] the player's position when it asked for another source (the pick plays from there).
      */
     data class Sources(
         val ref: TitleRef,
@@ -23,7 +24,11 @@ sealed interface Dest {
         val episode: Int? = null,
         val download: Boolean = false,
         val replacing: String? = null,
-    ) : Dest
+        val resumeAtMs: Long? = null,
+    ) : Dest {
+        /** The same page, whatever position it carries. */
+        fun samePage(other: Dest) = other is Sources && other.copy(resumeAtMs = null) == copy(resumeAtMs = null)
+    }
 
     /**
      * A grid: a Home row's titles ("See all"), everything on one streaming service, or the most
@@ -79,11 +84,14 @@ class Navigator {
 
     /** Opens [dest] unless it's already showing; if it's further back, returns to it instead of stacking a copy. */
     fun openOrReturn(dest: Dest) {
-        val existing = stack.lastIndexOf(dest)
+        // A Sources page carrying a position (the player's Change source) returns to that page too, taking the position along.
+        val existing = stack.indexOfLast { it == dest || (dest is Dest.Sources && dest.samePage(it)) }
         when {
-            existing == stack.lastIndex && existing >= 0 -> Unit
-            existing >= 0 -> while (stack.lastIndex > existing) stack.removeAt(stack.lastIndex)
-            else -> stack.add(dest)
+            existing < 0 -> stack.add(dest)
+            else -> {
+                while (stack.lastIndex > existing) stack.removeAt(stack.lastIndex)
+                if (stack[existing] != dest) stack[existing] = dest
+            }
         }
     }
 

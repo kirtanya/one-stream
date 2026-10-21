@@ -49,6 +49,25 @@ class PlayerDesignRules {
         scene.release()
     }
 
+    /** The panel's end: Change source (TMDB title) and the same row off with its note (a file). */
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneSettingsSource() = phonePanelEnd("player/phone-settings-source", file = false)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneSettingsFile() = phonePanelEnd("player/phone-settings-file", file = true)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE, fontScale = 1.3f)
+    fun phoneSettingsFile130() = phonePanelEnd("player/phone-settings-file-130", file = true)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitSettingsFile() = phonePanelEnd("player/phone-portrait-settings-file", file = true)
+
+    private fun phonePanelEnd(where: String, file: Boolean) {
+        val scene = PlayerScenes.phone(panel = true, withPlayer = true, file = file, panelEnd = true)
+        check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
     @Test @Config(sdk = [34], qualifiers = PHONE, fontScale = 1.3f)
     fun phoneControls130() = phone("player/phone-controls-130", panel = false)
 
@@ -95,8 +114,14 @@ class PlayerDesignRules {
     @Test @Config(sdk = [34], qualifiers = TV)
     fun tvSettings() = tv("player/tv-settings", PlayerScenes.MID, panel = true)
 
-    private fun tv(where: String, picture: IntArray, panel: Boolean) {
-        val scene = PlayerScenes.tv(picture, panel)
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvSettingsSource() = tv("player/tv-settings-source", PlayerScenes.MID, panel = true, panelEnd = true)
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvSettingsFile() = tv("player/tv-settings-file", PlayerScenes.MID, panel = true, panelEnd = true, file = true)
+
+    private fun tv(where: String, picture: IntArray, panel: Boolean, panelEnd: Boolean = false, file: Boolean = false) {
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd)
         // The strip refreshes from the (empty) player while time passes: keep it mid-film.
         check(where, ViewChecks(scene.root, where), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
         scene.release()

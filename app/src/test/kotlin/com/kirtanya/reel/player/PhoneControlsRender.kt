@@ -18,6 +18,10 @@ import org.robolectric.annotation.GraphicsMode
 class PhoneControlsRender {
     @Test fun renderPhone() = render("phone_controls", panel = false)
     @Test fun renderPhoneSettings() = render("phone_controls_settings", panel = true)
+    /** The panel's end: Change source, and the same row off (with its note) for a file without TMDB info. */
+    @Test fun renderPhoneSettingsSource() = render("phone_controls_settings_source", panel = true, panelEnd = true)
+    @Test fun renderPhoneSettingsFile() = render("phone_controls_settings_file", panel = true, panelEnd = true, file = true)
+    @Test @Config(qualifiers = PORT) fun renderPortraitSettingsFile() = render("phone_controls_portrait_settings_file", panel = true, panelEnd = true, file = true)
     @Test fun renderPhoneScrub() = render("phone_controls_scrub", panel = false, scrub = true)
     @Test fun renderPhoneMovie() = render("phone_controls_movie", panel = false, next = false)
     @Test @Config(fontScale = 1.3f) fun renderPhone130() = render("phone_controls_130", panel = false)
@@ -27,8 +31,8 @@ class PhoneControlsRender {
     @Test @Config(qualifiers = PORT) fun renderPortraitSettings() = render("phone_controls_portrait_settings", panel = true)
     @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortrait130() = render("phone_controls_portrait_130", panel = false)
 
-    private fun render(name: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false) {
-        val scene = PlayerScenes.phone(panel, withPlayer = panel, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null)
+    private fun render(name: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false, panelEnd: Boolean = false, file: Boolean = false) {
+        val scene = PlayerScenes.phone(panel, withPlayer = panel, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null, file = file, panelEnd = panelEnd)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

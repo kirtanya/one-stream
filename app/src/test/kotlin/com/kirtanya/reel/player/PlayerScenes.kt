@@ -28,6 +28,27 @@ internal object PlayerScenes {
         fun release() = player.release()
     }
 
+    /**
+     * The extra rows PlayerActivity adds (buildLayout): Change source (off with its note for a file
+     * without TMDB info), Open in another player, Report a problem.
+     */
+    fun extras(file: Boolean): List<PanelExtra> = listOf(
+        if (file) PanelExtra(CHANGE_SOURCE_ROW, note = com.kirtanya.reel.core.playback.PlayerSourceChange.NO_SOURCES_NOTE, action = null)
+        else PanelExtra(CHANGE_SOURCE_ROW) {},
+        PanelExtra("Open in another player") {},
+        PanelExtra(REPORT_ROW) {},
+    )
+
+    /** Scrolls the open settings panel to its end, where the extra rows are. */
+    fun scrollPanelToEnd(root: android.view.View) {
+        val row = root.findViewWithTag<android.view.View>(CHANGE_SOURCE_ROW) ?: root.findViewWithTag("$CHANGE_SOURCE_ROW (off)") ?: return
+        var p = row.parent
+        while (p != null && p !is android.widget.ScrollView) p = p.parent
+        val sv = p as? android.widget.ScrollView ?: return
+        sv.scrollTo(0, sv.getChildAt(0).height)
+        ShadowLooper.idleMainLooper()
+    }
+
     private fun playerView(activity: ComponentActivity) =
         PlayerView(activity).apply { useController = false; setShutterBackgroundColor(Color.TRANSPARENT); setBackgroundColor(Color.TRANSPARENT) }
 
@@ -36,13 +57,13 @@ internal object PlayerScenes {
      * scale). [withPlayer] attaches a (silent) ExoPlayer so the settings panel has its rows; [next]
      * makes a next episode ready; [scrubAtMs] puts a finger on the seek bar there.
      */
-    fun phone(panel: Boolean, withPlayer: Boolean = false, next: Boolean = true, scrubAtMs: Long? = null): Phone {
+    fun phone(panel: Boolean, withPlayer: Boolean = false, next: Boolean = true, scrubAtMs: Long? = null, file: Boolean = false, panelEnd: Boolean = false): Phone {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
         root.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF6E8FB5.toInt(), 0xFF2B3A55.toInt(), 0xFFC98B5E.toInt()))
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        val c = PhoneControls(activity, playerView, TITLE, { null }, { listOf("Open in another player" to {}) },
+        val c = PhoneControls(activity, playerView, TITLE, { null }, { extras(file) },
             onBack = {}, onPip = {}, nextLabel = { if (next) "Next · S1 E4" else null }, onNext = {})
         // The rows the activity adds (PlayerActivity.buildLayout), so the panel shows its real length.
         val modes = com.kirtanya.reel.core.playback.PictureMode.entries
@@ -60,6 +81,7 @@ internal object PlayerScenes {
         scene.midFilm()
         if (panel) c.openPanelForPreview()
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
+        if (panel && panelEnd) scrollPanelToEnd(root)
         scene.midFilm()
         if (scrubAtMs != null) {
             c.previewScrub(scrubAtMs)
@@ -75,13 +97,13 @@ internal object PlayerScenes {
     const val SCRUB_MS = 3_600_000L
 
     /** TV strip over a picture [picture] (top → bottom); always white with its small shadow. */
-    fun tv(picture: IntArray, panel: Boolean = false): Tv {
+    fun tv(picture: IntArray, panel: Boolean = false, file: Boolean = false, panelEnd: Boolean = false): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
         root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, picture)
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        val c = TvControls(playerView, TITLE, { null }, extraSettings = { listOf("Open in another player" to {}) })
+        val c = TvControls(playerView, TITLE, { null }, extraSettings = { extras(file) })
         root.addView(c.view, FrameLayout.LayoutParams(-1, -1))
         activity.setContentView(root)
         val exo = ExoPlayer.Builder(activity).build()
@@ -89,6 +111,7 @@ internal object PlayerScenes {
         c.show()
         if (panel) c.openPanel()
         ShadowLooper.idleMainLooper()
+        if (panel && panelEnd) scrollPanelToEnd(root)
         val scene = Tv(root, c, exo)
         scene.midFilm()
         return scene

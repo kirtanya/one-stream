@@ -31,8 +31,8 @@ internal class TvControls(
     private val playerView: PlayerView,
     title: String,
     private val font: (medium: Boolean) -> Typeface?,
-    /** Extra rows at the end of the Settings panel (label → action), e.g. "Open in another player". */
-    extraSettings: () -> List<Pair<String, () -> Unit>>,
+    /** Extra rows at the end of the Settings panel, e.g. "Change source", "Open in another player". */
+    extraSettings: () -> List<PanelExtra>,
     /** Whether a next episode is ready (shows the Next button) and how to play it. */
     private val hasNext: () -> Boolean = { false },
     private val onNext: () -> Unit = {},

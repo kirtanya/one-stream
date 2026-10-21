@@ -100,6 +100,8 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
   - `--es setPosition <titleKey> --el ms <position>` put a watch position back
   - `--es removeTitle <titleKey>` remove a title from watch history
   - `--ez mainThreadTest true` subtitle + source search on the main thread
+  - `--ez subsTest true [--ei tmdb <id> --es type tv --ei season N --ei episode N --es filename <f>]` every subtitle
+    addon for a title: request URL (config hidden), HTTP status, tracks per language, errors, what would show
   - `--es sync pair|push|open|add|remove [--es code … --es link …]` phone → TV sync checks
   - `--es home state|net|test|open|request|jobs|config` home disk checks (`test [--ez confirmHome true]`)
   - `--ez report true [--es note <text>]` manual problem report;

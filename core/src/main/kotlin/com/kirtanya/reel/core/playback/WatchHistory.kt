@@ -61,4 +61,20 @@ object ContinueWatching {
         entry.positionMs < 30_000 -> 0
         else -> entry.positionMs - 5_000
     }
+
+    /**
+     * Where the player starts: exactly at [handedOverMs] when the player handed its position over
+     * (Change source: carry on where you were, no step back, even in the first 30 s), else [resumePositionMs].
+     */
+    fun startPositionMs(handedOverMs: Long?, entry: WatchEntry?): Long =
+        handedOverMs?.takeIf { it >= 0 } ?: resumePositionMs(entry)
+}
+
+/** The player's "Change source" row (settings panel, phone and TV). */
+object PlayerSourceChange {
+    /** Shown under the row when it can't be used. */
+    const val NO_SOURCES_NOTE = "No other sources for a file"
+
+    /** Only a film or episode known on TMDB has a Sources page; a raw magnet or file doesn't. */
+    fun available(playback: Playback): Boolean = playback.tmdbId != null && playback.tmdbType != null
 }

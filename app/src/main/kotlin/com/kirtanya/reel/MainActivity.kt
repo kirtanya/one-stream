@@ -112,7 +112,8 @@ class MainActivity : ComponentActivity() {
             val type = if (intent.getStringExtra(EXTRA_OPEN_TYPE) == "tv") MediaType.TV else MediaType.MOVIE
             val season = intent.getIntExtra(EXTRA_OPEN_SEASON, -1).takeIf { it >= 0 }
             val episode = intent.getIntExtra(EXTRA_OPEN_EPISODE, -1).takeIf { it >= 0 }
-            openDest = Dest.Sources(TitleRef(type, id), season, episode)
+            val resumeAt = intent.getLongExtra(EXTRA_OPEN_RESUME, -1L).takeIf { it >= 0 }
+            openDest = Dest.Sources(TitleRef(type, id), season, episode, resumeAtMs = resumeAt)
             return
         }
         if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme.equals(LauncherLink.SCHEME, ignoreCase = true)) {
@@ -204,15 +205,20 @@ class MainActivity : ComponentActivity() {
         private const val EXTRA_OPEN_ID = "openId"
         private const val EXTRA_OPEN_SEASON = "openSeason"
         private const val EXTRA_OPEN_EPISODE = "openEpisode"
+        private const val EXTRA_OPEN_RESUME = "openResumeAt"
 
-        /** Opens the Sources screen for a film / episode (used by the player: "Other sources", "Choose a source"). */
-        fun openSources(context: android.content.Context, type: String, id: Int, season: Int?, episode: Int?): Intent =
+        /**
+         * Opens the Sources screen for a film / episode (used by the player: "Change source", "Other sources",
+         * "Choose a source"). [resumeAtMs]: the source picked there plays from that position.
+         */
+        fun openSources(context: android.content.Context, type: String, id: Int, season: Int?, episode: Int?, resumeAtMs: Long? = null): Intent =
             Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra(EXTRA_OPEN_TYPE, type)
                 .putExtra(EXTRA_OPEN_ID, id)
                 .putExtra(EXTRA_OPEN_SEASON, season ?: -1)
                 .putExtra(EXTRA_OPEN_EPISODE, episode ?: -1)
+                .putExtra(EXTRA_OPEN_RESUME, resumeAtMs ?: -1L)
     }
 
 }

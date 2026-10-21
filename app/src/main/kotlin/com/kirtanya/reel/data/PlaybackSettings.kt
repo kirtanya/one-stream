@@ -2,6 +2,7 @@ package com.kirtanya.reel.data
 
 import android.content.Context
 import androidx.core.content.edit
+import com.kirtanya.reel.core.sources.SubtitleLanguagePref
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,8 +13,11 @@ enum class SubtitleSize(val label: String, val fraction: Float) {
 
 data class PlaybackPrefs(
     val autoplayNext: Boolean = true,
-    /** ISO 639-1 code to show subtitles in, or null for off. */
-    val subtitleLanguage: String? = null,
+    /**
+     * ISO 639-1 code to show subtitles in, or null for Off. English unless the user chose otherwise
+     * (stored through SubtitleLanguagePref, where Off is its own value).
+     */
+    val subtitleLanguage: String? = SubtitleLanguagePref.DEFAULT,
     val subtitleSize: SubtitleSize = SubtitleSize.MEDIUM,
     /** Cinema mode: how strongly the bars around a video glow with its colours (player/AmbientGlow). */
     val cinemaGlow: com.kirtanya.reel.core.playback.Ambient.Level = com.kirtanya.reel.core.playback.Ambient.Level.SUBTLE,
@@ -32,7 +36,7 @@ class PlaybackSettings(context: Context) {
         _state.value = next
         prefs.edit {
             putBoolean("autoplayNext", next.autoplayNext)
-            putString("subtitleLanguage", next.subtitleLanguage)
+            putString("subtitleLanguage", SubtitleLanguagePref.encode(next.subtitleLanguage))
             putString("subtitleSize", next.subtitleSize.name)
             putString("cinemaGlow", next.cinemaGlow.name)
             putString("picture", next.picture.name)
@@ -41,7 +45,7 @@ class PlaybackSettings(context: Context) {
 
     private fun read() = PlaybackPrefs(
         autoplayNext = prefs.getBoolean("autoplayNext", true),
-        subtitleLanguage = prefs.getString("subtitleLanguage", null),
+        subtitleLanguage = SubtitleLanguagePref.decode(prefs.getString("subtitleLanguage", null)),
         subtitleSize = runCatching { SubtitleSize.valueOf(prefs.getString("subtitleSize", null)!!) }.getOrDefault(SubtitleSize.MEDIUM),
         cinemaGlow = com.kirtanya.reel.core.playback.Ambient.Level.of(prefs.getString("cinemaGlow", null)),
         picture = com.kirtanya.reel.core.playback.PictureMode.of(prefs.getString("picture", null)),

@@ -58,13 +58,24 @@ internal class ViewChecks(private val root: View, private val where: String) {
 
     private fun box(r: Rect) = Box(r.left / density.toDouble(), r.top / density.toDouble(), r.right / density.toDouble(), r.bottom / density.toDouble())
 
+    /**
+     * Not cut by a scrolling list's edge (the settings panel scrolls in landscape). A row partly
+     * scrolled out can't be read from what shows; it's checked where it shows fully, as ComposeChecks does.
+     */
+    private fun fullyInScroller(v: View): Boolean {
+        val r = rectOf(v)
+        return generateSequence(v.parent) { it.parent }.filterIsInstance<ScrollView>().all { sv -> rectOf(sv).let { it.contains(r) } }
+    }
+
     private fun View.isTarget() = isEnabled && (isClickable || isLongClickable || (isFocusable && this !is ViewGroup)) && this !is PlayerView
 
     // ─── Rule 1 ─────────────────────────────────────────────────────────────────────────────
 
     fun touch(): ComposeChecks.Result {
-        val targets = shown.filter { it.isTarget() }
-        val others = targets.map { box(rectOf(it)) }
+        val all = shown.filter { it.isTarget() }
+        val targets = all.filter(::fullyInScroller)
+        val skipped = (all - targets.toSet()).map { "${label(it)}: partly scrolled out of view" }
+        val others = all.map { box(rectOf(it)) }
         val screen = Box(0.0, 0.0, root.width / density.toDouble(), root.height / density.toDouble())
         val found = targets.mapNotNull { v ->
             val own = box(rectOf(v))
@@ -72,7 +83,7 @@ internal class ViewChecks(private val root: View, private val where: String) {
             if (TouchArea.isBigEnough(area)) null
             else DesignBaseline.line(where, label(v), "touch area ${fmt(area.width)} × ${fmt(area.height)} dp")
         }
-        return ComposeChecks.Result(targets.size, found)
+        return ComposeChecks.Result(targets.size, found, skipped)
     }
 
     // ─── Rule 2 ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +126,7 @@ internal class ViewChecks(private val root: View, private val where: String) {
         for (v in shown) {
             if (v !is TextView || v.text.isNullOrBlank() || v.layout == null) continue
             val element = "text \"${v.text.toString().short()}\""
+            if (!fullyInScroller(v)) { skipped += "$element: partly scrolled out of view"; continue }
             val m = measure(s, v, inner, outer) ?: run { skipped += "$element: too little of it on screen"; null } ?: continue
             // Under the settings panel (or anything else drawn over it): not readable, not measurable.
             val alpha = generateSequence(v as View) { it.parent as? View }.fold(1f) { a, x -> a * x.alpha }

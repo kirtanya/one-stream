@@ -50,6 +50,7 @@ import com.kirtanya.reel.core.magnet.Magnet
 import com.kirtanya.reel.core.playback.ContinueWatching
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.playback.Playback
+import com.kirtanya.reel.core.playback.PlayerSourceChange
 import com.kirtanya.reel.core.playback.hasAired
 import com.kirtanya.reel.core.playback.nextEpisode
 import com.kirtanya.reel.core.playback.pickNextSource
@@ -57,6 +58,7 @@ import com.kirtanya.reel.core.sources.QualityParser
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceKind
 import com.kirtanya.reel.core.sources.SourceRequest
+import com.kirtanya.reel.core.sources.SubtitleSearch
 import com.kirtanya.reel.core.sources.SubtitleTrack
 import com.kirtanya.reel.core.sources.Subtitles
 import com.kirtanya.reel.core.tmdb.MediaType
@@ -107,8 +109,13 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private var nextCancelled = false
     /** The Up next card was up when we went to the background; show it again on return. */
     private var nextCardPending = false
+    /** Leaving for the next episode or for Change source: don't hold the stream in the background. */
     private var leavingForNext = false
     private var firstFrameShown = false
+    /** Where this player started (resume / handed over); the position before the player exists. */
+    private var startAtMs = 0L
+    /** Started by Change source (the new source is remembered at the first frame). */
+    private var sourceChanged = false
     private var reconnectJob: kotlinx.coroutines.Job? = null
     private var externalHandoff = false
     /** We were stopped after handing off: an external player really took over (not a cancelled chooser). */
@@ -164,7 +171,11 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     private fun start() {
         val source = playback.source
-        val resumeAt = ContinueWatching.resumePositionMs(app.history.get(playback.key))
+        // Change source hands the old player's position over: carry on exactly there.
+        val handedOver = intent.getLongExtra(EXTRA_START_MS, -1L).takeIf { it >= 0 }
+        sourceChanged = handedOver != null
+        val resumeAt = ContinueWatching.startPositionMs(handedOver, app.history.get(playback.key))
+        startAtMs = resumeAt
         lifecycleScope.launch {
             try {
                 val subtitles = async { findSubtitles() }
@@ -176,36 +187,31 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                     SourceKind.TORRENT -> prepareTorrent(source)
                     SourceKind.EXTERNAL -> error("This source opens in another app")
                 }
-                // Torrents spend seconds finding peers, so subtitles are usually ready by now;
-                // don't hold a direct link up for long.
-                // Wait (briefly) only when a subtitle language is wanted; otherwise don't hold the start up.
+                // Torrents spend seconds finding peers, so subtitles are usually ready by now; a direct
+                // link waits briefly, and only when a language should show (Off never holds the start up).
                 val wantSubs = prefs.subtitleLanguage != null ||
                     (getSystemService(CAPTIONING_SERVICE) as? android.view.accessibility.CaptioningManager)?.isEnabled == true
-                val tracks = if (wantSubs) withTimeoutOrNull(400L) { subtitles.await() } else null
+                val wait = Subtitles.startWaitMs(wantSubs)
+                val found = when {
+                    subtitles.isCompleted -> subtitles.await()
+                    wait > 0 -> withTimeoutOrNull(wait) { subtitles.await() }
+                    else -> null
+                }
                 // Started in the background (the user left while peers were found): don't play
                 // there; hold the torrent until we're visible again.
                 if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                     preparedStream?.let { app.engine.suspendStream(it.infoHash, it) }
                     lifecycle.withStarted { }
                 }
-                val fromSource = source.subtitles.map {
-                    it.copy(language = Subtitles.normalizeLanguage(it.language), format = it.format ?: Subtitles.formatOf(it.url))
-                }
-                play(url, (fromSource + tracks.orEmpty()).distinctBy { it.url }, resumeAt)
-                if (tracks == null && wantSubs) {
-                    // Slow subtitle addons: add their tracks if they arrive before the picture does.
-                    val late = runCatching { subtitles.await() }.getOrNull().orEmpty()
-                    val exo = player
-                    val item = exo?.currentMediaItem
-                    if (late.isNotEmpty() && exo != null && item != null && !firstFrameShown && errorPanel.visibility != View.VISIBLE) {
-                        val have = item.localConfiguration?.subtitleConfigurations.orEmpty()
-                        val haveUris = have.map { it.uri.toString() }.toSet()
-                        val extra = late.filter { it.url !in haveUris }.map(::subtitleConfig)
-                        if (extra.isNotEmpty()) {
-                            exo.setMediaItem(item.buildUpon().setSubtitleConfigurations(have + extra).build(), exo.currentPosition.coerceAtLeast(resumeAt))
-                            exo.prepare()
-                        }
-                    }
+                // Every track is attached (the Subtitles menu lists them all); the setting only picks
+                // which one shows by itself (applySubtitlePrefs).
+                val tracks = Subtitles.merge(source.subtitles, found?.tracks.orEmpty())
+                play(url, tracks, resumeAt)
+                subsStat("subsAttached", mapOf("attached" to tracks.size, "when" to "start", "addonsAnswered" to (found != null)))
+                if (found == null) {
+                    // Slow subtitle addons: their tracks join when they arrive (see addLateSubtitles).
+                    val late = runCatching { subtitles.await() }.getOrNull()?.tracks.orEmpty()
+                    if (late.isNotEmpty()) addLateSubtitles(late)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -237,16 +243,100 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         return if (com.kirtanya.reel.engine.EngineFlags.inapp) info.uri else engine.httpUrlFor(info)
     }
 
-    /** Subtitles from subtitle addons (needs an IMDb id); [] when there's nothing to ask. */
-    private suspend fun findSubtitles(): List<SubtitleTrack> {
-        val req = sourceRequest(playback.episode) ?: return emptyList()
+    /**
+     * Subtitles from subtitle addons. They need an IMDb id: a title that came without one (a link
+     * from another app, an old Continue watching card) gets it from TMDB first. A raw magnet / file has
+     * no TMDB id, so there's nothing to ask. Logs what each addon answered (ReelPlayer) and a ReelStats line.
+     */
+    private suspend fun findSubtitles(): SubtitleSearch {
+        val none = SubtitleSearch(emptyList(), emptyList())
         val addons = app.sources.subtitleAddons()
-        if (addons.isEmpty()) return emptyList()
-        return runCatching {
-            withContext(Dispatchers.Default) { Subtitles.search(req, addons, app.fetcher, filename = playback.source.filename) }
+        val base = sourceRequest(playback.episode)
+        if (addons.isEmpty() || base == null) {
+            subsStat("subs", mapOf("asked" to 0, "found" to 0, "why" to if (addons.isEmpty()) "noSubtitleAddons" else "noTmdbId"))
+            return none
+        }
+        val req = if (base.imdbId != null) base else {
+            val ref = TitleRef(if (playback.tmdbType == "tv") MediaType.TV else MediaType.MOVIE, base.tmdbId)
+            base.copy(imdbId = withTimeoutOrNull(4_000) { runCatching { app.tmdb.details(ref).imdbId }.getOrNull() })
+        }
+        val search = runCatching {
+            withContext(Dispatchers.Default) { Subtitles.searchDetailed(req, addons, app.fetcher, filename = playback.source.filename) }
         }
             .onFailure { if (it is CancellationException) throw it else Log.w(TAG, "subtitles failed", it) }
-            .getOrDefault(emptyList())
+            .getOrDefault(none)
+        Subtitles.describe(search).forEach { Log.i(TAG, "subs $it") }
+        subsStat("subs", mapOf(
+            "asked" to search.answers.size,
+            "answered" to search.answers.count { it.status in 200..299 },
+            "found" to search.tracks.size,
+            "langs" to search.tracks.map { it.language }.distinct().take(8).joinToString(","),
+            "imdb" to (req.imdbId != null),
+            "imdbFromTmdb" to (base.imdbId == null && req.imdbId != null),
+            "want" to (prefs.subtitleLanguage ?: "off"),
+        ))
+        return search
+    }
+
+    /** Subtitle tracks that came too late for the start, waiting for a moment that won't be noticed. */
+    private var pendingSubs: List<SubtitleTrack> = emptyList()
+
+    /**
+     * Adding side-loaded subtitles means preparing the media item again (ExoPlayer can't add them to a
+     * prepared one). Before the first frame that costs nothing visible, so they join at once. After it,
+     * a re-prepare would show as a restart, so they wait for the next natural break: a seek (the buffer
+     * is thrown away anyway), a pause (the last frame stays up: keepContentOnPlayerReset), or the
+     * return from the background (onStart prepares again anyway).
+     */
+    private fun addLateSubtitles(late: List<SubtitleTrack>) {
+        val have = player?.currentMediaItem?.localConfiguration?.subtitleConfigurations.orEmpty().map { it.uri.toString() }.toSet()
+        val extra = late.filter { it.url !in have }
+        if (extra.isEmpty()) return
+        if (!firstFrameShown) attachSubtitles(extra, "beforeFirstFrame")
+        else {
+            pendingSubs = extra
+            subsStat("subsLate", mapOf("pending" to extra.size))
+        }
+    }
+
+    /** Rebuilds the item with [extra] subtitle tracks at the current position; [prepare] = false when the caller prepares. */
+    private fun attachSubtitles(extra: List<SubtitleTrack>, why: String, prepare: Boolean = true) {
+        pendingSubs = emptyList()
+        val exo = player ?: return
+        val item = exo.currentMediaItem ?: return
+        if (errorPanel.visibility == View.VISIBLE || exo.playbackState == Player.STATE_ENDED) return
+        val have = item.localConfiguration?.subtitleConfigurations.orEmpty()
+        val haveUris = have.map { it.uri.toString() }.toSet()
+        val add = extra.filter { it.url !in haveUris }
+        if (add.isEmpty()) return
+        exo.setMediaItem(item.buildUpon().setSubtitleConfigurations(have + add.map(::subtitleConfig)).build(), exo.currentPosition.coerceAtLeast(0))
+        if (prepare) exo.prepare()
+        subsStat("subsAttached", mapOf("attached" to add.size, "total" to have.size + add.size, "when" to why))
+    }
+
+    private fun attachPendingSubtitles(why: String) {
+        val pending = pendingSubs.takeIf { it.isNotEmpty() } ?: return
+        playerView.post { if (pendingSubs === pending) attachSubtitles(pending, why) }
+    }
+
+    /** Which subtitle shows by itself, logged whenever it changes (ReelStats `subsSelected`). */
+    private var loggedSubtitle: String? = null
+
+    private fun logSelectedSubtitle(tracks: androidx.media3.common.Tracks) {
+        val text = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        if (text.isEmpty()) return
+        val selected = text.firstNotNullOfOrNull { g -> (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let { g.getTrackFormat(it).language ?: C.LANGUAGE_UNDETERMINED } } ?: "none"
+        val line = "$selected/${text.sumOf { it.length }}"
+        if (line == loggedSubtitle) return
+        loggedSubtitle = line
+        subsStat("subsSelected", mapOf("selected" to selected, "tracks" to text.sumOf { it.length }, "want" to (prefs.subtitleLanguage ?: "off")))
+    }
+
+    /** Subtitle telemetry: a ReelStats line (with the stream's key for torrents) and a ReelPlayer line. */
+    private fun subsStat(event: String, fields: Map<String, Any?>) {
+        val h = hash
+        if (h != null) com.kirtanya.reel.engine.EngineStats.event(h, event, fields) else com.kirtanya.reel.engine.EngineStats.log(event, fields)
+        Log.i(TAG, "$event ${fields.entries.joinToString(" ") { "${it.key}=${it.value}" }}")
     }
 
     private fun play(url: String, subtitles: List<SubtitleTrack>, resumeAtMs: Long) {
@@ -353,6 +443,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
         override fun onRenderedFirstFrame() {
             firstFrameShown = true
+            // Changed source: remember the new one for this film / episode straight away.
+            if (sourceChanged) playerView.post { saveProgress() }
             preparedStream?.let { app.engine.onPlayerEvent(it, "firstFrame") }
             stats { s ->
                 if (s.firstFrameAt == null) {
@@ -366,11 +458,18 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             if (reason == Player.DISCONTINUITY_REASON_SEEK) {
                 stats { it.seek(now()) }
                 preparedStream?.let { app.engine.onPlayerEvent(it, "seek") }
+                attachPendingSubtitles("seek")
             }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (!isPlaying) saveProgress()
+            // Paused by the user (not buffering): late subtitles can join behind the still frame.
+            if (!isPlaying && player?.playWhenReady == false) attachPendingSubtitles("pause")
+        }
+
+        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+            logSelectedSubtitle(tracks)
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -697,12 +796,37 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), mime), "Open with"))
     }
 
-    /** Back to Reel's Sources screen for this title / episode. */
-    private fun openSources(episode: EpisodeNumber?) {
+    /** Back to Reel's Sources screen for this title / episode; [resumeAtMs] = the next source starts there. */
+    private fun openSources(episode: EpisodeNumber?, resumeAtMs: Long? = null) {
         val type = playback.tmdbType ?: return
         val id = playback.tmdbId ?: return
-        startActivity(MainActivity.openSources(this, type, id, episode?.season, episode?.episode))
+        startActivity(MainActivity.openSources(this, type, id, episode?.season, episode?.episode, resumeAtMs))
     }
+
+    /** Where this film / episode is now (or where it was about to start, while still finding peers). */
+    private fun currentPositionMs(): Long =
+        player?.takeIf { it.playbackState != Player.STATE_IDLE || firstFrameShown }?.currentPosition ?: startAtMs
+
+    /**
+     * Settings → Change source: the Sources page for this film / episode; the source picked there
+     * plays from here. This player saves its position and closes, which stops its stream (onDestroy,
+     * owner-checked), so the new one never competes with it. History keeps one entry (same key) and
+     * the new player's first save makes the new source the remembered one.
+     */
+    private fun changeSource() {
+        if (!PlayerSourceChange.available(playback) || leavingForNext) return
+        val at = currentPositionMs()
+        saveProgress()
+        leavingForNext = true
+        Log.i(TAG, "change source for ${playback.key} at ${formatTime(at)}")
+        openSources(playback.episode, at)
+        finish()
+    }
+
+    /** The Change source row for the settings panel: off (with a note) for a file without TMDB info. */
+    private fun changeSourceRow() =
+        if (PlayerSourceChange.available(playback)) PanelExtra(CHANGE_SOURCE_ROW) { changeSource() }
+        else PanelExtra(CHANGE_SOURCE_ROW, note = PlayerSourceChange.NO_SOURCES_NOTE, action = null)
 
     // ---------------------------------------------------------------- picture in picture
 
@@ -746,7 +870,11 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         val exo = player
         if (exo != null && exo.playbackState == Player.STATE_IDLE && streamUrl != null && errorPanel.visibility != View.VISIBLE &&
             !(externalHandoff && stoppedSinceHandoff)
-        ) exo.prepare()
+        ) {
+            // Preparing again anyway: late subtitles join here for free.
+            if (pendingSubs.isNotEmpty()) attachSubtitles(pendingSubs, "return", prepare = false)
+            exo.prepare()
+        }
     }
 
     override fun onResume() {
@@ -1054,6 +1182,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         // Cinema mode: the glow sits under the video; the player view itself stays see-through so
         // the bars show it (the video surface still covers the middle).
         playerView.setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+        // Re-preparing (late subtitles at a pause, back from the background) keeps the last frame up.
+        playerView.setKeepContentOnPlayerReset(true)
         playerView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         ambient = AmbientGlow(playerView).apply { level = prefs.cinemaGlow }
         applyPicture()
@@ -1065,8 +1195,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 playback.displayTitle,
                 ::font,
                 extraSettings = {
-                    (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
-                    else emptyList()) + (REPORT_ROW to { reportFromSettings() })
+                    listOf(changeSourceRow()) +
+                        (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf(PanelExtra("Open in another player") { openExternal() })
+                        else emptyList()) + PanelExtra(REPORT_ROW) { reportFromSettings() }
                 },
                 hasNext = { nextReady != null },
                 onNext = { playNext() },
@@ -1087,8 +1218,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             title = playback.displayTitle,
             font = ::font,
             extraSettings = {
-                (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf("Open in another player" to { openExternal() })
-                else emptyList()) + (REPORT_ROW to { reportFromSettings() })
+                listOf(changeSourceRow()) +
+                    (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf(PanelExtra("Open in another player") { openExternal() })
+                    else emptyList()) + PanelExtra(REPORT_ROW) { reportFromSettings() }
             },
             onBack = { finish() },
             onPip = if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({ enterPip() }) else null,
@@ -1199,7 +1331,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             addView(errorText)
             val gap = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) }
             errorSources = button("Other sources", primary = true) {
-                openSources(playback.episode)
+                openSources(playback.episode, currentPositionMs())
                 finish()
             }
             addView(errorSources, LinearLayout.LayoutParams(-2, -2))
@@ -1263,6 +1395,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         /** Buffering this long while wanting to play saves a "stall" report. */
         private const val STALL_REPORT_MS = 15_000L
         private const val EXTRA_PLAYBACK = "playback"
+        private const val EXTRA_START_MS = "startAtMs"
         private val json = Json { ignoreUnknownKeys = true }
 
         fun formatTime(ms: Long): String {
@@ -1270,8 +1403,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
         }
 
-        fun forPlayback(context: Context, playback: Playback): Intent =
+        /** [startAtMs]: start exactly there (Change source hands the old player's position over). */
+        fun forPlayback(context: Context, playback: Playback, startAtMs: Long? = null): Intent =
             Intent(context, PlayerActivity::class.java).putExtra(EXTRA_PLAYBACK, json.encodeToString(Playback.serializer(), playback))
+                .apply { if (startAtMs != null && startAtMs >= 0) putExtra(EXTRA_START_MS, startAtMs) }
 
         /** A magnet from Downloads or a browser: no TMDB info, history keyed by the file. */
         fun forMagnet(context: Context, magnet: String, title: String? = null, fileIndex: Int? = null, filename: String? = null): Intent {

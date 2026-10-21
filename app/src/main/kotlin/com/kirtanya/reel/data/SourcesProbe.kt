@@ -19,6 +19,7 @@ import kotlinx.coroutines.withTimeout
  * `[--es addAddon <manifest url>] [--es removeAddon <manifest url>]` installs / removes an addon around the search.
  * `--ez history true` dumps watch history and Continue watching instead of searching.
  * `--ez mainThreadTest true` adds OpenSubtitles (removed after), searches subtitles + sources on the main thread.
+ * `--ez subsTest true [--ei tmdb <id> --es type tv --ei season N --ei episode N --es filename <f>]` checks every subtitle addon.
  * `--ez playTest true --es url <direct> [--ei tmdb --ei season --ei episode --ei nextEpisode --el startMs --el durationMs]` plays a test video as an episode.
  * `--es removeTitle <titleKey>` removes a film/show from watch history.
  * `--ez report true [--es note <text>]` saves a manual problem report (screenshot of the screen on top, if ours).
@@ -121,6 +122,10 @@ class SourcesProbe : BroadcastReceiver() {
         }
         if (intent.getBooleanExtra("mainThreadTest", false)) {
             mainThreadTest(app, goAsync())
+            return
+        }
+        if (intent.getBooleanExtra("subsTest", false)) {
+            subsTest(app, intent, goAsync())
             return
         }
         val pending = goAsync()
@@ -237,6 +242,41 @@ class SourcesProbe : BroadcastReceiver() {
         if (start > 0) app.history.save(playback, start, intent.getLongExtra("durationMs", start * 2))
         context.startActivity(com.kirtanya.reel.player.PlayerActivity.forPlayback(context, playback).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         Log.i(TAG, "playTest started ${playback.key} at ${start / 1000}s")
+    }
+
+    /**
+     * Do the subtitle addons work? `--ez subsTest true [--ei tmdb <id>] [--es type tv --ei season N --ei episode N]
+     * [--es filename <name>]` lists every installed subtitle addon, asks the enabled ones for the title
+     * exactly as the player does (IMDb id from TMDB), and logs per addon: request URL (addon config
+     * hidden), HTTP status, tracks per language, error; then the merged total and which language the
+     * player would show by itself with the current setting. Nothing plays; no P2P.
+     */
+    private fun subsTest(app: ReelApp, intent: Intent, pending: PendingResult) {
+        val type = if (intent.getStringExtra("type") == "tv") MediaType.TV else MediaType.MOVIE
+        val ref = TitleRef(type, intent.getIntExtra("tmdb", 10378))
+        val season = intent.getIntExtra("season", -1).takeIf { it >= 0 } ?: if (type == MediaType.TV) 1 else null
+        val episode = intent.getIntExtra("episode", -1).takeIf { it >= 0 } ?: if (type == MediaType.TV) 1 else null
+        app.appScope.launch {
+            try {
+                withTimeout(60_000) {
+                    val all = app.sources.state.value.addons.mapNotNull { a -> runCatching { a.manifest }.getOrNull()?.takeIf { it.hasSubtitles }?.let { a to it } }
+                    Log.i(TAG, "subs addons installed=${all.size}: " + all.joinToString { (a, m) -> "${m.name} ${com.kirtanya.reel.core.sources.Subtitles.safeUrl(a.url)}${if (a.enabled) "" else " (off, not asked)"}" })
+                    val d = app.tmdb.details(ref)
+                    val req = requestFor(d, season, episode)
+                    val language = app.playbackSettings.state.value.subtitleLanguage
+                    Log.i(TAG, "subs title ${req.key} \"${req.title}\" (${req.year}) imdb=${req.imdbId} setting=${language ?: "off"}")
+                    val search = com.kirtanya.reel.core.sources.Subtitles.searchDetailed(req, app.sources.subtitleAddons(), app.fetcher, filename = intent.getStringExtra("filename"))
+                    com.kirtanya.reel.core.sources.Subtitles.describe(search).forEach { Log.i(TAG, "subs $it") }
+                    val shown = com.kirtanya.reel.core.sources.Subtitles.autoSelect(search.tracks, language)
+                    Log.i(TAG, "subs player would show: ${shown?.let { "${it.language} from ${it.name}" } ?: "none (all ${search.tracks.size} tracks listed in the menu)"}")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "subs test failed: " + generateSequence(t) { it.cause }.joinToString(" ← ") { it.toString() })
+            } finally {
+                Log.i(TAG, "subs test done")
+                pending.finish()
+            }
+        }
     }
 
     /**

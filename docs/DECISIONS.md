@@ -5,6 +5,42 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Subtitles on in English by default, OpenSubtitles built in, Change source in the player**
+Decision (user): subtitles didn't show even with a subtitle addon added; English should be the default with
+OpenSubtitles available out of the box; the player needs a way to change the source.
+Root cause (Claude, from the code): the player asked the subtitle addons but attached their tracks only when a
+subtitle language was set (`prefs.subtitleLanguage != null`) or Android captions were on. The setting defaulted
+to null (= Off), so with defaults every addon answer was fetched and thrown away, and the Subtitles menu said
+"No subtitles". Late answers were also attached only then. Titles opened without an IMDb id (OpenSubtitles
+needs `tt…`) were never asked.
+Built (Claude): every found track is attached and listed in the menu; the setting only decides which shows by
+itself (`Subtitles.merge` / `autoSelect`). The 400 ms start wait stays, only when a language should show. Late
+tracks join before the first frame at once (re-prepare is invisible then); after it they wait for a natural
+break (a seek, a pause with `keepContentOnPlayerReset`, the return from the background), because ExoPlayer can
+only add side-loaded subtitles by preparing the item again, which shows as a restart mid-film. A missing IMDb id
+comes from TMDB details when the TMDB id is known (a raw magnet / file has none: nothing to ask).
+Setting: unset = English ("en"); Off is now stored as its own value ("off", `SubtitleLanguagePref`), so it is never
+confused with "never chosen". (Before, Off removed the key, so earlier Off choices read as English once.)
+OpenSubtitles v3 (`https://opensubtitles-v3.strem.io/manifest.json`, Stremio's official addon, subtitles only) is
+installed once on new and existing installs from its shipped manifest (`core/store/BuiltInAddons`, flag
+`sources_steps/done`); it's an ordinary addon in Settings → Addons, and a removal stays removed.
+Change source: a row in the player's settings panel (phone + TV) opens the Sources page for this film / episode
+with the current position; the first pick there plays from exactly that position (`ContinueWatching.startPositionMs`),
+later picks resume from history. The old player saves and closes first (owner-checked `stopStream`), history keeps
+one entry per key and the new player saves at its first frame, so the new source is the remembered one. A raw
+magnet / file shows the row off with "No other sources for a file". The error panel's "Other sources" carries the
+position too. Also fixed: the settings panel didn't clip its scrolled list (parents allow overdraw), and the
+View-based design checks now skip rows partly scrolled out of view, as the Compose checks already did.
+Diagnostics: ReelStats `subs` / `subsAttached` / `subsLate` / `subsSelected` per playback; SourcesProbe
+`--ez subsTest true` lists each subtitle addon, request URL (addon config hidden), status, tracks per language, error.
+Evidence: SubtitleDefaultsTest (core), PlayerDesignRules phone/tv settings-source + settings-file, renders
+`phone_controls_settings_source`, `…_file`, `tv_controls_settings_source`, `…_file`; from the Mac (plain HTTPS)
+OpenSubtitles v3 answered 200 for Big Buck Bunny (tt1254207: 1 English + 1 Indonesian), The Shawshank Redemption
+(39 tracks, 3 English) and Game of Thrones S1E1 (94 tracks, 7 English); the subtitle file downloads as
+`application/x-subrip`.
+
+---
+
 **2026-10-21 · Trailers are never the best match; source tags and a long-press menu**
 Decision (user): trailers / teasers counted as real sources and were often recommended — sources must
 prioritise the film / episode itself and keep extras separate. Also: tags on sources (e.g. last played) and a

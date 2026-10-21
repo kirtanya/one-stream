@@ -95,17 +95,19 @@ fun SourcesScreen(
     onBack: () -> Unit,
     download: Boolean = false,
     replacing: String? = null,
+    /** The player's position when it asked for another source (its Change source): the pick plays from there. */
+    resumeAtMs: Long? = null,
 ) {
     val (load, retry) = rememberTitle(ref)
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-        LoadView(load, retry) { d -> SourcesBody(d, season, episode, isTv, download || replacing != null, replacing, onBack) }
+        LoadView(load, retry) { d -> SourcesBody(d, season, episode, isTv, download || replacing != null, replacing, resumeAtMs, onBack) }
         if (!isTv) com.kirtanya.reel.ui.common.TopFade()
         if (!isTv) GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.s))
     }
 }
 
 @Composable
-private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Boolean, startDownload: Boolean, replacing: String?, onDone: () -> Unit) {
+private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Boolean, startDownload: Boolean, replacing: String?, resumeAtMs: Long?, onDone: () -> Unit) {
     val context = LocalContext.current
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
@@ -175,9 +177,17 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val art = listOfNotNull(ep?.stillPath?.let { TmdbImages.still(it, "original") }).ifEmpty { heroBackdrops(d) }
     val bottom = if (isTv) Tokens.Space.tvSafeV else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Tokens.Space.xxl
 
+    // Used once: the first pick carries on from the player's position; later picks resume from history
+    // (the player saves where it stopped), so a stale position never comes back.
+    var handedOver by remember(resumeAtMs) { mutableStateOf(resumeAtMs) }
+    fun playPicked(s: Source) {
+        val inApp = s.kind != com.kirtanya.reel.core.sources.SourceKind.EXTERNAL
+        play(context, playbackOf(s), startAtMs = handedOver.takeIf { inApp })
+        if (inApp) handedOver = null
+    }
     fun choose(s: Source) {
         when {
-            action == SourceAction.PLAY || s.kind == com.kirtanya.reel.core.sources.SourceKind.EXTERNAL -> play(context, playbackOf(s))
+            action == SourceAction.PLAY || s.kind == com.kirtanya.reel.core.sources.SourceKind.EXTERNAL -> playPicked(s)
             replacing != null -> confirm = s
             else -> where.download(s)
         }
@@ -278,7 +288,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     options?.let { v ->
         SourceOptionsDialog(
             v, req, SourceMarks.markFor(marks, req, v.source), label,
-            onPlay = { play(context, playbackOf(v.source)) },
+            onPlay = { playPicked(v.source) },
             onDownload = { where.download(v.source) },
             onDismiss = { options = null },
         )

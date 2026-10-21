@@ -319,6 +319,15 @@ internal class PanelToggle(
     val set: (Int) -> Unit,
 )
 
+/**
+ * An extra row at the end of the settings panel. [action] null = shown but off, with [note] under the
+ * label saying why (e.g. Change source for a file without TMDB info).
+ */
+internal class PanelExtra(val label: String, val note: String? = null, val action: (() -> Unit)?)
+
+/** The settings panel's "Change source" row: the Sources page, the pick plays from here. */
+internal const val CHANGE_SOURCE_ROW = "Change source"
+
 /** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
 internal const val REPORT_ROW = "Report a problem"
 
@@ -333,7 +342,7 @@ internal class SettingsPanel(
     private val context: Context,
     private val font: (Boolean) -> Typeface?,
     private val player: () -> Player?,
-    private val extras: () -> List<Pair<String, () -> Unit>>,
+    private val extras: () -> List<PanelExtra>,
     /** An extra row was chosen (the caller closes the panel). */
     private val onExtra: () -> Unit,
     /** Shortest row: 48 dp on the phone (touch areas), 44 on the TV (remote only). */
@@ -351,6 +360,9 @@ internal class SettingsPanel(
             cornerRadius = context.dpf(20f)
             setStroke(context.dp(1), PlayerColors.GLASS_STROKE)
         }
+        // Its parents let children draw past their bounds (shadows), so a long list scrolled in the
+        // panel would show above and below it: clip to the panel's rounded shape.
+        clipToOutline = true
         visibility = View.GONE
     }
     private var submenu: String? = null
@@ -402,13 +414,15 @@ internal class SettingsPanel(
                 }
             })
         }
-        for ((label, action) in extras()) {
-            val icon = when (label) {
+        for (extra in extras()) {
+            val icon = when (extra.label) {
                 REPORT_ROW -> R.drawable.ic_pl_report
                 PIP_ROW -> R.drawable.ic_pl_pip
+                CHANGE_SOURCE_ROW -> R.drawable.ic_pl_source
                 else -> R.drawable.ic_pl_external
             }
-            list.addView(row(icon, label, null, null) { onExtra(); action() })
+            val action = extra.action
+            list.addView(if (action != null) row(icon, extra.label, null, extra.label) { onExtra(); action() } else offRow(icon, extra.label, extra.note))
         }
     }
 
@@ -536,6 +550,29 @@ internal class SettingsPanel(
             maxWidth = context.dp(150)
         })
         setOnClickListener { onClick() }
+    }
+
+    /**
+     * A row that can't be used here: same place and icon, label and its reason quieter, and it takes
+     * no touch or focus (the remote moves past it).
+     */
+    private fun offRow(icon: Int, label: String, note: String?) = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = context.dp(48)
+        setPadding(context.dp(14), context.dp(8), context.dp(14), context.dp(8))
+        isEnabled = false
+        isFocusable = false
+        tag = "$label (off)"
+        addView(ImageView(context).apply {
+            setImageResource(icon)
+            imageTintList = ColorStateList.valueOf(PlayerColors.PANEL_NOTE)
+        }, LinearLayout.LayoutParams(context.dp(20), context.dp(20)).apply { marginEnd = context.dp(14) })
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(text(15f, medium = true).apply { text = label; setTextColor(PlayerColors.PANEL_VALUE) })
+            if (note != null) addView(text(13f).apply { text = note; setTextColor(PlayerColors.PANEL_NOTE) })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
     }
 
     private fun choice(label: String, selected: Boolean, onClick: () -> Unit) = LinearLayout(context).apply {

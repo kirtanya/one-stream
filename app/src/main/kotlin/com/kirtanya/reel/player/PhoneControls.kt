@@ -53,7 +53,7 @@ internal class PhoneControls(
     private val playerView: PlayerView,
     title: String,
     private val font: (medium: Boolean) -> Typeface?,
-    extraSettings: () -> List<Pair<String, () -> Unit>>,
+    extraSettings: () -> List<PanelExtra>,
     private val onBack: () -> Unit,
     /** Picture in picture, as a settings row (null: the phone can't). */
     onPip: (() -> Unit)?,
@@ -88,7 +88,7 @@ internal class PhoneControls(
     private val settingsPanel = SettingsPanel(
         ctx, font, { player },
         // Picture in picture moved off the bar into the panel, first of the extra rows.
-        { (if (onPip != null) listOf(PIP_ROW to onPip) else emptyList()) + extraSettings() },
+        { (if (onPip != null) listOf(PanelExtra(PIP_ROW, action = onPip)) else emptyList()) + extraSettings() },
         onExtra = { closePanel() },
     )
 

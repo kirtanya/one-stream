@@ -27,8 +27,12 @@ class TvControlsRender {
 
     @Test fun renderSettings() = render("tv_controls_settings", PlayerScenes.MID, panel = true)
 
-    private fun render(name: String, picture: IntArray, panel: Boolean = false) {
-        val scene = PlayerScenes.tv(picture, panel)
+    /** The panel's end: Change source, and the same row off (with its note) for a file without TMDB info. */
+    @Test fun renderSettingsSource() = render("tv_controls_settings_source", PlayerScenes.MID, panel = true, panelEnd = true)
+    @Test fun renderSettingsFile() = render("tv_controls_settings_file", PlayerScenes.MID, panel = true, panelEnd = true, file = true)
+
+    private fun render(name: String, picture: IntArray, panel: Boolean = false, panelEnd: Boolean = false, file: Boolean = false) {
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

@@ -102,7 +102,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val OPENSUBTITLES = "https://opensubtitles-v3.strem.io/manifest.json"
+private const val OPENSUBTITLES = com.kirtanya.reel.core.store.BuiltInAddons.OPENSUBTITLES_URL
 
 /** Settings pages. The root lists them in groups; each opens on its own. */
 enum class SettingsPage(val title: String, val icon: ImageVector) {

@@ -11,6 +11,7 @@ import com.kirtanya.reel.core.sources.PluginProvider
 import com.kirtanya.reel.core.sources.PluginRuntime
 import com.kirtanya.reel.core.sources.SourceProvider
 import com.kirtanya.reel.core.sources.StremioAddon
+import com.kirtanya.reel.core.store.BuiltInAddons
 import com.kirtanya.reel.core.sync.ApplyResult
 import com.kirtanya.reel.core.sync.BundleAddon
 import kotlinx.coroutines.CancellationException
@@ -76,6 +77,25 @@ class SourcesStore(private val context: Context, private val http: HttpFetcher, 
     val state: StateFlow<SourcesState> = _state.asStateFlow()
 
     @Volatile private var builtInLoaded = false
+
+    init {
+        addBuiltInAddons()
+    }
+
+    /**
+     * OpenSubtitles v3 once, on new and existing installs (core/store/BuiltInAddons): from its shipped
+     * manifest, so it needs no network. The flag keeps a removal by the user final.
+     */
+    private fun addBuiltInAddons() {
+        val steps = context.getSharedPreferences("sources_steps", Context.MODE_PRIVATE)
+        val done = steps.getStringSet("done", emptySet()).orEmpty()
+        val plan = BuiltInAddons.migrate(_state.value.addons.map { it.url }, done)
+        if (plan.add.isNotEmpty()) {
+            update { s -> s.copy(addons = s.addons + plan.add.map { InstalledAddon(it.url, it.manifestJson) }) }
+            Log.i(TAG, "added built-in addons: ${plan.add.joinToString { it.url }}")
+        }
+        if (plan.markDone.isNotEmpty()) steps.edit().putStringSet("done", done + plan.markDone).apply()
+    }
 
     /**
      * Reloads the built-in repo once per app start (it ships inside the APK, so it changes
