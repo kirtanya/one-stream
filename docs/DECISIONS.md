@@ -5,6 +5,25 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-22 · Engine: download only overnight, speed cap while watching, stream-cache limit**
+Decision (user): build the engine items of roadmap A. Spec: STREAMING_V2 §8.3 (addendum). Logic + tests:
+`core/stream/DownloadRules.kt`, `CachePolicy.budget(limit)`, `RestorePolicy` (`DownloadRulesTest`).
+Also decided (Claude):
+- The overnight window (default off, 01:00–07:00) holds DOWNLOAD torrents only, as a condition *next to* the home-disk
+  P2P rule: a release asks `downloadHold` first, so the window opening never moves traffic on a network where
+  downloads wait. Resume outside the window (the user's or the P2P gate's) keeps it waiting; "Start now" exempts that
+  download for good. Finished downloads (seeding) and a download being played are never held.
+- Edges: the engine re-checks every 30 s, plus an inexact `setAndAllowWhileIdle` alarm to the running EngineService (no
+  exact-alarm permission, no new manifest entry); a few minutes late under Doze is fine for downloads.
+- A partial wake lock ("reel:night", 10 min re-armed) only while the window is on and open and a download is
+  fetching, so a phone left on the charger keeps downloading with the screen off. The narrow part of R6; nothing else.
+- Speed cap while watching replaces 8.1's GUARD / SHARE pauses for now: a cap is gentler than pausing and the user
+  picks it (No limit / 500 KB/s / 1 MB/s / 2 MB/s / Auto = 25 % of the 60 s peak link rate, default Auto); others'
+  upload 32 KiB/s. "Watching" uses `playWhenReady`, so a rebuffering player still counts. Lifts 5 s after pause/stop.
+- The stream-cache limit replaces the automatic size but keeps the free-space reserve; the two most recently stopped
+  titles stay protected as before (so a small limit can be exceeded by them).
+Telemetry: ReelStats `night`, `nightStartNow`, `gov`.
+
 **2026-10-22 · Player: skip intro / credits, auto-play next, sleep timer, per-title memory, audio tools**
 Decision (user): build the player items of the feature brainstorm (roadmap A).
 Built (Claude): Skip intro / recap / credits chip, Up next at the credits, countdown 5 / 10 / 20 s, Still watching?,

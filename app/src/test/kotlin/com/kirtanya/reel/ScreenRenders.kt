@@ -330,6 +330,7 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun episodeOptionsUnplayed() = render("episode-options-unplayed", windows = true) { EpisodeOptionsScene() }
     @Test fun continueUndo() = render("continue-undo", history = true) { UndoScene { phone()() } }
 
+    @Test fun downloadsNight() = render("downloads-night", data = RenderData(torrents = nightTorrents, storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
     @Test fun downloadsEmpty() = render("downloads-empty", data = RenderData(torrents = emptyList(), storage = 0L to 51_000_000_000L), content = phone { select(Tab.Downloads) })
 
     @Test fun settings() = render("settings", content = phone { select(Tab.Settings) })
@@ -374,6 +375,20 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun settingsPlugins() = settingsPage(SettingsPage.Plugins)
     @Test fun settingsPhoneTv() = settingsPage(SettingsPage.PhoneTv)
     @Test fun settingsStorage() = settingsPage(SettingsPage.Storage)
+    // Download rules (STREAMING_V2 §8.3): the overnight window on, so its hour rows show, and the cap while watching.
+    @Test fun settingsStorageRules() = withNight {
+        render("settings-storage-rules", scrollToEnd = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.Storage)) } }
+    }
+    private fun withNight(block: () -> Unit) {
+        val rules = com.kirtanya.reel.engine.DownloadRulesStore.get(app)
+        rules.update { it.copy(night = com.kirtanya.reel.core.stream.NightWindow(enabled = true)) }
+        try { block() } finally { rules.update { com.kirtanya.reel.core.stream.DownloadRules() } }
+    }
+    /** One download slowed while something plays, two waiting for the overnight window (with Start now). */
+    private val nightTorrents get() = Fake.torrents.take(3).mapIndexed { i, t ->
+        if (i == 0) t.copy(notice = "Slowed while you watch")
+        else t.copy(phase = com.kirtanya.reel.engine.TorrentPhase.PAUSED, waitingForNight = true, notice = "Waiting for night (01:00)")
+    }
     @Test fun settingsAbout() = settingsPage(SettingsPage.About)
 
     // ─── Home disk (docs/HOME_DISK.md §17): set up now, no disk yet ─────────────────────────────
@@ -493,6 +508,10 @@ open class ScreenRenders(protected val variant: Variant) {
         data = RenderData(installed = Fake.installed, store = Fake.store, storeQuery = com.kirtanya.reel.core.store.StoreQuery(types = setOf("series"))),
     ) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.Store)) } }
     @Test @Config(qualifiers = TV) fun tvSettingsPhoneTv() = tvSettingsPage(SettingsPage.PhoneTv)
+    @Test @Config(qualifiers = TV) fun tvSettingsStorageRules() = withNight {
+        render("settings-storage-rules", tv = true, scrollToEnd = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.Storage)) } }
+    }
+    @Test @Config(qualifiers = TV) fun tvDownloadsNight() = render("downloads-night", tv = true, data = RenderData(torrents = nightTorrents, storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorage() =
         render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeStorage)) } }
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageNotSetUp() =

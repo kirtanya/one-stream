@@ -311,6 +311,7 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -
                 ?.let { com.kirtanya.reel.ui.homedisk.HomeBadge(it) }
         }
         if (held != null) HeldActions(t, held, home)
+        DownloadNotice(t)
         when {
             t.error != null -> Text(t.error, style = Tokens.Type.caption, color = Tokens.Colors.danger, maxLines = 3, overflow = TextOverflow.Ellipsis)
             t.stalledForSec >= 120 -> Text("No one is sharing this right now. It'll continue when someone does.", style = Tokens.Type.caption, color = Tokens.Colors.warn)

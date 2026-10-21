@@ -525,6 +525,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                 }
     
                 autoDownloadItems(isTv)
+                downloadRulesItems(isTv)
             }
             SettingsPage.About -> item {
                 Section {
