@@ -46,7 +46,7 @@ private fun AutoplayRow() {
     Section {
         ToggleRow(
             "Play the next episode automatically",
-            "Finds a source near the end of an episode and starts it after a ${options.countdownS}-second countdown.",
+            "After a ${options.countdownS}-second countdown.",
             playback.autoplayNext,
         ) { app.playbackSettings.update { it.copy(autoplayNext = !it.autoplayNext) } }
     }
