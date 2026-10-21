@@ -22,6 +22,42 @@ with no baseline change. Not yet tried on the devices.
 
 ---
 
+**2026-10-21 · Home disk spec (docs/HOME_DISK.md)**
+Decision: the router disk plan gets a binding spec; main choices:
+- Roles: the TV is the home agent (at-home downloads, library index, retention, remote serving); the phone
+  sets up, asks, downloads as fallback and copies its own downloads; the router disk is a passive SMB share.
+- TV conveyor = **rolling reset**: every ~512 MiB, once every verified piece is on the disk, remove the
+  torrent with its local files and re-add it from resume data with have / verified / unfinished cleared and
+  priority 0 for pieces on the disk. libtorrent4j has no "forget a piece" call; punch-holing the local file
+  (native helper) would keep libtorrent advertising and serving zeros (peers hash-fail and ban us, a recheck
+  re-downloads), `move_storage` frees nothing truthfully, and the part file never shrinks. Expected cost
+  10–20 % of throughput, to be measured (`conv-reset`); revisit only above 20 %.
+- SMB client: org.codelibs:jcifs 3.0.4 (maintained jcifs-ng successor; SMB 2.0.2–3.1.1 with SMB1 opt-in for
+  old routers; 1 MiB requests where jcifs-ng 2.1.10 is held to 64 KiB on SMB 2.1+; pure Java). smbj has no
+  SMB1. Two R8 keep rules are mandatory (shrunk builds lose BouncyCastle's MD4 → every NTLM sign-in fails).
+- Home detection without location: the paired TV's HMAC proof on the LAN, or the saved LinkProperties
+  fingerprint; the app never signs in to a share off the home network (an impostor could crack the
+  NTLMv2 response).
+- Phone P2P network rule: home Wi-Fi yes; mobile data and other Wi-Fi only with the user's explicit
+  allowance; the office network never (downloads wait and offer "Download at home instead").
+- On-disk format: `library/` (finished, Mac-friendly names) / `incoming/` / `cache/` / `.trash/`, a JSON
+  manifest per torrent key, a per-file binary piece map (`.parts`: byte ranges + CRC, atomic replace) and a
+  counter-based single-writer lease. Invariants: data before map, map before free, library only verified.
+- Phone → disk copy: platform JobScheduler (unmetered + network-callback trigger, user-initiated transfer
+  for "Copy now"), chunked and resumable, full read-back verify before "Phone + home disk". No WorkManager.
+- Requests: SyncServer protocol v3, one encrypted RPC endpoint, idempotent by request id, phone outbox;
+  away over Tailscale (no port forwarding). Away playback: TV HomeStreamServer on port 47822 with HMAC
+  tokens, LAN / Tailscale sources only; sharing only via Tailscale node sharing + guest invites.
+- Playback from SMB through 1 MiB chunks with an 8-chunk LRU and read-ahead (the 29 s → 5 s lesson: an
+  unbuffered Cues parse would be ~30 s of round trips).
+Why: the user's four goals (download at home from anywhere, phone fallback with copy + delete-where, watch
+at home and away, set up now without the disk) with the hard rules kept (no P2P from the office, never
+public).
+Evidence: HOME_DISK.md §20 (spike: Maven versions, Android API check, R8 dex size 679 KiB / 347 KiB
+deflated, MD4 failure reproduced and fixed, libtorrent4j API from the jar, Android / Tailscale docs).
+No SMB throughput yet: no unprivileged SMB server on the work Mac (impacket deliberately not installed:
+security tools commonly flag it on a managed laptop); measured in phase 1.1 at home.
+
 **2026-10-21 · Sources page, addon store filters, Change source + download ↔ stream cache**
 Decision (Sources page): one page for Play and Download. A Play | Download switch under the title sets
 what every card does (the page opens on Play from a title; Change source opens it fixed on download), so
