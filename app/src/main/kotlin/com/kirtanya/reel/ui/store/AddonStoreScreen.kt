@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.FilterAltOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -49,7 +51,8 @@ import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.store.AddonCatalog
 import com.kirtanya.reel.core.store.StoreAddon
-import com.kirtanya.reel.core.store.StoreFilter
+import com.kirtanya.reel.core.store.StoreChip
+import com.kirtanya.reel.core.store.StoreQuery
 import com.kirtanya.reel.data.SourceSetupException
 import com.kirtanya.reel.ui.common.AddSourceLinkDialog
 import com.kirtanya.reel.ui.common.ButtonKind
@@ -80,8 +83,7 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
     val liveStore by app.addonStore.state.collectAsState()
     val store = fixed?.store ?: liveStore
     val sources = com.kirtanya.reel.ui.settings.installedSources(app)
-    var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf(StoreFilter.ALL) }
+    var query by remember { mutableStateOf(fixed?.storeQuery ?: StoreQuery()) }
     var loading by remember { mutableStateOf(fixed?.store == null) }
     var adding by remember { mutableStateOf<String?>(null) }
     var catalogUrl by remember { mutableStateOf("") }
@@ -97,35 +99,36 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
     }
     // Installed addons, by manifest id (configured addons have different URLs but the same id).
     val installed = remember(sources) { sources.addons.mapNotNull { runCatching { it.manifest.id }.getOrNull() }.toSet() }
-    val results = remember(store.addons, query, filter) { AddonCatalog.search(store.addons, query, filter) }
+    val catalogNames = remember(store.catalogs) { store.catalogs.associate { it.url to it.name } }
+    val facets = remember(store.addons, installed, catalogNames) { AddonCatalog.facets(store.addons, installed) { catalogNames[it] ?: it } }
+    LaunchedEffect(facets) { query = AddonCatalog.prune(query, facets) }
+    val results = remember(store.addons, query, installed) { AddonCatalog.search(store.addons, query, installed) }
+    val listed = remember(store.addons) { AddonCatalog.listed(store.addons).size }
     val hidden = remember(store.addons) { store.addons.count { !it.usable } }
 
     Box(Modifier.fillMaxSize()) {
         PageList(isTv) {
             item { PageTitle("Addon store", "Addons from Stremio's official catalog and any catalogs you add.", isTv, onBack) }
-            item { SearchField(query, { query = it }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus), placeholder = "Search addons") }
-            item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    StoreFilter.entries.forEach { f ->
-                        ReelButton(f.label, { filter = f }, kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost)
-                    }
-                }
-            }
+            item { SearchField(query.text, { query = query.copy(text = it) }, Modifier.widthIn(max = 860.dp).focusRequester(searchFocus), placeholder = "Search addons") }
+            item { StoreChips(facets, query) { query = it } }
             item {
                 when {
                     loading && store.addons.isEmpty() -> CircularProgressIndicator(color = Tokens.Colors.accent)
                     results.isEmpty() -> EmptyState(
                         Icons.Rounded.Search,
                         if (store.addons.isEmpty()) "Couldn't load the store" else "No addons match",
-                        if (store.addons.isEmpty()) "Check your connection and tap Refresh below." else "Try another word or filter.",
+                        if (store.addons.isEmpty()) "Check your connection and tap Refresh below." else "Try another word, or clear the filters.",
+                        action = if (store.addons.isNotEmpty() && (query.hasChips || query.text.isNotBlank())) ({
+                            ReelButton("Clear filters", { query = StoreQuery() }, kind = ButtonKind.Secondary, icon = Icons.Rounded.FilterAltOff)
+                        }) else null,
                     )
                     else -> Text(
                         buildString {
-                            append(com.kirtanya.reel.ui.plural(results.size, "addon"))
+                            append(if (results.size == listed) com.kirtanya.reel.ui.plural(results.size, "addon") else "${results.size} of $listed addons")
                             if (hidden > 0) append(" · $hidden catalog-only addons hidden (One Stream uses streams and subtitles)")
                             if (store.failed.isNotEmpty()) append(" · couldn't load: ${store.failed.joinToString()}")
                         },
-                        style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                        style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -147,7 +150,7 @@ fun AddonStorePage(isTv: Boolean, onBack: () -> Unit) {
                     Text("Catalogs", style = Tokens.Type.heading, color = Tokens.Colors.text)
                     Text(
                         "Add another addon catalog by its link. You choose what to add — streaming content you don't have rights to is illegal in most countries.",
-                        style = Tokens.Type.caption, color = Tokens.Colors.textTertiary,
+                        style = Tokens.Type.caption, color = Tokens.Colors.textSecondary,
                     )
                     store.catalogs.forEach { c ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
@@ -184,7 +187,7 @@ private fun StoreRow(addon: StoreAddon, installed: Boolean, isTv: Boolean, onAdd
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
             Text(addon.name, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (addon.description.isNotBlank()) {
-                Text(addon.description, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = if (isTv) 2 else 3, overflow = TextOverflow.Ellipsis)
+                Text(addon.description, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = if (isTv) 2 else 3, overflow = TextOverflow.Ellipsis)
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                 if (addon.hasStreams) Pill("Streams")
@@ -198,5 +201,32 @@ private fun StoreRow(addon: StoreAddon, installed: Boolean, isTv: Boolean, onAdd
             }
         }
     }
+    }
+}
+
+/**
+ * Filter chips from what the catalog knows: what an addon provides, whether it's added here, the
+ * content it covers and which catalog lists it. Groups with nothing to choose are left out; within
+ * a group several chips can be on. Two sideways rows, so the phone list stays close to the top.
+ */
+@Composable
+private fun StoreChips(facets: com.kirtanya.reel.core.store.StoreFacets, query: StoreQuery, onChange: (StoreQuery) -> Unit) {
+    @Composable
+    fun <T> chip(c: StoreChip<T>, on: Boolean, toggle: () -> Unit) =
+        ReelButton("${c.label} · ${c.count}", toggle, kind = if (on) ButtonKind.Primary else ButtonKind.Ghost)
+    fun <T> Set<T>.flip(v: T) = if (v in this) this - v else this + v
+
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+            items(facets.kinds, key = { "k:${it.value}" }) { c -> chip(c, c.value in query.kinds) { onChange(query.copy(kinds = query.kinds.flip(c.value))) } }
+            items(facets.status, key = { "s:${it.value}" }) { c -> chip(c, c.value in query.status) { onChange(query.copy(status = query.status.flip(c.value))) } }
+            if (query.hasChips) item(key = "clear") { ReelButton("Clear", { onChange(query.copy(kinds = emptySet(), status = emptySet(), types = emptySet(), catalogs = emptySet())) }, kind = ButtonKind.Ghost, icon = Icons.Rounded.FilterAltOff) }
+        }
+        if (facets.types.isNotEmpty() || facets.catalogs.isNotEmpty()) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                items(facets.types, key = { "t:${it.value}" }) { c -> chip(c, c.value in query.types) { onChange(query.copy(types = query.types.flip(c.value))) } }
+                items(facets.catalogs, key = { "c:${it.value}" }) { c -> chip(c, c.value in query.catalogs) { onChange(query.copy(catalogs = query.catalogs.flip(c.value))) } }
+            }
+        }
     }
 }

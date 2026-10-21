@@ -5,6 +5,41 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-21 · Sources page, addon store filters, Change source + download ↔ stream cache**
+Decision (Sources page): one page for Play and Download. A Play | Download switch under the title sets
+what every card does (the page opens on Play from a title; Change source opens it fixed on download), so
+each card has one obvious action and one D-pad stop; the old per-row download button is gone. The ranker's
+pick is the Recommended card (one big button); the list under it never repeats it, and filters never hide
+it. Chips: a Sort chip that cycles Best → Smallest → Most seeds (one stop on TV, short row on the phone),
+quality (4K / 1080p / 720p / SD, unknown counts as SD), type (Torrent / Direct / Service), provider (short
+names: "Comet | Real-Debrid" → Comet) and language, each only when there's a choice; several chips in a
+group = OR, across groups = AND; counts are per chip over the list. Seed health from seeders: 50+ strong,
+10–49 OK, 1–9 weak, 0 none, as three bars; the colour sits on the bars only (amber text misses 4.5:1 on
+light cards). Tags parsed from the release name (Dolby Vision, HDR10+/HDR, 10-bit, HEVC, AV1, Atmos,
+TrueHD, DTS-HD/DTS, DD+, 7.1/5.1, IMAX, REMUX, BluRay, WEB-DL, WEBRip, CAM). Languages: one reader shared
+with the launcher API (words, upper-case codes only, flags; "Multi"/"Dual audio" only when none named).
+Logic: `core/sources/SourceFacts`, `SourceBrowser` (+ `SourceBrowserTest`). Phone hero 300 → 230 dp so
+the card and chips show without scrolling.
+Decision (store): search + chips from what manifests say: kind (Streams / Subtitles / Catalogs = also
+offers catalogs), status (Added / Not added / Needs setup; added wins), content type (Movies, Series, Live
+TV, Channels, Anime… from `types`) and catalog (only with 2+ catalogs). Catalog-only addons stay hidden
+(they do nothing in One Stream); nothing new is listed. Logic: `AddonCatalog.facets/search/prune`.
+Decision (downloads): "Change source" (More menu) opens the Sources page for the same title / episode in
+download mode; the origin is stored per info-hash in `files/download_origins.json` when a download starts
+from Sources or the launcher (magnet-link downloads have none, so no Change source). A different torrent or
+a direct link replaces the download after a confirmation that says how much is lost; the new one starts
+first and the old one is deleted only after that succeeds; another file of the same torrent is added
+(nothing lost). "Keep as stream cache" converts a download **in place** (no file move: a move to
+`files/streams` crosses mounts = a full copy needing the file's size again in free space); it becomes a
+paused STREAM entry under the normal cache policy, `lastUsedAt = now`, not protected like a mid-watch
+stop. "Save as download" on a cache entry is the existing Keep (pieces reused, skips the move when the data
+already sits in Downloads). Deferred while a player holds the torrent; the later wish wins. Spec:
+STREAMING_V2 §7.3a; logic `core/stream/ModeChange`, `core/library/SourceSwap` (+ `DownloadChangesTest`,
+pure — no test opens a session). Stream cache is its own section under the downloads.
+Also: light-mode `warn` darkened to #9A4507 and settings subtitles / breadcrumb / search placeholder moved
+from textTertiary to textSecondary — the new states would otherwise repeat old contrast failures; 38
+baselined contrast violations were fixed and pruned (baseline only shrank).
+
 **2026-10-21 · One Launcher API part 2 (the title page in the launcher)**
 Decision: the provider also serves details / episodes / sources / downloads and takes actions through
 `call()` (watchlist add/remove, download, prepare, cancel_download); `onestream://play` opens the player

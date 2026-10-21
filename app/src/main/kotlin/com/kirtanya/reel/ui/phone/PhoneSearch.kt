@@ -181,7 +181,7 @@ fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = 
     ) {
         Icon(Icons.Rounded.Search, null, tint = Tokens.Colors.textSecondary)
         Box(Modifier.weight(1f)) {
-            if (value.isEmpty()) Text(placeholder, style = Tokens.Type.body, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (value.isEmpty()) Text(placeholder, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             BasicTextField(
                 value, onChange,
                 singleLine = true,

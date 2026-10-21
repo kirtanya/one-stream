@@ -219,6 +219,36 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun sourcesMany() = render("sources-many", data = RenderData(sourceSearch = { Fake.manySources }), content = phone { open(Dest.Sources(Fake.show, 2, 6)) })
     @Test fun sourcesNone() = render("sources-none", data = RenderData(sourceSearch = { Fake.noProviders }), content = phone { open(Dest.Sources(Fake.long)) })
     @Test fun sourcesNothing() = render("sources-nothing", data = RenderData(sourceSearch = { Fake.nothingFound }), content = phone { open(Dest.Sources(Fake.film)) })
+    @Test fun sourcesDownload() = render("sources-download", data = RenderData(sourceSearch = { Fake.manySources }), content = phone { open(Dest.Sources(Fake.show, 2, 6, download = true)) })
+    @Test fun sourcesFiltered() = render(
+        "sources-filtered",
+        data = RenderData(sourceSearch = { Fake.manySources }, sourceFilters = com.kirtanya.reel.core.sources.SourceFilters(qualities = setOf(com.kirtanya.reel.core.sources.QualityBucket.UHD), providers = setOf("Torrentio"), sort = com.kirtanya.reel.core.sources.SourceSort.SEEDS)),
+        content = phone { open(Dest.Sources(Fake.film)) },
+    )
+    @Test fun sourcesFilteredOut() = render(
+        "sources-filtered-out",
+        data = RenderData(sourceSearch = { Fake.manySources }, sourceFilters = com.kirtanya.reel.core.sources.SourceFilters(qualities = setOf(com.kirtanya.reel.core.sources.QualityBucket.HD), types = setOf(com.kirtanya.reel.core.sources.SourceType.SERVICE))),
+        content = phone { open(Dest.Sources(Fake.film)) },
+    )
+    @Test fun sourcesReplace() = render("sources-replace", data = RenderData(sourceSearch = { Fake.manySources }, torrents = Fake.torrents), content = phone { open(Dest.Sources(Fake.film, download = true, replacing = Fake.torrents[0].infoHash)) })
+    @Test fun sourcesReplaceConfirm() = render(
+        "sources-replace-confirm", windows = true,
+        data = RenderData(sourceSearch = { Fake.manySources }, torrents = Fake.torrents, confirmReplace = true),
+        content = phone { open(Dest.Sources(Fake.film, download = true, replacing = Fake.torrents[0].infoHash)) },
+    )
+    @Test fun sourcesFailed() = render("sources-failed", data = RenderData(sourceSearch = { Fake.allFailed }), content = phone { open(Dest.Sources(Fake.film)) })
+    /** The list rows on their own (on the page they sit below the fold): every health, type and tag mix. */
+    @Test fun sourcesRows() = render("sources-rows") {
+        androidx.compose.foundation.layout.Column(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 24.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        ) {
+            val actions = listOf(com.kirtanya.reel.ui.sources.SourceAction.PLAY, com.kirtanya.reel.ui.sources.SourceAction.DOWNLOAD)
+            Fake.sources(7).drop(1).forEachIndexed { i, s ->
+                com.kirtanya.reel.ui.sources.SourceRow(com.kirtanya.reel.core.sources.SourceBrowser.view(s), fits = i != 4, action = actions[i % 2], onClick = {})
+            }
+        }
+    }
     @Test fun sourcesStarting() = render("sources-starting", data = RenderData(sourceSearch = { null }), content = phone { open(Dest.Sources(Fake.film)) })
 
     @Test fun collectionService() = render("collection-service", content = phone { open(Dest.Collection("Netflix", provider = Provider.FEATURED[0])) })
@@ -231,7 +261,10 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun person() = render("person", content = phone { open(Dest.Person(1, "Timothée Chalamet")) })
     @Test fun personError() = render("person-error", catalog = FakeCatalog(Answer.Fail), content = phone { open(Dest.Person(1, "Timothée Chalamet")) })
 
-    @Test fun downloads() = render("downloads", data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 21_800_000_000L), content = phone { select(Tab.Downloads) })
+    @Test fun downloads() = render("downloads", data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
+    @Test fun downloadsCache() = render("downloads-cache", data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
+    /** Alone over the canvas: the design rules read a dialog's own window. */
+    @Test fun downloadsMore() = render("downloads-more", windows = true) { com.kirtanya.reel.ui.MoreDialog(Fake.torrents[0], canChangeSource = true, {}, {}, {}) }
     @Test fun downloadsEmpty() = render("downloads-empty", data = RenderData(torrents = emptyList(), storage = 0L to 51_000_000_000L), content = phone { select(Tab.Downloads) })
 
     @Test fun settings() = render("settings", content = phone { select(Tab.Settings) })
@@ -246,6 +279,14 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun settingsStoreFailed() = render("settings-store-failed", data = RenderData(installed = Fake.installed, store = com.kirtanya.reel.data.StoreState(Fake.store.catalogs, failed = listOf("Stremio official")))) {
         PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.Store)) }
     }
+    @Test fun settingsStoreFiltered() = render(
+        "settings-store-filtered",
+        data = RenderData(installed = Fake.installed, store = Fake.store, storeQuery = com.kirtanya.reel.core.store.StoreQuery(kinds = setOf(com.kirtanya.reel.core.store.StoreKind.STREAMS), status = setOf(com.kirtanya.reel.core.store.StoreStatus.NOT_ADDED))),
+    ) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.Store)) } }
+    @Test fun settingsStoreNoMatch() = render(
+        "settings-store-no-match",
+        data = RenderData(installed = Fake.installed, store = Fake.store, storeQuery = com.kirtanya.reel.core.store.StoreQuery("zzz", types = setOf("tv"))),
+    ) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.Store)) } }
     @Test fun settingsPlugins() = settingsPage(SettingsPage.Plugins)
     @Test fun settingsPhoneTv() = settingsPage(SettingsPage.PhoneTv)
     @Test fun settingsStorage() = settingsPage(SettingsPage.Storage)
@@ -287,11 +328,19 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvTitleBare() = render("title-bare", tv = true, content = tvApp { open(Dest.Title(Fake.long)) })
     @Test @Config(qualifiers = TV) fun tvSourcesMany() = render("sources-many", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.show, 2, 6)) })
     @Test @Config(qualifiers = TV) fun tvSourcesSearching() = render("sources-searching", tv = true, data = RenderData(sourceSearch = { Fake.searching }), content = tvApp { open(Dest.Sources(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvSourcesFiltered() = render(
+        "sources-filtered", tv = true,
+        data = RenderData(sourceSearch = { Fake.manySources }, sourceFilters = com.kirtanya.reel.core.sources.SourceFilters(qualities = setOf(com.kirtanya.reel.core.sources.QualityBucket.FHD))),
+        content = tvApp { open(Dest.Sources(Fake.film)) },
+    )
+    @Test @Config(qualifiers = TV) fun tvSourcesReplace() = render("sources-replace", tv = true, data = RenderData(sourceSearch = { Fake.manySources }, torrents = Fake.torrents), content = tvApp { open(Dest.Sources(Fake.film, download = true, replacing = Fake.torrents[0].infoHash)) })
     @Test @Config(qualifiers = TV) fun tvSourcesNone() = render("sources-none", tv = true, data = RenderData(sourceSearch = { Fake.noProviders }), content = tvApp { open(Dest.Sources(Fake.long)) })
     @Test @Config(qualifiers = TV) fun tvCollection() = render("collection-service", tv = true, content = tvApp { open(Dest.Collection("Netflix", provider = Provider.FEATURED[0])) })
     @Test @Config(qualifiers = TV) fun tvCollectionGenre() = render("collection-genre", tv = true, content = tvApp { open(Dest.Collection("Drama", genre = com.kirtanya.reel.core.tmdb.Genre(18, "Drama"), genreType = com.kirtanya.reel.core.tmdb.MediaType.TV)) })
     @Test @Config(qualifiers = TV) fun tvPerson() = render("person", tv = true, content = tvApp { open(Dest.Person(1, "Timothée Chalamet")) })
-    @Test @Config(qualifiers = TV) fun tvDownloads() = render("downloads", tv = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
+    @Test @Config(qualifiers = TV) fun tvDownloads() = render("downloads", tv = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
+    @Test @Config(qualifiers = TV) fun tvDownloadsCache() = render("downloads-cache", tv = true, data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
+    @Test @Config(qualifiers = TV) fun tvDownloadsMore() = render("downloads-more", tv = true, windows = true) { com.kirtanya.reel.ui.MoreDialog(Fake.torrents[0], canChangeSource = true, {}, {}, {}) }
     @Test @Config(qualifiers = TV) fun tvDownloadsEmpty() = render("downloads-empty", tv = true, data = RenderData(torrents = emptyList(), storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettings() = render("settings", tv = true, content = tvApp { select(Tab.Settings) })
     private fun tvSettingsPage(page: SettingsPage) =
@@ -299,6 +348,10 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvSettingsAppearance() = tvSettingsPage(SettingsPage.Appearance)
     @Test @Config(qualifiers = TV) fun tvSettingsAddons() = tvSettingsPage(SettingsPage.Addons)
     @Test @Config(qualifiers = TV) fun tvSettingsStore() = tvSettingsPage(SettingsPage.Store)
+    @Test @Config(qualifiers = TV) fun tvSettingsStoreFiltered() = render(
+        "settings-store-filtered", tv = true,
+        data = RenderData(installed = Fake.installed, store = Fake.store, storeQuery = com.kirtanya.reel.core.store.StoreQuery(types = setOf("series"))),
+    ) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.Store)) } }
     @Test @Config(qualifiers = TV) fun tvSettingsPhoneTv() = tvSettingsPage(SettingsPage.PhoneTv)
     @Test @Config(qualifiers = TV) fun tvAddSource() = render("add-source", tv = true, windows = true, data = RenderData(linkPreview = Load.Ready(preview))) {
         AddSourceLinkDialog(preview.url, isTv = true, onDone = {})

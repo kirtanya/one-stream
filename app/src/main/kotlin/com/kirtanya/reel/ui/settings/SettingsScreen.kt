@@ -294,9 +294,9 @@ internal fun PageTitle(title: String, subtitle: String?, isTv: Boolean, onBack: 
     ) {
         if (onBack != null && !isTv) GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
         Column(Modifier.weight(1f)) {
-            if (onBack != null && isTv) Text("Settings  ›", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
+            if (onBack != null && isTv) Text("Settings  ›", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
             Text(title, style = if (onBack == null) Tokens.Type.display else Tokens.Type.title, color = Tokens.Colors.text)
-            if (subtitle != null) Text(subtitle, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
+            if (subtitle != null) Text(subtitle, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
         }
     }
 }

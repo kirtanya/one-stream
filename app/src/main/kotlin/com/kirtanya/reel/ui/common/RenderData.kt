@@ -20,6 +20,13 @@ class RenderData(
     val installed: SourcesState? = null,
     val store: StoreState? = null,
     val linkPreview: Load<SourcesStore.LinkPreview>? = null,
+    /** Which title / episode each download is for (info-hash → origin). */
+    val origins: Map<String, com.kirtanya.reel.core.library.DownloadOrigin>? = null,
+    /** Sources page: chips already picked; [confirmReplace] opens the "Replace this download?" dialog for the pick. */
+    val sourceFilters: com.kirtanya.reel.core.sources.SourceFilters? = null,
+    val confirmReplace: Boolean = false,
+    /** Addon store: search text and chips already picked. */
+    val storeQuery: com.kirtanya.reel.core.store.StoreQuery? = null,
 )
 
 val LocalRenderData = staticCompositionLocalOf<RenderData?> { null }

@@ -52,7 +52,7 @@ object Tokens {
         private val isDark get() = c.surface.luminance() < 0.5f
         // Status colours, a tone that reads on the current surface (light text-safe in light mode).
         val good: Color get() = if (isDark) Color(0xFF4ADE80) else Color(0xFF15803D)
-        val warn: Color get() = if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
+        val warn: Color get() = if (isDark) Color(0xFFFBBF24) else Color(0xFF9A4507) // light: 4.5:1 on every light surface
         val danger: Color get() = c.error
         val scrim: Color get() = c.surface.copy(alpha = 0.8f)
 
@@ -192,7 +192,7 @@ object Tokens {
         val heroMin = 460.dp
         val heroMax = 620.dp
         val titleHeader = 440.dp
-        val sourcesHeader = 300.dp
+        val sourcesHeader = 230.dp
         /** Title logos (TMDB artwork) are fitted inside this box. */
         val logoMaxWidthPhone = 260.dp
         val logoMaxHeightPhone = 96.dp

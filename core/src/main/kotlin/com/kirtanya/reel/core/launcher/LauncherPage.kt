@@ -143,47 +143,12 @@ object LauncherPage {
         }
     }
 
-    private val LANGUAGE_WORDS = listOf(
-        "English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali", "Marathi", "Punjabi",
-        "Japanese", "Korean", "Chinese", "Spanish", "French", "German", "Italian", "Russian", "Portuguese", "Arabic",
-    )
-    private val ABBREVIATIONS = mapOf("ENG" to "English", "HIN" to "Hindi", "TAM" to "Tamil", "TEL" to "Telugu", "MAL" to "Malayalam", "KAN" to "Kannada")
-    /** Flag emoji the big addons put in descriptions (🇬🇧 🇮🇳 …). */
-    private val FLAGS = mapOf(
-        "GB" to "English", "US" to "English", "IN" to "Hindi", "ES" to "Spanish", "MX" to "Spanish", "FR" to "French",
-        "DE" to "German", "IT" to "Italian", "JP" to "Japanese", "KR" to "Korean", "CN" to "Chinese", "RU" to "Russian",
-        "PT" to "Portuguese", "BR" to "Portuguese",
-    )
-
     /**
      * Audio languages named in a release / description ("Hindi", "ENG", 🇮🇳, "Multi", "Dual audio"),
-     * comma-separated in first-seen order; null when it names none. The app itself doesn't track
-     * languages, so this only reads the text.
+     * comma-separated in first-seen order; null when it names none. Same reading as the Sources page.
      */
-    fun languages(text: String): String? {
-        val found = LinkedHashSet<String>()
-        val words = Regex("[A-Za-z]+").findAll(text).map { it.value }.toList()
-        for (w in words) {
-            LANGUAGE_WORDS.firstOrNull { it.equals(w, ignoreCase = true) }?.let(found::add)
-            ABBREVIATIONS[w]?.let(found::add)
-        }
-        // Regional indicator pairs → country code.
-        val cps = text.codePoints().toArray()
-        var i = 0
-        while (i < cps.size - 1) {
-            val a = cps[i] - 0x1F1E6
-            val b = cps[i + 1] - 0x1F1E6
-            if (a in 0..25 && b in 0..25) {
-                FLAGS["${'A' + a}${'A' + b}"]?.let(found::add)
-                i += 2
-            } else i++
-        }
-        if (found.isEmpty()) {
-            if (Regex("(?i)\\bdual[ ._-]?audio\\b").containsMatchIn(text)) found += "Dual audio"
-            else if (Regex("(?i)\\bmulti\\b").containsMatchIn(text)) found += "Multi"
-        }
-        return found.joinToString(", ").takeIf { it.isNotEmpty() }
-    }
+    fun languages(text: String): String? =
+        com.kirtanya.reel.core.sources.SourceFacts.languages(text).joinToString(", ").takeIf { it.isNotEmpty() }
 
     // ------------------------------------------------------------------ downloads
 

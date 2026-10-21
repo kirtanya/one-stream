@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.kirtanya.reel.ReelApp
+import com.kirtanya.reel.core.library.DownloadOrigin
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.playback.Playback
 import com.kirtanya.reel.core.playback.nextEpisode
@@ -71,7 +72,7 @@ fun rankPrefs(context: Context, isTv: Boolean): RankPrefs {
 }
 
 /** Best source to start straight away: first non-external one. */
-fun bestOf(search: SourceSearch?): Source? = search?.sources?.firstOrNull { it.kind != SourceKind.EXTERNAL }
+fun bestOf(search: SourceSearch?): Source? = search?.sources?.let(com.kirtanya.reel.core.sources.SourceBrowser::recommended)
 
 /** What the player needs to play [source] for this film / episode and remember it. */
 fun playbackFor(d: TitleDetails, episode: EpisodeNumber?, episodeName: String?, stillPath: String?, source: Source): Playback {
@@ -122,18 +123,34 @@ private fun openExternal(context: Context, source: Source) {
     Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
 }
 
-/** Torrents → the engine (only the chosen file). Direct links → Android's download manager. */
-fun download(context: Context, source: Source, title: String) {
+/**
+ * Torrents → the engine (only the chosen file). Direct links → Android's download manager.
+ * [origin] remembers the film / episode for "Change source". [replacing] (an info-hash) is the
+ * download this one replaces: it's deleted only once the new one has started, so a failed start
+ * leaves it alone (docs/STREAMING_V2.md §7.3a).
+ */
+fun download(context: Context, source: Source, title: String, origin: DownloadOrigin? = null, replacing: String? = null) {
     val app = ReelApp.get(context)
+    val main = android.os.Handler(context.mainLooper)
+    fun dropOld(newHash: String?) {
+        val old = replacing ?: return
+        if (newHash != null && newHash.equals(old, ignoreCase = true)) return
+        main.post {
+            app.engine.remove(old, deleteFiles = true)
+            app.downloadOrigins.remove(old)
+        }
+    }
     when (source.kind) {
         SourceKind.TORRENT -> app.appScope.launch {
             val msg = try {
-                app.engine.addMagnet(source.magnetUri() ?: return@launch, TorrentMode.DOWNLOAD, source.fileIdx, source.filename)
-                "Downloading “$title”"
+                val hash = app.engine.addMagnet(source.magnetUri() ?: return@launch, TorrentMode.DOWNLOAD, source.fileIdx, source.filename)
+                origin?.let { app.downloadOrigins.put(hash, it) }
+                dropOld(hash)
+                if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"
             } catch (e: EngineException) {
                 e.message ?: "Couldn't start the download"
             }
-            android.os.Handler(context.mainLooper).post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+            main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
         }
         SourceKind.DIRECT -> {
             val url = source.url ?: return
@@ -143,8 +160,9 @@ fun download(context: Context, source: Source, title: String) {
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Reel/" + Uri.decode(name))
             source.headers.forEach { (k, v) -> request.addRequestHeader(k, v) }
-            context.getSystemService(DownloadManager::class.java).enqueue(request)
-            Toast.makeText(context, "Downloading “$title”", Toast.LENGTH_SHORT).show()
+            val started = runCatching { context.getSystemService(DownloadManager::class.java).enqueue(request) }.isSuccess
+            if (started) dropOld(null)
+            Toast.makeText(context, if (started) "Downloading “$title”" else "Couldn't start the download", Toast.LENGTH_SHORT).show()
         }
         SourceKind.EXTERNAL -> Unit
     }

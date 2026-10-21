@@ -88,7 +88,7 @@ fun TvApp(
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
                     TvTitle(screen.ref, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
                 }
-                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back)
+                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back, download = screen.download, replacing = screen.replacing)
                 is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { com.kirtanya.reel.ui.common.PersonScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = true, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
@@ -96,7 +96,7 @@ fun TvApp(
                     when (screen) {
                         Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = open)
                         Tab.Search -> TvSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery)
-                        Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) { DownloadsScreen(isTv = true, onAdd = {}) }
+                        Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) { DownloadsScreen(isTv = true, onAdd = {}, onOpenDest = open) }
                         Tab.Settings -> Box(Modifier.padding(top = TvTopBarHeight)) { SettingsScreen(isTv = true) }
                     }
                 }

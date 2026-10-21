@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 
 
 import androidx.compose.foundation.layout.padding
@@ -30,9 +31,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -71,9 +74,13 @@ import kotlinx.coroutines.withContext
 
 private enum class DownloadFilter(val label: String) { All("All"), Active("Downloading"), Done("Done"), Streams("Stream cache") }
 
-/** Downloads and the stream cache: storage at a glance, each torrent as a card with glass actions. */
+/**
+ * Downloads and the stream cache: storage at a glance, then downloads, then the stream cache as its
+ * own section. Each card plays; downloads can change source or become stream cache, cached streams
+ * can be saved as downloads (docs/STREAMING_V2.md §7.3a).
+ */
 @Composable
-fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
+fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.reel.ui.nav.Dest) -> Unit = {}) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
@@ -81,6 +88,10 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
     val torrents = fixed?.torrents ?: live
     var filter by remember { mutableStateOf(DownloadFilter.All) }
     var confirmDelete by remember { mutableStateOf<TorrentSnapshot?>(null) }
+    var more by remember { mutableStateOf<TorrentSnapshot?>(null) }
+    var confirmCache by remember { mutableStateOf<TorrentSnapshot?>(null) }
+    val liveOrigins by ReelApp.get(context).downloadOrigins.all.collectAsState()
+    val origins = fixed?.origins ?: liveOrigins
     var cacheBytes by remember { mutableLongStateOf(fixed?.storage?.first ?: 0L) }
     var freeBytes by remember { mutableLongStateOf(fixed?.storage?.second ?: 0L) }
     LaunchedEffect(Unit) {
@@ -93,6 +104,8 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
         }
     }
     val shown = torrents.filter { it.matches(filter) }
+    val shownDownloads = shown.filter { it.mode == TorrentMode.DOWNLOAD }
+    val shownCache = shown.filter { it.mode == TorrentMode.STREAM }
     // Disk checks once, not on every recomposition (and some devices can't answer at all).
     val saveDir = remember { runCatching { engine.downloadsDir().path.substringAfter("/0/") }.getOrNull() }
     val needsFileAccess = remember { !isTv && Build.VERSION.SDK_INT >= 30 && runCatching { !Environment.isExternalStorageManager() }.getOrDefault(false) }
@@ -145,8 +158,48 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
                     )
                 }
             }
-            items(shown, key = { it.infoHash }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }) }
+            items(shownDownloads, key = { it.infoHash }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = { more = t }) }
+            if (shownCache.isNotEmpty()) {
+                item(key = "cache-header") {
+                    Column(Modifier.widthIn(max = 980.dp).padding(top = if (shownDownloads.isEmpty()) 0.dp else Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
+                        Text("Stream cache · ${shownCache.size}", style = Tokens.Type.heading, color = Tokens.Colors.text)
+                        Text(
+                            "What you played recently, so it starts again without waiting. Deleted automatically when space is needed; save one to keep it.",
+                            style = Tokens.Type.caption, color = Tokens.Colors.textSecondary,
+                        )
+                    }
+                }
+                items(shownCache, key = { it.infoHash }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = null) }
+            }
         }
+    }
+
+    more?.let { t ->
+        val origin = origins[t.infoHash.lowercase()]
+        MoreDialog(
+            t, canChangeSource = origin != null,
+            onChangeSource = {
+                more = null
+                origin?.let { o ->
+                    val type = if (o.type == com.kirtanya.reel.core.tmdb.MediaType.TV.path) com.kirtanya.reel.core.tmdb.MediaType.TV else com.kirtanya.reel.core.tmdb.MediaType.MOVIE
+                    onOpenDest(com.kirtanya.reel.ui.nav.Dest.Sources(com.kirtanya.reel.core.tmdb.TitleRef(type, o.tmdbId), o.season, o.episode, download = true, replacing = t.infoHash))
+                }
+            },
+            onKeepAsCache = { more = null; confirmCache = t },
+            onDismiss = { more = null },
+        )
+    }
+
+    confirmCache?.let { t ->
+        val finished = t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING
+        AlertDialog(
+            onDismissRequest = { confirmCache = null },
+            containerColor = Tokens.Colors.surface1,
+            title = { Text("Keep as stream cache?", style = Tokens.Type.heading, color = Tokens.Colors.text) },
+            text = { Text(com.kirtanya.reel.core.stream.ModeChange.cacheConfirm(finished), style = Tokens.Type.body, color = Tokens.Colors.textSecondary) },
+            confirmButton = { ReelButton("Keep as cache", { engine.keepAsCache(t.infoHash); confirmCache = null }, kind = ButtonKind.Primary, icon = Icons.Rounded.Theaters) },
+            dismissButton = { ReelButton("Keep download", { confirmCache = null }, kind = ButtonKind.Ghost) },
+        )
     }
 
     confirmDelete?.let { t ->
@@ -155,7 +208,13 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit) {
             containerColor = Tokens.Colors.surface1,
             title = { Text("Delete “${com.kirtanya.reel.ui.sources.releaseName(t.name)}”?", style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis) },
             text = { Text("This removes the torrent and its downloaded files from this device.", style = Tokens.Type.body, color = Tokens.Colors.textSecondary) },
-            confirmButton = { ReelButton("Delete", { engine.remove(t.infoHash, deleteFiles = true); confirmDelete = null }, kind = ButtonKind.Primary, icon = Icons.Rounded.Delete) },
+            confirmButton = {
+                ReelButton("Delete", {
+                    engine.remove(t.infoHash, deleteFiles = true)
+                    ReelApp.get(context).downloadOrigins.remove(t.infoHash)
+                    confirmDelete = null
+                }, kind = ButtonKind.Primary, icon = Icons.Rounded.Delete)
+            },
             dismissButton = { ReelButton("Keep it", { confirmDelete = null }, kind = ButtonKind.Ghost) },
         )
     }
@@ -181,7 +240,7 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
 }
 
 @Composable
-private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
+private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val done = t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING
@@ -210,13 +269,19 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
             ReelButton(if (done) "Play" else "Play now", { context.startActivity(PlayerActivity.forTorrent(context, t.infoHash, t.name)) }, kind = ButtonKind.Secondary, icon = Icons.Rounded.PlayArrow)
             Spacer(Modifier.weight(1f))
-            // Icons, not labels, so Play + up to three actions fit a 360 dp phone.
-            if (t.mode == TorrentMode.STREAM) GlassIconButton(Icons.Rounded.SaveAlt, "Keep (save to Downloads)", { engine.keep(t.infoHash) })
-            if (!done) {
+            // Icons, not labels, so Play + up to three actions fit a 360 dp phone; the rest are under More.
+            if (t.mode == TorrentMode.STREAM) {
+                // Keeps the pieces already fetched and downloads the rest (Keep, §7.3).
+                GlassIconButton(Icons.Rounded.SaveAlt, "Save as download", {
+                    engine.keep(t.infoHash)
+                    android.widget.Toast.makeText(context, "Saving as a download", android.widget.Toast.LENGTH_SHORT).show()
+                })
+            } else if (!done) {
                 if (t.phase == TorrentPhase.PAUSED) GlassIconButton(Icons.Rounded.Download, "Resume", { engine.resume(t.infoHash) })
                 else GlassIconButton(Icons.Rounded.Pause, "Pause", { engine.pause(t.infoHash) })
             }
             GlassIconButton(Icons.Rounded.Delete, "Delete", onDelete)
+            if (onMore != null) GlassIconButton(Icons.Rounded.MoreVert, "More", onMore)
         }
     }
 }
@@ -248,3 +313,23 @@ private fun statusLine(t: TorrentSnapshot): String = buildString {
     }
 }
 
+/** A download's other actions, as a dialog of buttons (reachable with the remote too). */
+@Composable
+internal fun MoreDialog(t: TorrentSnapshot, canChangeSource: Boolean, onChangeSource: () -> Unit, onKeepAsCache: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Tokens.Colors.surface1,
+        title = { Text(com.kirtanya.reel.ui.sources.releaseName(t.name), style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                if (canChangeSource) {
+                    ReelButton("Change source", onChangeSource, Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, icon = Icons.Rounded.SwapHoriz)
+                } else {
+                    Text("Change source works for downloads started from a title's sources.", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
+                }
+                ReelButton("Keep as stream cache", onKeepAsCache, Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, icon = Icons.Rounded.Theaters)
+            }
+        },
+        confirmButton = { ReelButton("Close", onDismiss, kind = ButtonKind.Ghost) },
+    )
+}

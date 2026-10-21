@@ -238,6 +238,8 @@ object Fake {
             url = if (kind == SourceKind.DIRECT) "https://example.org/v/$i.mp4" else null,
             externalUrl = if (kind == SourceKind.EXTERNAL) "https://www.primevideo.com/detail/$i" else null,
             fileIdx = i,
+            // Languages ride on the file name so the release names other screens show stay the same.
+            filename = when (i % 5) { 1 -> "release.[Hindi + English].mkv"; 2 -> "release.MULTi.mkv"; 3 -> "release.ITA.ENG.mkv"; else -> null },
             sizeBytes = if (i % 5 == 4) null else (1L + i % 9) * 1_700_000_000L,
             seeders = if (kind != SourceKind.TORRENT) null else listOf(412, 0, 9, 1203, 37)[i % 5],
             subtitles = if (i % 3 == 0) List(i % 4 + 1) { SubtitleTrack("https://example.org/s/$it.srt", "en") } else emptyList(),
@@ -253,6 +255,7 @@ object Fake {
         total = 9,
     )
     val noProviders = SourceSearch(emptyList(), pending = emptyList(), failed = emptyMap(), total = 0)
+    val allFailed = SourceSearch(emptyList(), pending = emptyList(), failed = mapOf("Torrentio" to "HTTP 502", "Internet Archive" to "Timed out"), total = 2)
     val nothingFound = SourceSearch(emptyList(), pending = emptyList(), failed = mapOf("Torrentio" to "HTTP 502"), total = 5)
 
     // ─── Downloads ───────────────────────────────────────────────────────────────────────────
@@ -273,6 +276,13 @@ object Fake {
         torrent("The.Night.Manager.S01E03.1080p.WEB.h264", TorrentMode.DOWNLOAD, TorrentPhase.ERROR, 0.12f, error = "Not enough space on this device: 3.1 GB free, 9.8 GB needed"),
         torrent("Panchayat.S03.COMPLETE.720p.AMZN.WEB-DL", TorrentMode.DOWNLOAD, TorrentPhase.DOWNLOADING, 0.08f, stalled = 300, i = 1),
         torrent("Interstellar.2014.IMAX.1080p.BluRay.x265", TorrentMode.STREAM, TorrentPhase.DOWNLOADING, 0.31f, i = 2),
+        torrent("Big.Buck.Bunny.2008.1080p.Blender", TorrentMode.STREAM, TorrentPhase.PAUSED, 0.86f, i = 3),
+    )
+
+    /** Downloads started from a title's sources know their title (Change source); magnet links don't. */
+    val origins = mapOf(
+        torrents[0].infoHash to com.kirtanya.reel.core.library.DownloadOrigin("movie", FILM_ID, label = "Dune: Part Two"),
+        torrents[5].infoHash to com.kirtanya.reel.core.library.DownloadOrigin("tv", SHOW_ID, 1, 3, "The Night Manager · S1 E3"),
     )
 
     // ─── Settings ────────────────────────────────────────────────────────────────────────────
@@ -320,7 +330,9 @@ object Fake {
                 hasSubtitles = i % 6 == 1,
                 configurable = i % 3 == 2,
                 needsSetup = i % 5 == 3,
-                catalog = "Stremio official",
+                catalog = if (i % 7 == 6) "https://stremio-addons.net/catalog.json" else "https://api.strem.io/addonscollection.json",
+                types = listOf(listOf("movie", "series"), listOf("movie"), listOf("series", "anime"), listOf("tv", "channel"))[i % 4],
+                hasCatalogs = i % 3 == 2,
             )
         },
         failed = listOf("stremio-addons.net community catalog with a long name"),

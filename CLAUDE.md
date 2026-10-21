@@ -122,12 +122,14 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
 ## Map of the code
 `:core` (pure Kotlin/JVM, tested) — `core/src/main/kotlin/com/kirtanya/reel/core/`
 - `stream/` engine v2 pure logic: ZoneScheduler, StreamPlan, PieceGate, StreamReaderCore, ContainerProbe,
-  SessionTuning, SchedulerProfile, CachePolicy, RestorePolicy, StreamStats, TorrentKey, FileChoice.
+  SessionTuning, SchedulerProfile, CachePolicy, RestorePolicy, StreamStats, TorrentKey, FileChoice,
+  ModeChange (download ↔ stream cache).
 - `sources/` source search: Nuvio JS plugins (PluginRuntime / PluginJs / DomBridge), Stremio addons,
-  SourceAggregator + SourceRanker, Quality, Subtitles.
+  SourceAggregator + SourceRanker, Quality, Subtitles, SourceFacts (tags / languages / seed health) + SourceBrowser
+  (Sources page chips, filters, sort, status).
 - `sync/` phone → TV sync: SyncServer / SyncClient, SyncCrypto, SourcesBundle, SourceLinks.
 - `tmdb/` TMDB models, parser, paths. `magnet/` magnet parsing + trackers. `playback/` Playback,
-  WatchHistory. `library/` Watchlist. `store/` AddonCatalog. `report/` ReportPolicy, LogWindow, ShakeGate.
+  WatchHistory. `library/` Watchlist, Downloads (download origins, SourceSwap for Change source). `store/` AddonCatalog. `report/` ReportPolicy, LogWindow, ShakeGate.
 
 `:app` — `app/src/main/kotlin/com/kirtanya/reel/`
 - `ReelApp.kt` app singletons; `MainActivity.kt` picks phone or TV UI.

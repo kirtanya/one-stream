@@ -195,7 +195,8 @@ class LauncherProvider : ContentProvider() {
                 val p = playback() ?: return false to "Unknown source; search again"
                 if (!LauncherPage.downloadable(p.source)) return false to "This source can't be downloaded"
                 // The app's own Download button (it shows a toast, so on the main thread).
-                Handler(Looper.getMainLooper()).post { download(app, p.source, p.displayTitle) }
+                val origin = p.tmdbId?.let { id -> p.tmdbType?.let { type -> com.kirtanya.reel.core.library.DownloadOrigin(type, id, p.episode?.season, p.episode?.episode, p.displayTitle) } }
+                Handler(Looper.getMainLooper()).post { download(app, p.source, p.displayTitle, origin) }
                 true to "Downloading “${p.displayTitle}”"
             }
             LauncherPage.PREPARE -> {

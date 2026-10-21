@@ -42,6 +42,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val history by lazy { WatchHistoryStore(this) }
     val watchlist by lazy { com.kirtanya.reel.data.WatchlistStore(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
+    /** Which title / episode each download is for (Downloads → Change source). */
+    val downloadOrigins by lazy { com.kirtanya.reel.data.DownloadOriginStore(this) }
     /** Problem reports: crashes, freezes, stalls, errors and "Report a problem" (docs/MACHINE_FIRST_PLAN.md step 1). */
     val reports by lazy { com.kirtanya.reel.report.ReportCenter(this) }
 

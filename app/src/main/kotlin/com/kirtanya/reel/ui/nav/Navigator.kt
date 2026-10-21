@@ -13,8 +13,17 @@ enum class Tab(val label: String) { Home("Home"), Search("Search"), Downloads("D
 sealed interface Dest {
     data class Title(val ref: TitleRef) : Dest
 
-    /** Where to play a film, or one episode of a show. */
-    data class Sources(val ref: TitleRef, val season: Int? = null, val episode: Int? = null) : Dest
+    /**
+     * Where to play a film, or one episode of a show. [download] opens it for downloading;
+     * [replacing] (an info-hash) for a new source for that download (Downloads → Change source).
+     */
+    data class Sources(
+        val ref: TitleRef,
+        val season: Int? = null,
+        val episode: Int? = null,
+        val download: Boolean = false,
+        val replacing: String? = null,
+    ) : Dest
 
     /**
      * A grid: a Home row's titles ("See all"), everything on one streaming service, or the most

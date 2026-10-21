@@ -113,7 +113,7 @@ fun PhoneApp(
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
                     PhoneTitle(screen.ref, onBack = back, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
                 }
-                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back)
+                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back, download = screen.download, replacing = screen.replacing)
                 is Dest.Collection -> saveable.SaveableStateProvider(collectionKey(screen)) { CollectionScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { PersonScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = false, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
@@ -121,7 +121,7 @@ fun PhoneApp(
                     when (screen) {
                         Tab.Home -> PhoneHome(onOpen = openTitle, onOpenDest = open, onAdd = { showAdd = true })
                         Tab.Search -> PhoneSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery)
-                        Tab.Downloads -> DownloadsScreen(isTv = false, onAdd = { showAdd = true })
+                        Tab.Downloads -> DownloadsScreen(isTv = false, onAdd = { showAdd = true }, onOpenDest = open)
                         Tab.Settings -> SettingsScreen(isTv = false)
                     }
                 }
