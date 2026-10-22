@@ -27,6 +27,8 @@ data class CastRequest(
     val season: Int?,
     val episode: Int?,
     val hint: CastHint,
+    /** Where to start (ms): the phone's position when it handed playback over. Null = resume from the TV's history. */
+    val startMs: Long? = null,
 ) {
     companion object {
         /** Null unless it names a film, or a show with season + episode (a whole show can't start). */
@@ -46,15 +48,17 @@ data class CastRequest(
                 file = params["file"]?.trim()?.toIntOrNull()?.takeIf { it >= 0 },
                 url = params["url"]?.trim()?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) },
             )
-            return if (type == MediaType.TV) CastRequest(download, TitleRef(type, id), season, episode, hint)
-            else CastRequest(download, TitleRef(type, id), null, null, hint)
+            val start = params["t"]?.trim()?.toLongOrNull()?.takeIf { it > 0 && !download }
+            return if (type == MediaType.TV) CastRequest(download, TitleRef(type, id), season, episode, hint, start)
+            else CastRequest(download, TitleRef(type, id), null, null, hint, start)
         }
 
-        fun link(download: Boolean, ref: TitleRef, season: Int? = null, episode: Int? = null, hint: CastHint = CastHint()): String =
+        fun link(download: Boolean, ref: TitleRef, season: Int? = null, episode: Int? = null, hint: CastHint = CastHint(), startMs: Long? = null): String =
             "${LauncherLink.SCHEME}://cast/${if (download) "download" else "play"}?type=${ref.type.path}&tmdb=${ref.id}" +
                 (if (season != null && episode != null) "&season=$season&episode=$episode" else "") +
                 (hint.hash?.let { "&hash=$it" } ?: "") + (hint.file?.let { "&file=$it" } ?: "") +
-                (hint.url?.let { "&url=" + java.net.URLEncoder.encode(it, Charsets.UTF_8) } ?: "")
+                (hint.url?.let { "&url=" + java.net.URLEncoder.encode(it, Charsets.UTF_8) } ?: "") +
+                (startMs?.takeIf { it > 0 && !download }?.let { "&t=$it" } ?: "")
     }
 }
 

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -55,6 +56,8 @@ fun SourceOptionsDialog(
     onPlay: () -> Unit,
     onDownload: () -> Unit,
     onDismiss: () -> Unit,
+    /** Phone with a paired TV remote: wake the TV and play this source there. */
+    onPlayOnTv: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val s = v.source
@@ -81,6 +84,9 @@ fun SourceOptionsDialog(
                     ReelButton("Open", then(onPlay), wide.focusRequester(first), kind = ButtonKind.Primary, icon = Icons.Rounded.OpenInNew)
                 } else {
                     ReelButton("Play", then(onPlay), wide.focusRequester(first), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow)
+                }
+                if (onPlayOnTv != null) {
+                    ReelButton("Play on TV", then(onPlayOnTv), wide, kind = ButtonKind.Secondary, icon = Icons.Rounded.Tv)
                 }
                 if (LauncherPage.downloadable(s)) {
                     ReelButton("Download file", then(onDownload), wide, kind = ButtonKind.Secondary, icon = Icons.Rounded.Download)

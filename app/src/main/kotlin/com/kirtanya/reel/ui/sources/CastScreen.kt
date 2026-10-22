@@ -115,8 +115,9 @@ private fun CastSearchBody(d: TitleDetails, request: CastRequest, isTv: Boolean,
         val s = request.season
         val e = request.episode
         val epNumber = if (s != null && e != null) EpisodeNumber(s, e) else null
-        // Exactly what choosing it on the Sources page does (the player resumes from history itself).
-        play(context, playbackFor(d, epNumber, ep?.name, ep?.stillPath, take.source))
+        // Exactly what choosing it on the Sources page does (the player resumes from history itself),
+        // or from the phone's position when the phone handed playback over ("Send to TV").
+        play(context, playbackFor(d, epNumber, ep?.name, ep?.stillPath, take.source), request.startMs)
         onStarted()
     }
     if (decision == Decision.Nothing) CastNothing(d, request, isTv, onOpenSources)

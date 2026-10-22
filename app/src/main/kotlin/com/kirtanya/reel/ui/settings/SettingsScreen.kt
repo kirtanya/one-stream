@@ -498,7 +498,10 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
             }
 
             // Composed only while this page is open: the TV offers a pairing code just while it's on screen.
-            SettingsPage.PhoneTv -> item { Section { SyncContent(isTv) } }
+            SettingsPage.PhoneTv -> {
+                item { Section { SyncContent(isTv) } }
+                if (!isTv) item { Section("TV remote") { TvRemoteContent() } }
+            }
 
             SettingsPage.HomeStorage -> homeStorageItems(isTv)
             SettingsPage.HomeLayout -> homeLayoutItems(isTv)

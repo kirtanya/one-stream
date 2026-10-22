@@ -296,6 +296,8 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
             onPlay = { playPicked(v.source) },
             onDownload = { where.download(v.source) },
             onDismiss = { options = null },
+            onPlayOnTv = if (isTv || app.tvRemote.paired == null || v.source.kind == com.kirtanya.reel.core.sources.SourceKind.EXTERNAL) null
+                else ({ com.kirtanya.reel.tvremote.SendToTv.sendAndTell(app, playbackOf(v.source), 0) }),
         )
     }
     confirm?.let { s -> ReplaceDialog(replacing!!, s, label, origin, onDismiss = { confirm = null }, onDone = { confirm = null; onDone() }) }
