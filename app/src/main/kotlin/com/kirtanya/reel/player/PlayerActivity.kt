@@ -1893,6 +1893,12 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             onPip = if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({ enterPip() }) else null,
             nextLabel = { nextReady?.let { (n, _) -> n.episode?.label?.let { "Next · $it" } ?: "Next episode" } },
             onNext = { playNext() },
+            // Continue on the paired TV (wakes it from standby); the phone pauses, so it can come back.
+            onSendToTv = {
+                com.kirtanya.reel.tvremote.SendToTv.sendAndTell(app, playback, player?.currentPosition ?: 0L) { player?.pause() }
+            },
+            // Shown for TMDB titles; without a paired TV the tap explains how to set it up.
+            canSendToTv = { com.kirtanya.reel.tvremote.SendToTv.canSend(playback) },
             onZoom = { fill ->
                 setPicture(if (fill) com.kirtanya.reel.core.playback.PictureMode.FILL else com.kirtanya.reel.core.playback.PictureMode.FIT)
             },

@@ -142,7 +142,8 @@ internal object PlayerScenes {
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         val c = PhoneControls(activity, playerView, TITLE, { null }, { extras(file) },
-            onBack = {}, onPip = {}, nextLabel = { if (next) "Next · S1 E4" else null }, onNext = {})
+            onBack = {}, onPip = {}, nextLabel = { if (next) "Next · S1 E4" else null }, onNext = {},
+            onSendToTv = {}, canSendToTv = { true })
         // The rows the activity adds (PlayerActivity.buildLayout), so the panel shows its real length.
         val modes = com.kirtanya.reel.core.playback.PictureMode.entries
         val levels = com.kirtanya.reel.core.playback.Ambient.Level.entries

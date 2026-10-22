@@ -62,6 +62,10 @@ internal class PhoneControls(
     private val onNext: () -> Unit,
     /** Pinch picked fill (true) or fit (false): the activity applies and remembers it. */
     private val onZoom: (Boolean) -> Unit = {},
+    /** "Send to TV" (continue on the paired TV at this position); null hides the button. */
+    private val onSendToTv: (() -> Unit)? = null,
+    /** Whether this playback can be sent (a TMDB title); checked on every refresh. */
+    private val canSendToTv: () -> Boolean = { false },
 ) : FrameLayout(activity) {
     private val ctx: Context = activity
     private val main = Handler(Looper.getMainLooper())
@@ -77,6 +81,7 @@ internal class PhoneControls(
     private val play = RoundButton(ctx, R.drawable.ic_pl_pause, "Play or pause", BUTTON_DP, ICON_DP)
     private val ffwd = SkipButton(ctx, forward = true, seconds = 10, sizeDp = BUTTON_DP, iconDp = SKIP_ICON_DP, font = font(true))
     private val next = RoundButton(ctx, R.drawable.ic_pl_next, "Next episode", BUTTON_DP, ICON_DP).apply { visibility = GONE }
+    private val toTv = RoundButton(ctx, R.drawable.ic_pl_tv, "Send to TV", BUTTON_DP, ICON_DP).apply { visibility = GONE }
     private val lock = RoundButton(ctx, R.drawable.ic_pl_lock_open, "Lock controls", BUTTON_DP, ICON_DP)
     private val subs = RoundButton(ctx, R.drawable.ic_pl_subtitles, "Subtitles", BUTTON_DP, ICON_DP)
     private val tune = RoundButton(ctx, R.drawable.ic_pl_tune, "Settings", BUTTON_DP, ICON_DP)
@@ -143,7 +148,7 @@ internal class PhoneControls(
             t.ellipsize = android.text.TextUtils.TruncateAt.END
             info.addView(t, LinearLayout.LayoutParams(-1, -2))
         }
-        val row = BandRow(ctx, left = listOf(back, rew, play, ffwd), middle = info, right = listOf(next, lock, subs, tune))
+        val row = BandRow(ctx, left = listOf(back, rew, play, ffwd), middle = info, right = listOf(next, toTv, lock, subs, tune))
 
         // Elapsed above the seek bar's start, remaining above its end (as on the TV).
         val times = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
@@ -194,6 +199,7 @@ internal class PhoneControls(
         lock.setOnClickListener { setLocked(true) }
         unlock.setOnClickListener { setLocked(false) }
         next.setOnClickListener { onNext() }
+        toTv.setOnClickListener { onSendToTv?.invoke() }
         seek.onScrubStart = { touch() }
         // The bubble above the thumb shows the time while scrubbing the bar (no second read-out up top).
         seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); remaining.text = "−" + PlayerActivity.formatTime((seek.duration - it).coerceAtLeast(0)); touch() }
@@ -219,7 +225,7 @@ internal class PhoneControls(
             t.setTextColor(if (t === metaView) PlayerColors.SECONDARY else c)
             t.setShadowLayer(ctx.dpf(1.5f), 0f, ctx.dpf(1f), PlayerColors.CONTROL_SHADOW)
         }
-        for (b in listOf(back, rew, play, ffwd, next, lock, subs, tune)) {
+        for (b in listOf(back, rew, play, ffwd, next, toTv, lock, subs, tune)) {
             b.tint(c)
             b.addShadow(PlayerColors.CONTROL_SHADOW)
         }
@@ -359,6 +365,7 @@ internal class PhoneControls(
     private fun showNext(label: String?) {
         next.visibility = if (label != null) VISIBLE else GONE
         next.contentDescription = label ?: "Next episode"
+        toTv.visibility = if (onSendToTv != null && canSendToTv()) VISIBLE else GONE
     }
 
     // ---------------------------------------------------------------- playback
