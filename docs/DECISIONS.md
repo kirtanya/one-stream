@@ -5,6 +5,18 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-24 · Edge layout: skip buttons flank the camera hole, in the cutout strip**
+Decision (user follow-up after 0.11.1): back 10 directly above the camera hole and forward 10 directly below it,
+centred on the hole's horizontal middle (DisplayCutout.boundingRects), ≥ 8 dp clear of its rect; play / pause stays
+at the vertical centre just past the cutout inset, back at the top of the strip. Neither skip may overlap play's
+rows (they'd share touch area), so they move further out when 8 dp isn't enough; a 48 dp button is wider than the
+≈ 40 dp strip, so it is kept on screen (its middle ≈ 4 dp off the hole's). No hole / no room → the previous stack.
+The phone player window now asks for LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES (API 28, same as ALWAYS for a
+short-edge hole); targeting Android 15+ already drew there, so Classic (padded by the cutout inset) is unchanged.
+Evidence: `PhoneLayout.flankHole` + PhoneLayoutTest; renders `phone_edge_cutout_left/right`; PlayerDesignRules pass.
+
+---
+
 **2026-10-24 · Phone player: Edge layout (opt-in, Settings panel → Layout: Classic / Edge)**
 Decision: a second phone player layout built around the Pixel 8's camera hole, chosen per user in the player's
 settings panel (PanelToggle "Layout"), remembered in PlaybackPrefs.phoneLayout, default Classic, applied at once.

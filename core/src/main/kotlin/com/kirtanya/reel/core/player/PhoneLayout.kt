@@ -26,6 +26,28 @@ enum class PhoneLayout(val label: String) {
          */
         fun cutoutSide(cutoutLeft: Int, cutoutRight: Int) = if (cutoutRight > cutoutLeft) Side.RIGHT else Side.LEFT
 
+        /** Where the two skip buttons go around the camera hole: left x and the tops (px) above / below it. */
+        class Flank(val x: Int, val aboveTop: Int, val belowTop: Int)
+
+        /**
+         * Back 10 directly above the camera hole and forward 10 directly below it, both centred on the
+         * hole's horizontal middle (moved in just enough to stay on screen, [minX]..[maxX]), [gap] clear
+         * of its bounding rect. Neither may overlap the play button beside the hole ([playTop]..[playBottom]),
+         * so a button that would is pushed further out. Null when they don't fit inside [top]..[bottom]
+         * (the caller keeps the plain stack).
+         */
+        fun flankHole(
+            holeLeft: Int, holeTop: Int, holeRight: Int, holeBottom: Int, size: Int, gap: Int,
+            minX: Int, maxX: Int, playTop: Int, playBottom: Int, top: Int, bottom: Int,
+        ): Flank? {
+            if (holeRight <= holeLeft || holeBottom <= holeTop) return null
+            val x = ((holeLeft + holeRight) / 2 - size / 2).coerceAtMost(maxX - size).coerceAtLeast(minX)
+            val aboveTop = minOf(holeTop - gap, playTop) - size
+            val belowTop = maxOf(holeBottom + gap, playBottom)
+            if (aboveTop < top || belowTop + size > bottom) return null
+            return Flank(x, aboveTop, belowTop)
+        }
+
         /**
          * Tops (px) of [count] buttons [size] tall stacked in one column, centred on [centre] but
          * kept inside [top]..[bottom]. They sit [gap] apart when that fits, touching when not; a

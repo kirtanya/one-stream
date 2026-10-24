@@ -176,8 +176,13 @@ internal object PlayerScenes {
         if (cutout != null && activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
             // Robolectric has no display cutout: say where the Pixel's camera hole is, and draw it (landscape: on a short side).
             val px = (CUTOUT_DP * activity.resources.displayMetrics.density).toInt()
-            c.previewCutout(cutout, px)
-            root.addView(cameraHole(activity, cutout, px))
+            val dm = activity.resources.displayMetrics
+            val d = (px * 0.55f).toInt()
+            val left = if (cutout == com.kirtanya.reel.core.player.PhoneLayout.Side.LEFT) (px - d) / 2 else dm.widthPixels - px + (px - d) / 2
+            val top = (dm.heightPixels - d) / 2
+            val hole = android.graphics.Rect(left, top, left + d, top + d)
+            c.previewCutout(cutout, px, hole)
+            root.addView(cameraHole(activity, hole))
         }
         c.layoutMode = layout
         root.addView(c, FrameLayout.LayoutParams(-1, -1))
@@ -220,17 +225,12 @@ internal object PlayerScenes {
     /** The Pixel 8's camera-hole safe inset in landscape at the user's display size (≈ 40 dp). */
     const val CUTOUT_DP = 40
 
-    /** A stand-in camera hole: a black dot in the middle of the cutout strip, on [side]. */
-    private fun cameraHole(activity: ComponentActivity, side: com.kirtanya.reel.core.player.PhoneLayout.Side, insetPx: Int): android.view.View {
-        val d = (insetPx * 0.55f).toInt()
-        return android.view.View(activity).apply {
+    /** A stand-in camera hole: a black dot at [hole] (window coordinates; the scene fills the window). */
+    private fun cameraHole(activity: ComponentActivity, hole: android.graphics.Rect): android.view.View =
+        android.view.View(activity).apply {
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.BLACK) }
-            layoutParams = FrameLayout.LayoutParams(d, d, android.view.Gravity.CENTER_VERTICAL or
-                if (side == com.kirtanya.reel.core.player.PhoneLayout.Side.LEFT) android.view.Gravity.START else android.view.Gravity.END).apply {
-                marginStart = (insetPx - d) / 2; marginEnd = (insetPx - d) / 2
-            }
+            layoutParams = FrameLayout.LayoutParams(hole.width(), hole.height()).apply { leftMargin = hole.left; topMargin = hole.top }
         }
-    }
 
     /** Where a scrub render puts the finger: an hour in. */
     const val SCRUB_MS = 3_600_000L

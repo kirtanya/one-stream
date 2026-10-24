@@ -206,6 +206,11 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Phones: draw into the camera cutout (Edge puts the skip buttons beside the hole). Targeting
+        // Android 15+ already does this edge-to-edge, so Classic, which pads by the cutout inset, is unchanged.
+        if (!isTelevision()) window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

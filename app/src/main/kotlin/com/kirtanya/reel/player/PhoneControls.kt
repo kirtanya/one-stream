@@ -219,7 +219,15 @@ internal class PhoneControls(
         ViewCompat.setOnApplyWindowInsetsListener(edge) { _, insets ->
             val i = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            if (cutoutOverride == null) edge.setSafe(i.left, i.top, i.right, i.bottom, PhoneLayout.cutoutSide(cut.left, cut.right))
+            if (cutoutOverride == null) {
+                val side = PhoneLayout.cutoutSide(cut.left, cut.right)
+                // The camera hole itself (window coordinates): the one on that short side.
+                val rects = insets.displayCutout?.boundingRects.orEmpty()
+                val w = edge.rootView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+                val hole = rects.firstOrNull { if (side == PhoneLayout.Side.LEFT) it.centerX() < w / 2 else it.centerX() >= w / 2 }
+                    ?.takeIf { (if (side == PhoneLayout.Side.LEFT) cut.left else cut.right) > 0 }
+                edge.setSafe(i.left, i.top, i.right, i.bottom, side, hole)
+            }
             insets
         }
 
@@ -262,12 +270,12 @@ internal class PhoneControls(
     /** What's laid out now: init builds Classic; [applyLayout] moves everything to the edges when asked. */
     private var mounted = PhoneLayout.CLASSIC
 
-    /** Renders only: a camera hole [px] deep on [side] (Robolectric has no display cutout). */
+    /** Renders only: a cutout [px] deep on [side] with the camera [hole] in it (Robolectric has no display cutout). */
     private var cutoutOverride: Pair<PhoneLayout.Side, Int>? = null
 
-    internal fun previewCutout(side: PhoneLayout.Side, px: Int) {
+    internal fun previewCutout(side: PhoneLayout.Side, px: Int, hole: android.graphics.Rect) {
         cutoutOverride = side to px
-        edge.setSafe(if (side == PhoneLayout.Side.LEFT) px else 0, 0, if (side == PhoneLayout.Side.RIGHT) px else 0, 0, side)
+        edge.setSafe(if (side == PhoneLayout.Side.LEFT) px else 0, 0, if (side == PhoneLayout.Side.RIGHT) px else 0, 0, side, hole)
     }
 
     private val rightButtons get() = listOf(next, toTv, lock, subs, tune)
@@ -819,9 +827,10 @@ internal class PhoneControls(
 
     /**
      * Edge layout (landscape), built around the camera hole on one short side:
-     *  - that side: back at the top; back 10, play / pause, forward 10 stacked on the screen's middle
-     *    (beside the hole), just past the cutout's safe inset, so they sit over the side bar of a
-     *    wide video rather than the picture;
+     *  - that side: back at the top; play / pause on the screen's middle just past the cutout's safe
+     *    inset (beside the hole, never on it); back 10 right above the camera hole and forward 10 right
+     *    below it, in the cutout strip itself (the user: use the strip that's the status bar in
+     *    portrait). No hole known: back 10 / play / forward 10 stacked past the inset;
      *  - the other side: every other button in one column, centred too;
      *  - the title and "Ends at" centred at the top, between back and that column, where they fit;
      *  - the seek bar a hairline along the very bottom edge, end to end (like the TV), with a 48 dp
@@ -831,6 +840,9 @@ internal class PhoneControls(
     private inner class EdgeFrame : ViewGroup(ctx) {
         private val safe = android.graphics.Rect()
         private var side = PhoneLayout.Side.LEFT
+        /** The camera hole's bounding rect in window coordinates (null: no cutout on the side). */
+        private var hole: android.graphics.Rect? = null
+        private val at = IntArray(2)
         private fun shade(o: GradientDrawable.Orientation) = View(ctx).apply {
             background = GradientDrawable(o, intArrayOf(PlayerColors.SHADE_BAND, PlayerColors.SHADE_BAND_MID, PlayerColors.SHADE_CLEAR))
         }
@@ -849,9 +861,10 @@ internal class PhoneControls(
             for (s in listOf(topShade, bottomShade, leftShade, rightShade)) addView(s)
         }
 
-        fun setSafe(left: Int, top: Int, right: Int, bottom: Int, cutoutSide: PhoneLayout.Side) {
+        fun setSafe(left: Int, top: Int, right: Int, bottom: Int, cutoutSide: PhoneLayout.Side, cameraHole: android.graphics.Rect?) {
             safe.set(left, top, right, bottom)
             side = cutoutSide
+            hole = cameraHole?.let { android.graphics.Rect(it) }
             requestLayout()
             placeBubbles()
         }
@@ -909,7 +922,21 @@ internal class PhoneControls(
             back.layout(stripX, top, stripX + btn, top + btn)
             val transport = listOf(rew, play, ffwd)
             val tops = PhoneLayout.stack(transport.size, btn, gap, top + btn + gap, limit, centre)
-            transport.forEachIndexed { i, v -> v.layout(stripX, tops[i], stripX + btn, tops[i] + btn) }
+            // The skips flank the camera hole (its rect is in window coordinates); play stays beside it.
+            val flank = hole?.let { hw ->
+                getLocationInWindow(at)
+                PhoneLayout.flankHole(
+                    hw.left - at[0], hw.top - at[1], hw.right - at[0], hw.bottom - at[1], btn, gap,
+                    minX = 0, maxX = w, playTop = tops[1], playBottom = tops[1] + btn, top = top + btn + gap, bottom = limit,
+                )
+            }
+            if (flank != null) {
+                play.layout(stripX, tops[1], stripX + btn, tops[1] + btn)
+                rew.layout(flank.x, flank.aboveTop, flank.x + btn, flank.aboveTop + btn)
+                ffwd.layout(flank.x, flank.belowTop, flank.x + btn, flank.belowTop + btn)
+            } else {
+                transport.forEachIndexed { i, v -> v.layout(stripX, tops[i], stripX + btn, tops[i] + btn) }
+            }
             val far = rightButtons.filter { it.visibility != GONE }
             val farTops = PhoneLayout.stack(far.size, btn, gap, top, limit, centre)
             far.forEachIndexed { i, v -> v.layout(farX, farTops[i], farX + btn, farTops[i] + btn) }
