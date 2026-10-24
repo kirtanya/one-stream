@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -64,17 +65,20 @@ fun PosterCard(
                 onClick = onClick,
             )
             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
-        if (item.posterPath != null) {
-            RemoteImage(url = TmdbImages.poster(item.posterPath), modifier = frame)
-        } else {
-            // No poster: the name on a tonal card, so the grid never shows a blank hole.
-            Box(frame.background(Brush.verticalGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.surface2))).padding(Tokens.Space.s), contentAlignment = Alignment.BottomStart) {
-                Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        Box(frame) {
+            if (item.posterPath != null) {
+                RemoteImage(url = TmdbImages.poster(item.posterPath), modifier = Modifier.fillMaxSize())
+            } else {
+                // No poster: the name on a tonal card, so the grid never shows a blank hole.
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.surface2))).padding(Tokens.Space.s), contentAlignment = Alignment.BottomStart) {
+                    Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                }
             }
+            PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
         }
         if (showText) {
             Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -110,9 +114,12 @@ fun PosterRow(
     }
 }
 
-/** Under a poster (a third of a phone's width): "★ 8.2 · 2024", "Series · 2016" when there's no rating. */
+/**
+ * Under a poster: "Film · 2024" / "Series · 2016". No TMDB score: the IMDb pill on the poster carries the
+ * rating (decided 2026-10-24, so two different scores never sit on one card).
+ */
 fun metaLine(item: TitleSummary): String = listOfNotNull(
-    item.rating?.let { "★ %.1f".format(it) } ?: if (item.ref.type == MediaType.TV) "Series" else "Film",
+    if (item.ref.type == MediaType.TV) "Series" else "Film",
     item.year?.toString(),
 ).joinToString(" · ")
 

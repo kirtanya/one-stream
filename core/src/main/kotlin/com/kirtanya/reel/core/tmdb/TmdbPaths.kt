@@ -65,6 +65,12 @@ object TmdbPaths {
         }
     }
 
+    /** A title's IMDb id and other outside ids (posters' IMDb pill). */
+    fun externalIds(ref: TitleRef) = "${ref.type.path}/${ref.id}/external_ids"
+
+    /** The first page of user reviews (English; TMDB has few in other languages). */
+    fun reviews(ref: TitleRef) = "${ref.type.path}/${ref.id}/reviews?language=en-US&page=1"
+
     fun person(id: Int) = "person/$id?language=en-US&append_to_response=combined_credits"
 
     private const val EXTRAS = "images,videos,recommendations,similar"

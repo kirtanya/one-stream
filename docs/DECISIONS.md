@@ -5,6 +5,37 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-24 · Ratings + reviews: IMDb pills on posters, a ratings row and Reviews on title pages**
+Decision (user-approved design, mockup `~/one_launcher/docs/mockups/title_page.html`, in One Stream's own style):
+- Posters (rows, grids, search, wide cards): an IMDb pill (brand yellow / black) top-left; nothing when IMDb has no
+  rating. The TMDB ★ under posters is gone (meta line is now "Film · 2024"), so a card never shows two different
+  scores; the meta line moved from textTertiary to textSecondary (fixes the baselined light-mode 4.2:1 contrast).
+- Title page (phone + TV): eyebrow (FILM / SERIES · year or run "2016–2023" / "2016–present" · runtime or seasons ·
+  certificate · 2 genres), logo / name, ratings row (IMDb pill · Rotten Tomatoes tomato / splat · Metascore square;
+  only what exists; TMDB's own ★ labelled "TMDB" only when none exist), plot, the existing actions, then
+  **Reviews · N** (TMDB, sideways cards; a card opens the whole review: phone bottom sheet, TV right panel with ↑ ↓
+  scrolling and Back). Everything else (where to watch, episodes, extras, cast, franchise, more like this) is kept.
+- Series: season picker + episode list as before, each episode now "E9 · Name", runtime · full air date, 2-line
+  story (TV cards too) and its own small IMDb pill from OMDb's season endpoint. For series, Reviews come after the
+  episodes (watching is the main job there); for films, straight under the actions as in the mockup.
+Data (all quiet on failure; no screen waits for ratings; `data/RatingsRepository.kt`, logic in `core/ratings/`):
+- Poster IMDb: TMDB `/external_ids` → IMDb id → Cinemeta `imdbRating` (no key, no daily limit). Only for posters
+  being composed (lazy rows = on screen), max 4 at once on the phone, 2 on the TV; a poster scrolled away gives up
+  its queue place; the same title asked twice shares one fetch. Cached on disk (`files/ratings-cache.json`) per
+  TMDB id: hit 7 days, miss 2 days; the IMDb id is kept forever (a refresh = one Cinemeta call). Pill appears at
+  once when cached, else fades in. Done on the TV too (2 at a time is light; cached for a week).
+- Title page: OMDb (`omdb.key` → `BuildConfig.OMDB_KEY`, like tmdb.key) per IMDb id, 7 days; if OMDb fails, Cinemeta's
+  IMDb stands in for a day. Season episode ratings: one OMDb call per (show, season) shown, 7 days. OMDb is never
+  called for posters (1,000/day free tier). A title page's IMDb also refreshes that title's poster pill.
+- Reviews: TMDB `/{type}/{id}/reviews` (first page, English), kept in TmdbRepository's 15-minute cache; markdown /
+  HTML stripped to plain text in `core` (`ReviewText`).
+- Metascore number is black, not Metacritic's white: white on its green is 2.1:1 and fails the contrast rule;
+  black passes on all three colours. Brand colours live in `ui/theme/Brand.kt` (exception to tokens-only).
+- Telemetry: `ratings` ReelStats lines (src = poster / omdb / cinemeta / season, ok, ms).
+Evidence: `RatingsTest` (core), renders `title-*`, `title-rotten`, `title-reviews`, `title-show-episodes`, `review-open`.
+
+---
+
 **2026-10-24 · Crop bars: cut baked-in black bars, then the picture mode fills the screen**
 Decision (user request: Stretch / Fill can't remove black bars that are inside the video). Settings panel → Playback →
 "Crop bars" (between Picture and Cinema mode): the same share off the top and the bottom, 0–20 % of the video's height

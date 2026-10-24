@@ -125,8 +125,9 @@ fun TitleRow(
                             item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.align(Alignment.BottomStart).padding(Tokens.Space.s),
                         )
+                        com.kirtanya.reel.ui.common.PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
                     }
-                    Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

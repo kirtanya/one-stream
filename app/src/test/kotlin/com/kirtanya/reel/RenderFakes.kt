@@ -75,6 +75,12 @@ class FakeCatalog(private val answer: Answer = Answer.Data, private val logos: B
         com.kirtanya.reel.core.tmdb.CollectionDetails(Fake.franchise, "Two films.", listOf(Fake.details(Fake.film).summary.copy(title = "Dune", year = 2021)) + Fake.details(Fake.film).summary + Fake.titles(1, seed = 70)),
         com.kirtanya.reel.core.tmdb.CollectionDetails(Fake.franchise, "", emptyList()),
     )
+    override suspend fun reviews(ref: TitleRef) = give(if (ref.id == Fake.LONG_ID) com.kirtanya.reel.core.tmdb.Reviews.NONE else Fake.reviews, com.kirtanya.reel.core.tmdb.Reviews.NONE)
+    override suspend fun titleRatings(d: TitleDetails) = if (answer == Answer.Data) Fake.ratings(d.summary.ref) else null
+    override fun cachedImdb(ref: TitleRef) = if (answer == Answer.Data) Fake.imdbFor(ref) else null
+    override suspend fun posterImdb(ref: TitleRef) = cachedImdb(ref)
+    override suspend fun episodeImdb(d: TitleDetails, season: Int) =
+        if (answer == Answer.Data) (1..24).filter { it % 6 != 4 }.associateWith { 7.2 + (it * 7 % 25) / 10.0 } else emptyMap()
     override suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int) = give(Fake.titles(20, seed = filter.genres.firstOrNull() ?: 0 + page), emptyList())
     /** "New episodes": one aired yesterday, one today, two coming. */
     override suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate) = give(
@@ -90,6 +96,29 @@ class FakeCatalog(private val answer: Answer = Answer.Data, private val logos: B
 
 object Fake {
     const val FILM_ID = 1001
+    /** A film with poor scores: the Rotten splat, a red Metascore. */
+    const val ROTTEN_ID = 1004
+    val rotten = TitleRef(MediaType.MOVIE, ROTTEN_ID)
+
+    /** IMDb on posters: most titles have one, every fifth has none (no pill). */
+    fun imdbFor(ref: TitleRef): Double? = (ref.id % 5).takeIf { it != 2 }?.let { 5.8 + (ref.id * 7 % 33) / 10.0 }
+
+    fun ratings(ref: TitleRef): com.kirtanya.reel.core.ratings.TitleRatings? = when (ref.id) {
+        SHOW_ID -> com.kirtanya.reel.core.ratings.TitleRatings(imdb = 8.0)
+        ROTTEN_ID -> com.kirtanya.reel.core.ratings.TitleRatings(4.9, 23, 35)
+        LONG_ID -> null
+        else -> com.kirtanya.reel.core.ratings.TitleRatings(8.5, 92, 79)
+    }
+
+    val reviews = com.kirtanya.reel.core.tmdb.Reviews(
+        listOf(
+            com.kirtanya.reel.core.tmdb.Review("John Chard", 9.0, "Your mind is the scene of the crime. Villeneuve builds a desert epic that rewards every second of attention, anchored by a score that refuses to let go. The sandworm ride alone is worth the ticket, and the final act lands every thread the first film set up.\n\nA second paragraph that only the full review shows, to check the sheet scrolls.", "2024-03-02T10:00:00.000Z"),
+            com.kirtanya.reel.core.tmdb.Review("msbreviews", 8.0, "An original blockbuster is rare; one this ambitious and coherent even rarer.", "2024-03-05T10:00:00.000Z"),
+            com.kirtanya.reel.core.tmdb.Review("Reader With A Very Long Display Name Indeed", null, "I've watched it five times and still catch new details in the layers of sound and sand.", null),
+            com.kirtanya.reel.core.tmdb.Review("tmdb44006625", 6.5, "Gorgeous, loud and a little long.", "2024-04-01T10:00:00.000Z"),
+        ),
+        total = 12,
+    )
     val franchise = com.kirtanya.reel.core.tmdb.CollectionRef(77, "Dune Collection", "/poster_0.jpg", "/backdrop_0.jpg")
     const val SHOW_ID = 2002
     const val LONG_ID = 3003
@@ -176,6 +205,8 @@ object Fake {
             imdbId = "tt1399664",
             providers = WatchProviders.NONE,
             lastAired = 8 to 6,
+            status = "Ended",
+            lastAiredEpisode = com.kirtanya.reel.core.tmdb.AiringEpisode(8, 6, "Finale", "2023-05-14"),
             logoPath = null,
             videos = videos.take(1),
             recommendations = titles(10, seed = 40, type = MediaType.TV),

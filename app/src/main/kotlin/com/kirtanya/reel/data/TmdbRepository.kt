@@ -106,6 +106,14 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
         com.kirtanya.reel.core.tmdb.EpisodeCalendar.entries(details, seasons, from, to)
     }
 
+    /** The first page of user reviews (kept with the rest of TMDB's answers for 15 min). */
+    suspend fun reviews(ref: TitleRef): com.kirtanya.reel.core.tmdb.Reviews =
+        com.kirtanya.reel.core.tmdb.ReviewParser.parse(get(TmdbPaths.reviews(ref)))
+
+    /** The title's IMDb id (tt…), or null when TMDB has none. */
+    suspend fun imdbId(ref: TitleRef): String? =
+        com.kirtanya.reel.core.ratings.RatingsParser.imdbId(get(TmdbPaths.externalIds(ref)))
+
     /** A cast member's page (photo, bio, films and shows). */
     suspend fun person(id: Int): PersonDetails = TmdbParser.parsePerson(get(TmdbPaths.person(id)))
 

@@ -39,6 +39,16 @@ interface Catalog {
     suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int = 1): List<TitleSummary> = byGenre(filter.type, filter.genres.first(), page)
     /** Episodes of [shows] airing (or aired) between [from] and [to]. */
     suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate): List<com.kirtanya.reel.core.tmdb.CalendarEntry> = emptyList()
+    /** TMDB user reviews (first page + total). */
+    suspend fun reviews(ref: TitleRef): com.kirtanya.reel.core.tmdb.Reviews = com.kirtanya.reel.core.tmdb.Reviews.NONE
+    /** A title page's IMDb / Rotten Tomatoes / Metascore; null when unknown or unreachable. */
+    suspend fun titleRatings(d: TitleDetails): com.kirtanya.reel.core.ratings.TitleRatings? = null
+    /** A show's season: episode number → that episode's IMDb rating (OMDb); empty when unknown. */
+    suspend fun episodeImdb(d: TitleDetails, season: Int): Map<Int, Double> = emptyMap()
+    /** A poster's IMDb rating as already known (no network), so the pill can be there on the first frame. */
+    fun cachedImdb(ref: TitleRef): Double? = null
+    /** A poster's IMDb rating, fetched when not cached (a few at a time). */
+    suspend fun posterImdb(ref: TitleRef): Double? = null
 }
 
 /** Null in the app (screens use TMDB); renders provide fixed data. */
@@ -47,11 +57,17 @@ val LocalCatalog = staticCompositionLocalOf<Catalog?> { null }
 @Composable
 fun rememberCatalog(): Catalog {
     val override = LocalCatalog.current
-    val tmdb = ReelApp.get(LocalContext.current).tmdb
-    return override ?: remember(tmdb) { TmdbCatalog(tmdb) }
+    val app = ReelApp.get(LocalContext.current)
+    return override ?: remember(app) { TmdbCatalog(app.tmdb, lazy { app.ratings }) }
 }
 
-private class TmdbCatalog(private val tmdb: TmdbRepository) : Catalog {
+private class TmdbCatalog(private val tmdb: TmdbRepository, ratings: Lazy<com.kirtanya.reel.data.RatingsRepository>) : Catalog {
+    private val ratings by ratings
+    override suspend fun reviews(ref: TitleRef) = tmdb.reviews(ref)
+    override suspend fun titleRatings(d: TitleDetails) = ratings.titleRatings(d.summary.ref, d.imdbId)
+    override fun cachedImdb(ref: TitleRef) = ratings.cachedImdb(ref)
+    override suspend fun episodeImdb(d: TitleDetails, season: Int) = ratings.episodeRatings(d.imdbId, season)
+    override suspend fun posterImdb(ref: TitleRef) = ratings.posterImdb(ref)
     override suspend fun home() = tmdb.home()
     override suspend fun onService(providerId: Int) = tmdb.onService(providerId)
     override suspend fun search(query: String) = tmdb.search(query)

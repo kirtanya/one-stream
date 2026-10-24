@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import kotlinx.coroutines.launch
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleDetails
@@ -55,7 +57,6 @@ import com.kirtanya.reel.ui.common.HeroImage
 import com.kirtanya.reel.ui.common.HeroScrims
 import com.kirtanya.reel.ui.common.Load
 import com.kirtanya.reel.ui.common.LoadingBox
-import com.kirtanya.reel.ui.common.MetaLine
 import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.PosterRow
 import com.kirtanya.reel.ui.common.ReelButton
@@ -65,7 +66,6 @@ import com.kirtanya.reel.ui.common.RingAvatar
 import com.kirtanya.reel.ui.common.SectionHeader
 import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.VideoRow
-import com.kirtanya.reel.ui.common.detailsParts
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.common.openVideo
 import com.kirtanya.reel.ui.common.rememberAmbientColor
@@ -106,8 +106,11 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
     val context = LocalContext.current
     val glow by rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
     val action = rememberPlayAction(d)
+    val ratings = com.kirtanya.reel.ui.common.rememberTitleRatings(d)
+    val reviews = com.kirtanya.reel.ui.title.rememberReviews(d.summary.ref)
     var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number) }
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
+    val episodeImdb = if (d.summary.ref.type == MediaType.TV) com.kirtanya.reel.ui.title.rememberEpisodeImdb(d, season) else emptyMap()
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
     val openProvider = rememberProviderOpener(d.providers.link)
     val (saved, toggleSaved) = rememberWatchlistToggle(d.summary)
@@ -135,10 +138,11 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
         ) {
             item(key = "hero") {
                 Column(Modifier.padding(horizontal = side), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
-                    Spacer(Modifier.height(Tokens.Space.xxxl))
+                    Spacer(Modifier.height(Tokens.Space.l))
                     Column(Modifier.fillMaxWidth(0.55f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        com.kirtanya.reel.ui.common.Eyebrow(d, maxLines = 1)
                         TitleLogo(d.logoPath, d.summary.title, Tokens.Type.hero, Tokens.Cinema.logoMaxWidthTv, Tokens.Cinema.logoMaxHeightTv, textMaxLines = 2)
-                        MetaLine(d.summary.rating, detailsParts(d) + listOfNotNull(d.genres.take(2).joinToString(", ").ifEmpty { null }), maxLines = 1)
+                        com.kirtanya.reel.ui.common.RatingsRow(ratings, d.summary.rating)
                         if (d.summary.overview.isNotBlank()) {
                             Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         }
@@ -153,6 +157,11 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
                     }
                     if (action is PlayAction.Resume) GradientProgress(action.entry.progress, Modifier.width(320.dp), height = 3.dp)
                 }
+            }
+            // Films: reviews straight under the buttons (the approved TV layout); ↓ from the buttons lands here.
+            // Series: seasons and episodes come first, reviews after them.
+            if (d.seasons.isEmpty() && reviews.items.isNotEmpty()) {
+                item(key = "reviews") { com.kirtanya.reel.ui.title.ReviewsRow(reviews, side, 260.dp) }
             }
             if (d.seasons.isNotEmpty()) {
                 item(key = "seasons") {
@@ -174,22 +183,35 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
                             itemsIndexed(episodes.value, key = { _, e -> "${e.season}x${e.number}" }) { _, e ->
                                 val watched = progress[EpisodeNumber(e.season, e.number)]
                                 val shape = RoundedCornerShape(Tokens.Radius.media)
-                                Column(Modifier.width(240.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
+                                // Focus lands on the still; scroll the whole card (rating, date, story under it) into view.
+                                val card = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                                Column(Modifier.width(240.dp).bringIntoViewRequester(card), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, onFocus = { scope.launch { card.bringIntoView() } }, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
                                         RemoteImage(TmdbImages.still(e.stillPath, "w780"), Modifier.fillMaxSize())
                                         when {
                                             watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), icon = Icons.Rounded.Check, accent = true)
                                             watched != null -> GradientProgress(watched.progress, Modifier.align(Alignment.BottomCenter).padding(Tokens.Space.s), height = 3.dp, track = Color.White.copy(alpha = 0.2f))
                                         }
                                     }
-                                    Text("${e.number}. ${e.name}", style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    val facts = listOfNotNull(e.runtimeMin?.let { "${it}m" }, e.airDate?.take(4)).joinToString(" · ")
-                                    if (facts.isNotEmpty()) Text(facts, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1)
+                                    Text(com.kirtanya.reel.core.tmdb.EpisodeFacts.title(e), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    val facts = com.kirtanya.reel.core.tmdb.EpisodeFacts.facts(e)
+                                    val imdb = episodeImdb[e.number]
+                                    if (facts.isNotEmpty() || imdb != null) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                                            com.kirtanya.reel.ui.title.EpisodeImdb(imdb)
+                                            if (facts.isNotEmpty()) Text(facts, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    if (e.overview.isNotBlank()) Text(e.overview, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
                     }
                 }
+            }
+            if (d.seasons.isNotEmpty() && reviews.items.isNotEmpty()) {
+                item(key = "reviews") { com.kirtanya.reel.ui.title.ReviewsRow(reviews, side, 260.dp) }
             }
             val providers = d.providers.groups.flatMap { (label, list) -> list.map { label to it } }.distinctBy { it.second.id }
             if (providers.isNotEmpty()) {

@@ -8,6 +8,8 @@ plugins {
 
 // TMDB read token lives in a local file that is never committed.
 val tmdbToken: String = rootProject.file("tmdb.key").takeIf { it.isFile }?.readText()?.trim().orEmpty()
+// OMDb key (Rotten Tomatoes + Metacritic on title pages), same rule: local file, never committed.
+val omdbKey: String = rootProject.file("omdb.key").takeIf { it.isFile }?.readText()?.trim().orEmpty()
 
 android {
     namespace = "com.kirtanya.reel"
@@ -17,9 +19,10 @@ android {
         applicationId = "com.kirtanya.reel"
         minSdk = 28
         targetSdk = 36
-        versionCode = 54
-        versionName = "0.10.3"
+        versionCode = 55
+        versionName = "0.11.0"
         buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
+        buildConfigField("String", "OMDB_KEY", "\"$omdbKey\"")
     }
 
     // One APK per ABI: arm64 for the phone, 32-bit arm for the TV.

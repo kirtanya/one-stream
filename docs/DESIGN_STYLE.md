@@ -74,6 +74,7 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
   - Title pages cycle through the title's backdrops with a slow cross-fade (and a slow zoom on the phone only).
 - **Title logo:** `TitleLogo` shows TMDB's logo artwork instead of the name, fitted in a box (`logoMaxWidth/HeightPhone/Tv`), anchored bottom-start; the name as text when there's none. A logo that wouldn't stand out on the canvas (a white logo in light mode) is drawn in the text colour.
 - **Meta line:** `MetaLine` = "★ 8.2 · 2024 · 2h 46m · UA" (rating in the accent colour). It replaces rows of pills on heroes; it only breaks between parts.
+- **Ratings (2026-10-24):** posters carry an IMDb pill top-left (brand yellow pill, black "IMDb" box, black score; fixed size); the meta line under a poster is "Film · 2024" (no TMDB ★). Title pages: eyebrow line (caps, letter-spaced) → logo → ratings row (IMDb · Rotten Tomatoes tomato / splat · Metascore square, only what exists) → plot → actions → **Reviews · N** cards (open the full review: sheet on phone, right panel on TV). Brand colours only from `ui/theme/Brand.kt`.
 - **Action tiles (phone title page):** under Play, equal-width icon-over-label tiles: My list, Trailer, Sources, Share.
 - **Trailers:** Trailer opens YouTube; other videos sit in a "Trailers & extras" row.
 - **My list:** the watchlist (synced phone → TV). My list button on the hero and title pages; a "My list" row on Home.

@@ -35,6 +35,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val engineIfCreated: TorrentEngine? get() = if (engineLazy.isInitialized()) engine else null
     val streamServer: LocalStreamServer by lazy { LocalStreamServer(engine) }
     val tmdb by lazy { TmdbRepository(http) }
+    /** IMDb pills on posters, IMDb / Rotten Tomatoes / Metascore on title pages. */
+    val ratings by lazy { com.kirtanya.reel.data.RatingsRepository(this, http, tmdb, isTv) }
     val providerApps by lazy { ProviderApps(this) }
     val fetcher by lazy { AppFetcher(this, OkHttpFetcher(http, BuildConfig.TMDB_TOKEN)) }
     val pluginRuntime by lazy { PluginRuntime(fetcher) }
@@ -87,6 +89,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         // First, so a crash anywhere below is reported too.
         reports.install()
         appScope.launch { sources.ensureReady() }
+        // The ratings cache off the main thread, so Home's first posters show their IMDb pill at once.
+        appScope.launch { ratings.warm() }
         // Finishing something in the player ticks it as watched (and so it syncs to the TV).
         appScope.launch { history.entries.collect { watched.recordHistory(it) } }
         autoDownloader.start()

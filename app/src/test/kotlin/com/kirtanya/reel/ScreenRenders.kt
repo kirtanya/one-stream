@@ -118,6 +118,10 @@ open class ScreenRenders(protected val variant: Variant) {
         waitMs: Long = 1_800,
         /** Scroll the page's list to its end first (the last row must clear the floating tab bar). */
         scrollToEnd: Boolean = false,
+        /** Scroll the page's list down by this many dp first (sections further down). */
+        scrollDp: Int = 0,
+        /** TV: press ↓ this many times first (focus moves down the page). */
+        focusDown: Int = 0,
         content: @Composable () -> Unit,
     ) {
         if (tv) assumeTrue("TV renders run once", variant == DEFAULT)
@@ -151,6 +155,17 @@ open class ScreenRenders(protected val variant: Variant) {
             // Rows load and animate in: scroll, let them settle, scroll again, until the end really is the end.
             repeat(3) { list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }; settle(900) }
             settle(1_200)
+        }
+        if (scrollDp > 0) {
+            // ScrollBy, not performScrollToNode: the hero slideshow never idles, so anything that waits for idle hangs.
+            val list = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange), useUnmergedTree = true)[0]
+            val px = scrollDp * app.resources.displayMetrics.density
+            list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, px) }
+            settle(1_200)
+        }
+        repeat(focusDown) {
+            focusManager?.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+            settle(500)
         }
         onScreenReady(name, tv, windows)
     }
@@ -228,6 +243,10 @@ open class ScreenRenders(protected val variant: Variant) {
 
     @Test fun titleFilm() = render("title-film", history = true, content = phone { open(Dest.Title(Fake.film)) })
     @Test fun titleShow() = render("title-show", history = true, content = phone { open(Dest.Title(Fake.show)) })
+    @Test fun titleRotten() = render("title-rotten", content = phone { open(Dest.Title(Fake.rotten)) })
+    @Test fun titleShowEpisodes() = render("title-show-episodes", history = true, scrollDp = 760, content = phone { open(Dest.Title(Fake.show)) })
+    @Test fun titleReviews() = render("title-reviews", scrollDp = 440, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun reviewOpen() = render("review-open", windows = true) { com.kirtanya.reel.ui.title.ReviewSheet(Fake.reviews.items[0], onDismiss = {}) }
     @Test fun titleBare() = render("title-bare", content = phone { open(Dest.Title(Fake.long)) })
     @Test fun titleLoading() = render("title-loading", catalog = FakeCatalog(Answer.Loading), content = phone { open(Dest.Title(Fake.film)) })
     @Test fun titleError() = render("title-error", catalog = FakeCatalog(Answer.Fail), content = phone { open(Dest.Title(Fake.film)) })
@@ -461,6 +480,10 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvSearchResults() = render("search-results", tv = true) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "dune") } }
     @Test @Config(qualifiers = TV) fun tvSearchNone() = render("search-none", tv = true) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
     @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleRotten() = render("title-rotten", tv = true, content = tvApp { open(Dest.Title(Fake.rotten)) })
+    @Test @Config(qualifiers = TV) fun tvTitleReviews() = render("title-reviews", tv = true, focusDown = 1, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleShowEpisodes() = render("title-show-episodes", tv = true, focusDown = 2, content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvReviewOpen() = render("review-open", tv = true, windows = true) { TvScene { com.kirtanya.reel.ui.title.ReviewSheet(Fake.reviews.items[0], onDismiss = {}) } }
     @Test @Config(qualifiers = TV) fun tvTitleShow() = render("title-show", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvImdbUnknown() = render("imdb-unknown", tv = true, catalog = FakeCatalog(Answer.Empty), content = tvApp { open(Dest.ImdbTitle("tt0944947", com.kirtanya.reel.core.tmdb.MediaType.TV)) })
     @Test @Config(qualifiers = TV) fun tvTitleBare() = render("title-bare", tv = true, content = tvApp { open(Dest.Title(Fake.long)) })

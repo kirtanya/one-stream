@@ -65,7 +65,6 @@ import com.kirtanya.reel.ui.common.HeroImage
 import com.kirtanya.reel.ui.common.HeroScrims
 import com.kirtanya.reel.ui.common.Load
 import com.kirtanya.reel.ui.common.LoadingBox
-import com.kirtanya.reel.ui.common.MetaLine
 import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.PosterRow
 import com.kirtanya.reel.ui.common.ReelButton
@@ -74,7 +73,6 @@ import com.kirtanya.reel.ui.common.RingAvatar
 import com.kirtanya.reel.ui.common.SectionHeader
 import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.VideoRow
-import com.kirtanya.reel.ui.common.detailsParts
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.common.openVideo
 import com.kirtanya.reel.ui.common.rememberAmbientColor
@@ -121,8 +119,11 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
     // The whole app takes the colour of this title's poster (Settings → Appearance).
     rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
     val action = rememberPlayAction(d)
+    val ratings = com.kirtanya.reel.ui.common.rememberTitleRatings(d)
+    val reviews = com.kirtanya.reel.ui.title.rememberReviews(d.summary.ref)
     var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number) }
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
+    val episodeImdb = if (d.summary.ref.type == MediaType.TV) com.kirtanya.reel.ui.title.rememberEpisodeImdb(d, season) else emptyMap()
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
     val openProvider = rememberProviderOpener(d.providers.link)
     val (saved, toggleSaved) = rememberWatchlistToggle(d.summary)
@@ -145,8 +146,26 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
                     HeroImage(heroBackdrops(d), Modifier.fillMaxSize())
                     HeroScrims(top = true)
                     Column(Modifier.align(Alignment.BottomStart).padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        com.kirtanya.reel.ui.common.Eyebrow(d)
                         TitleLogo(d.logoPath, d.summary.title, Tokens.Type.display, Tokens.Cinema.logoMaxWidthPhone, Tokens.Cinema.logoMaxHeightPhone)
-                        MetaLine(d.summary.rating, detailsParts(d))
+                        com.kirtanya.reel.ui.common.RatingsRow(ratings, d.summary.rating)
+                    }
+                }
+            }
+            if (d.tagline != null || d.summary.overview.isNotBlank()) {
+                item(key = "about") {
+                    Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        d.tagline?.let { Text("“$it”", style = Tokens.Type.label, color = Tokens.Colors.accentBright) }
+                        if (d.summary.overview.isNotBlank()) {
+                            Text(
+                                d.summary.overview,
+                                style = Tokens.Type.body,
+                                color = Tokens.Colors.textSecondary,
+                                maxLines = if (overviewOpen) Int.MAX_VALUE else 3,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.s), scale = 1f, onClick = { overviewOpen = !overviewOpen }),
+                            )
+                        }
                     }
                 }
             }
@@ -163,22 +182,10 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
                     }
                 }
             }
-            if (d.tagline != null || d.summary.overview.isNotBlank()) {
-                item(key = "about") {
-                    Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                        d.tagline?.let { Text("“$it”", style = Tokens.Type.label, color = Tokens.Colors.accentBright) }
-                        if (d.summary.overview.isNotBlank()) {
-                            Text(
-                                d.summary.overview,
-                                style = Tokens.Type.body,
-                                color = Tokens.Colors.textSecondary,
-                                maxLines = if (overviewOpen) Int.MAX_VALUE else 4,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.s), scale = 1f, onClick = { overviewOpen = !overviewOpen }),
-                            )
-                        }
-                    }
-                }
+            // Films: reviews right under the actions (the approved order: hero, ratings, plot, actions, reviews).
+            // Series: after the season's episodes.
+            if (d.seasons.isEmpty() && reviews.items.isNotEmpty()) {
+                item(key = "reviews") { com.kirtanya.reel.ui.title.ReviewsRow(reviews, gutter, REVIEW_CARD_WIDTH_PHONE) }
             }
             if (d.genreList.isNotEmpty()) {
                 item(key = "genres") {
@@ -217,9 +224,12 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
                     Load.Loading -> item(key = "episodes-loading") { LoadingBox(Modifier.height(120.dp)) }
                     is Load.Failed -> item(key = "episodes-failed") { ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = gutter), kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh) }
                     is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
-                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], Modifier.padding(horizontal = gutter), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
+                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], episodeImdb[e.number], Modifier.padding(horizontal = gutter), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
                     }
                 }
+            }
+            if (d.seasons.isNotEmpty() && reviews.items.isNotEmpty()) {
+                item(key = "reviews") { com.kirtanya.reel.ui.title.ReviewsRow(reviews, gutter, REVIEW_CARD_WIDTH_PHONE) }
             }
             // The main trailer has its own button; the rest (teasers, clips) go here.
             val extras = d.videos.filter { it != d.trailer }
@@ -258,7 +268,7 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
 
 /** Episode card: still (with progress or a watched tick), number + name, runtime, two lines of story. */
 @Composable
-private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier = Modifier, onLongClick: () -> Unit, onClick: () -> Unit) {
+private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier: Modifier = Modifier, onLongClick: () -> Unit, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val stillShape = RoundedCornerShape(Tokens.Radius.m)
     Row(
@@ -274,9 +284,14 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier = Mo
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
-            Text("${e.number}. ${e.name}", style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val facts = listOfNotNull(e.runtimeMin?.let { "${it}m" }, e.airDate?.take(4)).joinToString(" · ")
-            if (facts.isNotEmpty()) Text(facts, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1)
+            Text(com.kirtanya.reel.core.tmdb.EpisodeFacts.title(e), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val facts = com.kirtanya.reel.core.tmdb.EpisodeFacts.facts(e)
+            if (facts.isNotEmpty() || imdb != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    com.kirtanya.reel.ui.title.EpisodeImdb(imdb)
+                    if (facts.isNotEmpty()) Text(facts, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                }
+            }
             if (e.overview.isNotBlank()) Text(e.overview, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -296,3 +311,5 @@ internal fun TitleSkeleton() {
         LoadingBox(Modifier.height(80.dp))
     }
 }
+
+private val REVIEW_CARD_WIDTH_PHONE = 264.dp
