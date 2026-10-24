@@ -72,4 +72,34 @@ class PhoneLayoutTest {
         // Too little room above: the plain stack stays.
         assertNull(PhoneLayout.flankHole(6, 166, 34, 194, 48, 8, 0, 800, 156, 204, top = 120, bottom = 312))
     }
+
+    @Test fun oneLineThroughTheHoleWithRoom() {
+        // Hole 6..34 × 100..128; buttons from 136, 8 apart: 136, 192, 248 (ends 296 ≤ 352).
+        val c = PhoneLayout.holeColumn(6, 100, 34, 128, count = 3, size = 48, gap = 8, minX = 0, maxX = 800, top = 8, bottom = 352)!!
+        assertEquals(0, c.x) // centred on 20 would start at −4: kept on screen
+        assertEquals(8, c.backTop)
+        assertContentEquals(intArrayOf(136, 192, 248), c.tops)
+    }
+
+    @Test fun oneLineCompressesTheSpacingOnTheUsersPhone() {
+        // 360 dp tall, hole 169..191 in the middle: 199 + 3 × 48 = 343, 9 spare of 352 → 4 apart.
+        val c = PhoneLayout.holeColumn(9, 169, 31, 191, count = 3, size = 48, gap = 8, minX = 0, maxX = 800, top = 8, bottom = 352)!!
+        assertContentEquals(intArrayOf(199, 251, 303), c.tops)
+        // Right side: centred on the hole (x 789 → 765) but kept inside 800.
+        val r = PhoneLayout.holeColumn(769, 169, 791, 191, 3, 48, 8, minX = 0, maxX = 800, top = 8, bottom = 352)!!
+        assertEquals(752, r.x)
+        // Exactly no spare: touching, no overlap.
+        assertContentEquals(intArrayOf(199, 247, 295), PhoneLayout.holeColumn(9, 169, 31, 191, 3, 48, 8, 0, 800, 8, 343)!!.tops)
+    }
+
+    @Test fun shortScreenFallsBackToTheFlank() {
+        // 3 × 48 = 144 needed under the hole but only 120 left: no line, the previous arrangement instead.
+        assertNull(PhoneLayout.holeColumn(6, 166, 34, 194, 3, 48, 8, 0, 800, top = 8, bottom = 322))
+        val f = PhoneLayout.flankHole(6, 166, 34, 194, 48, 8, 0, 800, playTop = 156, playBottom = 204, top = 64, bottom = 312)
+        assertEquals(204, f!!.belowTop)
+        // Back can't sit above a hole that high: no line either.
+        assertNull(PhoneLayout.holeColumn(6, 30, 34, 58, 3, 48, 8, 0, 800, top = 8, bottom = 352))
+        // No hole.
+        assertNull(PhoneLayout.holeColumn(0, 0, 0, 0, 3, 48, 8, 0, 800, 8, 352))
+    }
 }

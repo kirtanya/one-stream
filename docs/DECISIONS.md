@@ -5,6 +5,19 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-24 · Edge layout: one line through the camera hole (replaces the flank as the default)**
+Decision (user): everything on the camera side in ONE vertical line in the cutout strip, centred on the hole's
+horizontal middle: back at the top, the hole, then back 10 / play / forward 10 from the hole's bounding rect + 8 dp,
+8 dp apart. On the user's 360 dp-tall screen that only fits by (a) letting the line run down over the seek bar's
+touch area (the buttons sit on top and take their own 48 dp; the bar keeps the rest of its 48 dp, stopping 8 dp above
+its hairline) and (b) shrinking the spacing (to ≈ 4 dp). The time on that side moves in past the line. Still too tall
+(or back doesn't fit above the hole) → the flank arrangement below; no cutout → the same line on the left edge,
+transport centred. 48 dp buttons are kept on screen (≈ 4 dp off the hole's centre in a 40 dp strip).
+Evidence: `PhoneLayout.holeColumn` + PhoneLayoutTest (roomy, user's phone, exact fit, short-screen fallback);
+renders `phone_edge_cutout_left/right`, `phone_edge_130`; PlayerDesignRules pass.
+
+---
+
 **2026-10-24 · Edge layout: skip buttons flank the camera hole, in the cutout strip**
 Decision (user follow-up after 0.11.1): back 10 directly above the camera hole and forward 10 directly below it,
 centred on the hole's horizontal middle (DisplayCutout.boundingRects), ≥ 8 dp clear of its rect; play / pause stays

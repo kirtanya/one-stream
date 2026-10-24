@@ -827,10 +827,10 @@ internal class PhoneControls(
 
     /**
      * Edge layout (landscape), built around the camera hole on one short side:
-     *  - that side: back at the top; play / pause on the screen's middle just past the cutout's safe
-     *    inset (beside the hole, never on it); back 10 right above the camera hole and forward 10 right
-     *    below it, in the cutout strip itself (the user: use the strip that's the status bar in
-     *    portrait). No hole known: back 10 / play / forward 10 stacked past the inset;
+     *  - that side, in the cutout strip itself (the status bar in portrait): one line through the
+     *    camera hole — back at the top, the hole, then back 10, play / pause, forward 10 under it
+     *    (PhoneLayout.holeColumn). Too short: back 10 above the hole, forward 10 below, play beside it
+     *    (flankHole). No cutout: the same line on the left edge, the transport centred;
      *  - the other side: every other button in one column, centred too;
      *  - the title and "Ends at" centred at the top, between back and that column, where they fit;
      *  - the seek bar a hairline along the very bottom edge, end to end (like the TV), with a 48 dp
@@ -910,32 +910,50 @@ internal class PhoneControls(
             seek.layout(0, seekTop, w, bottom)
             val timesBottom = bottom - ctx.dp(EDGE_TIMES_LIFT_DP)
             val timesTop = timesBottom - maxOf(elapsed.measuredHeight, remaining.measuredHeight)
-            val ex = safe.left + ctx.dp(EDGE_DP)
+            getLocationInWindow(at)
+            val hw = hole?.let { android.graphics.Rect(it.left - at[0], it.top - at[1], it.right - at[0], it.bottom - at[1]) }
+            // The camera line (below) reaches the bottom: the time on that side starts past it.
+            val lineX = hw?.let { (it.centerX() - btn / 2).coerceIn(0, maxOf(0, w - btn)) }
+            var ex = safe.left + ctx.dp(EDGE_DP)
+            var rx = w - safe.right - ctx.dp(EDGE_DP)
+            if (lineX != null) { if (stripLeft()) ex = maxOf(ex, lineX + btn + gap) else rx = minOf(rx, lineX - gap) }
             elapsed.layout(ex, timesBottom - elapsed.measuredHeight, ex + elapsed.measuredWidth, timesBottom)
-            val rx = w - safe.right - ctx.dp(EDGE_DP)
             remaining.layout(rx - remaining.measuredWidth, timesBottom - remaining.measuredHeight, rx, timesBottom)
             coveredBottom = h - timesTop
 
             // Neither column may reach into the seek bar's touch area or the times.
             val limit = minOf(seekTop, timesTop) - ctx.dp(4)
             val centre = h / 2
-            back.layout(stripX, top, stripX + btn, top + btn)
             val transport = listOf(rew, play, ffwd)
             val tops = PhoneLayout.stack(transport.size, btn, gap, top + btn + gap, limit, centre)
-            // The skips flank the camera hole (its rect is in window coordinates); play stays beside it.
-            val flank = hole?.let { hw ->
-                getLocationInWindow(at)
-                PhoneLayout.flankHole(
-                    hw.left - at[0], hw.top - at[1], hw.right - at[0], hw.bottom - at[1], btn, gap,
-                    minX = 0, maxX = w, playTop = tops[1], playBottom = tops[1] + btn, top = top + btn + gap, bottom = limit,
-                )
+            // 1. One line through the hole: back, the hole, back 10 / play / forward 10. The line may
+            //    run down over the seek bar's touch area (buttons on top take their own 48 dp, the bar
+            //    keeps the rest), stopping short of its hairline; the time beside it moved over above.
+            val line = hw?.let {
+                PhoneLayout.holeColumn(it.left, it.top, it.right, it.bottom, transport.size, btn, gap,
+                    minX = 0, maxX = w, top = top, bottom = bottom - ctx.dp(EDGE_LINE_CLEAR_DP))
             }
-            if (flank != null) {
-                play.layout(stripX, tops[1], stripX + btn, tops[1] + btn)
-                rew.layout(flank.x, flank.aboveTop, flank.x + btn, flank.aboveTop + btn)
-                ffwd.layout(flank.x, flank.belowTop, flank.x + btn, flank.belowTop + btn)
-            } else {
-                transport.forEachIndexed { i, v -> v.layout(stripX, tops[i], stripX + btn, tops[i] + btn) }
+            // 2. Fallback (short screen): back 10 above the hole, forward 10 below, play beside it.
+            val flank = if (line != null) null else hw?.let {
+                PhoneLayout.flankHole(it.left, it.top, it.right, it.bottom, btn, gap,
+                    minX = 0, maxX = w, playTop = tops[1], playBottom = tops[1] + btn, top = top + btn + gap, bottom = limit)
+            }
+            when {
+                line != null -> {
+                    back.layout(line.x, line.backTop, line.x + btn, line.backTop + btn)
+                    transport.forEachIndexed { i, v -> v.layout(line.x, line.tops[i], line.x + btn, line.tops[i] + btn) }
+                }
+                flank != null -> {
+                    back.layout(stripX, top, stripX + btn, top + btn)
+                    play.layout(stripX, tops[1], stripX + btn, tops[1] + btn)
+                    rew.layout(flank.x, flank.aboveTop, flank.x + btn, flank.aboveTop + btn)
+                    ffwd.layout(flank.x, flank.belowTop, flank.x + btn, flank.belowTop + btn)
+                }
+                // 3. No hole (no cutout): the same single line on the left edge, the transport centred.
+                else -> {
+                    back.layout(stripX, top, stripX + btn, top + btn)
+                    transport.forEachIndexed { i, v -> v.layout(stripX, tops[i], stripX + btn, tops[i] + btn) }
+                }
             }
             val far = rightButtons.filter { it.visibility != GONE }
             val farTops = PhoneLayout.stack(far.size, btn, gap, top, limit, centre)
@@ -980,6 +998,8 @@ internal class PhoneControls(
         const val EDGE_TITLE_MAX_DP = 360
         /** Edge: the times' baseline area sits this far above the bottom edge (clear of the thumb's halo). */
         const val EDGE_TIMES_LIFT_DP = 10
+        /** Edge: the camera line's last button stops this far above the seek bar's hairline. */
+        const val EDGE_LINE_CLEAR_DP = 8
         /** Edge: each shade runs this far past the controls it sits behind before it's clear. */
         const val SHADE_REACH_DP = 16
         const val PANEL_DP = 340

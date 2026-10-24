@@ -26,6 +26,31 @@ enum class PhoneLayout(val label: String) {
          */
         fun cutoutSide(cutoutLeft: Int, cutoutRight: Int) = if (cutoutRight > cutoutLeft) Side.RIGHT else Side.LEFT
 
+        /** The camera-side line: its left x, back's top, and the tops of back 10 / play / forward 10 (px). */
+        class HoleColumn(val x: Int, val backTop: Int, val tops: IntArray)
+
+        /**
+         * Everything on the camera side in ONE line through the hole (the user's arrangement): back at
+         * [top], then the hole (nothing on it), then [count] buttons (back 10, play, forward 10) from
+         * [gap] under the hole's bounding rect down to [bottom], [gap] apart. The line is centred on the
+         * hole's horizontal middle, kept on screen ([minX]..[maxX]: a 48 dp button is wider than the
+         * ≈ 40 dp strip). Short screen: the spacing between the buttons shrinks first (down to
+         * touching); still too tall, or back doesn't fit above the hole → null (the caller falls back).
+         */
+        fun holeColumn(
+            holeLeft: Int, holeTop: Int, holeRight: Int, holeBottom: Int, count: Int, size: Int, gap: Int,
+            minX: Int, maxX: Int, top: Int, bottom: Int,
+        ): HoleColumn? {
+            if (holeRight <= holeLeft || holeBottom <= holeTop || count <= 0) return null
+            val x = ((holeLeft + holeRight) / 2 - size / 2).coerceAtMost(maxX - size).coerceAtLeast(minX)
+            if (top + size > holeTop) return null
+            val start = holeBottom + gap
+            val spare = bottom - start - count * size
+            if (spare < 0) return null
+            val g = if (count == 1) 0 else minOf(gap, spare / (count - 1))
+            return HoleColumn(x, top, IntArray(count) { start + it * (size + g) })
+        }
+
         /** Where the two skip buttons go around the camera hole: left x and the tops (px) above / below it. */
         class Flank(val x: Int, val aboveTop: Int, val belowTop: Int)
 
@@ -34,7 +59,7 @@ enum class PhoneLayout(val label: String) {
          * hole's horizontal middle (moved in just enough to stay on screen, [minX]..[maxX]), [gap] clear
          * of its bounding rect. Neither may overlap the play button beside the hole ([playTop]..[playBottom]),
          * so a button that would is pushed further out. Null when they don't fit inside [top]..[bottom]
-         * (the caller keeps the plain stack).
+         * (the caller keeps the plain stack). The fallback when [holeColumn] doesn't fit.
          */
         fun flankHole(
             holeLeft: Int, holeTop: Int, holeRight: Int, holeBottom: Int, size: Int, gap: Int,
