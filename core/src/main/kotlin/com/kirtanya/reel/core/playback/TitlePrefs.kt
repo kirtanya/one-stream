@@ -23,10 +23,15 @@ data class TitlePrefs(
     val audioDelayMs: Int? = null,
     /** Subtitle delay in ms (subtitles from another release); null = 0. */
     val subtitleDelayMs: Int? = null,
+    /**
+     * Black bars baked into the picture: how much to crop from the top and the bottom (the same on
+     * both), as a percentage of the video's height per side (0–20). Null = no crop.
+     */
+    val cropPercent: Float? = null,
     val changedAt: Long = 0,
 ) {
     val isEmpty: Boolean get() = audioLanguage == null && subtitleLanguage == null && subtitleLabel == null && picture == null && speed == null &&
-        audioDelayMs == null && subtitleDelayMs == null
+        audioDelayMs == null && subtitleDelayMs == null && cropPercent == null
 
     companion object {
         const val SUBTITLES_OFF = "off"
