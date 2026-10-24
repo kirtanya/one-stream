@@ -5,6 +5,24 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-24 · Phone player: Edge layout (opt-in, Settings panel → Layout: Classic / Edge)**
+Decision: a second phone player layout built around the Pixel 8's camera hole, chosen per user in the player's
+settings panel (PanelToggle "Layout"), remembered in PlaybackPrefs.phoneLayout, default Classic, applied at once.
+- Cutout side (from the display-cutout insets; left when there is none): back at the top, back 10 / play / forward 10
+  stacked on the screen's middle just past the cutout's safe inset. Every other button (next, send to TV, lock,
+  subtitles, settings) in one column on the opposite edge. Title + "Ends at" centred at the top between them.
+- Seek bar: SeekStrip `edge` (TV hairline on the very bottom edge, played part only; touched: thickens, thumb, halo,
+  time bubble) in a 48 dp touch area; elapsed / remaining just above its ends. Columns never reach into that area.
+- Low shades (SHADE_BAND tokens) along the edges that carry controls, so the "10"s, title and times pass contrast.
+- Portrait always shows Classic (the edge strips only exist sideways); turning the phone switches live.
+- One set of views is re-parented between the band and the edge frame, so listeners / refresh don't fork.
+Why: the user wants the controls in the empty strips at the screen's edges, off the picture.
+Evidence: `core/player/PhoneLayout` + PhoneLayoutTest; renders `phone_edge_*` (hole left / right, scrub, 130 %, panel,
+portrait); PlayerDesignRules `phoneEdge*` pass with no baseline growth. Limit: the bottom few dp are Android's
+gesture-nav zone; a drag starting right on the edge may bring up the system bars instead of seeking (start a little higher).
+
+---
+
 **2026-10-24 · Ratings + reviews: IMDb pills on posters, a ratings row and Reviews on title pages**
 Decision (user-approved design, mockup `~/one_launcher/docs/mockups/title_page.html`, in One Stream's own style):
 - Posters (rows, grids, search, wide cards): an IMDb pill (brand yellow / black) top-left; nothing when IMDb has no

@@ -2,6 +2,8 @@ package com.kirtanya.reel.design
 
 import android.graphics.Color
 import android.view.View
+import com.kirtanya.reel.core.player.PhoneLayout
+import com.kirtanya.reel.core.player.PhoneLayout.Side
 import com.kirtanya.reel.player.PlayerScenes
 import com.kirtanya.reel.player.TvControls
 import org.junit.Assert.assertTrue
@@ -90,6 +92,29 @@ class PlayerDesignRules {
 
     private fun phone(where: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false) {
         val scene = PlayerScenes.phone(panel, withPlayer = true, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null)
+        check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
+    // Edge layout (Settings → Layout): camera hole left / right, a finger on the seek bar, 130 %, the panel.
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneEdgeLeft() = edge("player/phone-edge-left", Side.LEFT)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneEdgeRight() = edge("player/phone-edge-right", Side.RIGHT)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneEdgeScrub() = edge("player/phone-edge-scrub", Side.LEFT, scrub = true)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE, fontScale = 1.3f)
+    fun phoneEdge130() = edge("player/phone-edge-130", Side.RIGHT)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneEdgeSettings() = edge("player/phone-edge-settings", Side.LEFT, panel = true)
+
+    private fun edge(where: String, side: Side, scrub: Boolean = false, panel: Boolean = false) {
+        val scene = PlayerScenes.phone(panel, withPlayer = true, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null,
+            layout = PhoneLayout.EDGE, cutout = side)
         check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
         scene.release()
     }

@@ -1973,7 +1973,14 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 setPicture(if (fill) com.kirtanya.reel.core.playback.PictureMode.FILL else com.kirtanya.reel.core.playback.PictureMode.FIT)
             },
         )
-        phoneControls?.setToggles(listOf(picture, crop, cinema))
+        // Layout: Classic (bottom band) or Edge (around the camera hole); remembered, applies at once.
+        val layouts = com.kirtanya.reel.core.player.PhoneLayout.entries
+        val layout = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_tune, "Layout", layouts.map { it.label }, { prefs.phoneLayout.ordinal }) { i ->
+            app.playbackSettings.update { it.copy(phoneLayout = layouts[i]) }
+            phoneControls?.layoutMode = layouts[i]
+        }
+        phoneControls?.layoutMode = prefs.phoneLayout
+        phoneControls?.setToggles(listOf(picture, crop, cinema, layout))
         phoneControls?.seekStepMs = options.seekStepS * 1_000L
         phoneControls?.syncZoom(currentPicture == com.kirtanya.reel.core.playback.PictureMode.FILL)
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))

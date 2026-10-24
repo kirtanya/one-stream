@@ -27,6 +27,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import com.kirtanya.reel.R
+import com.kirtanya.reel.core.player.PhoneLayout
 import kotlin.math.abs
 
 /**
@@ -41,6 +42,9 @@ import kotlin.math.abs
  *    (landscape); in portrait the row has no room and it's left out.
  *  - Under the row, the seek bar: a hairline (played part only), thumb + halo and a time bubble
  *    while touched, a full 48 dp touch area; elapsed / remaining small above its ends.
+ *
+ * Edge layout (Settings panel → Layout, landscape only; [layoutMode]): the same controls moved to
+ * the screen's edges around the camera hole, see [EdgeFrame]. Portrait always shows the band.
  *
  * Gestures on the picture: tap shows / hides; double-tap the left or right third skips one step (taps
  * in a row add up); drag sideways scrubs; drag up/down on the left sets brightness, on the right
@@ -72,6 +76,14 @@ internal class PhoneControls(
     private var player: Player? = null
 
     private val controls = FrameLayout(ctx)
+    /** Classic: the bottom band (with its shade); Edge: [edge]. Only one shows. */
+    private val classic = FrameLayout(ctx)
+    private val edge = EdgeFrame()
+    private val info = LinearLayout(ctx)
+    private lateinit var row: BandRow
+    private val times = LinearLayout(ctx)
+    private val band = LinearLayout(ctx)
+    private lateinit var seekBandParams: LinearLayout.LayoutParams
     /** The bottom band (its height decides how far captions move up while it shows). */
     private var bandView: View? = null
     private val titleView = text(CAPTION_SP, medium = true)
@@ -140,22 +152,28 @@ internal class PhoneControls(
         val shade = View(ctx).apply {
             background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(PlayerColors.SHADE_BAND, PlayerColors.SHADE_BAND_MID, PlayerColors.SHADE_CLEAR))
         }
-        controls.addView(shade, LayoutParams(-1, 0, Gravity.BOTTOM))
+        classic.clipChildren = false
+        classic.addView(shade, LayoutParams(-1, 0, Gravity.BOTTOM))
         val safe = FrameLayout(ctx).apply { clipChildren = false }
-        controls.addView(safe, LayoutParams(-1, -1))
+        classic.addView(safe, LayoutParams(-1, -1))
+        controls.addView(classic, LayoutParams(-1, -1))
+        edge.visibility = GONE
+        controls.addView(edge, LayoutParams(-1, -1))
 
         // The title block: title, then "Ends at", both caption size; the row hides it where it doesn't fit.
-        val info = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
+        info.orientation = LinearLayout.VERTICAL
+        info.gravity = Gravity.CENTER_VERTICAL
         titleView.text = title
         for (t in listOf(titleView, metaView)) {
             t.maxLines = 1
             t.ellipsize = android.text.TextUtils.TruncateAt.END
             info.addView(t, LinearLayout.LayoutParams(-1, -2))
         }
-        val row = BandRow(ctx, left = listOf(back, rew, play, ffwd), middle = info, right = listOf(next, toTv, lock, subs, tune))
+        row = BandRow(ctx, left = listOf(back, rew, play, ffwd), middle = info, right = rightButtons)
 
         // Elapsed above the seek bar's start, remaining above its end (as on the TV).
-        val times = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+        times.orientation = LinearLayout.HORIZONTAL
+        times.gravity = Gravity.BOTTOM
         times.addView(elapsed, LinearLayout.LayoutParams(-2, -2))
         times.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f))
         times.addView(remaining, LinearLayout.LayoutParams(-2, -2))
@@ -163,15 +181,17 @@ internal class PhoneControls(
         // The band: row, times, seek bar. The seek bar's 48 dp touch area reaches up behind the times
         // (they take no touches) so its line sits just under them; the band's top margin keeps that
         // touch area off the buttons above.
-        val band = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+        band.orientation = LinearLayout.VERTICAL
+        band.clipChildren = false
         bandView = band
         band.addView(row, LinearLayout.LayoutParams(-1, -2).apply { marginStart = ctx.dp(ROW_EDGE_DP); marginEnd = ctx.dp(ROW_EDGE_DP) })
         band.addView(times, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4); marginStart = ctx.dp(EDGE_DP); marginEnd = ctx.dp(EDGE_DP) })
         seek.line = true
-        band.addView(seek, LinearLayout.LayoutParams(-1, ctx.dp(BUTTON_DP)).apply {
+        seekBandParams = LinearLayout.LayoutParams(-1, ctx.dp(BUTTON_DP)).apply {
             topMargin = -ctx.dp(SEEK_UNDER_TIMES_DP)
             marginStart = ctx.dp(EDGE_DP); marginEnd = ctx.dp(EDGE_DP)
-        })
+        }
+        band.addView(seek, seekBandParams)
         safe.addView(band, LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = ctx.dp(4) })
         // The shade reaches exactly the band's top (it grows when the row wraps to two lines).
         band.addOnLayoutChangeListener { _, _, top, _, _, _, _, _, _ ->
@@ -193,6 +213,13 @@ internal class PhoneControls(
         ViewCompat.setOnApplyWindowInsetsListener(safe) { v, insets ->
             val i = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             v.setPadding(i.left, i.top, i.right, i.bottom)
+            insets
+        }
+        // Edge: the same safe area, plus which short side the camera hole is on.
+        ViewCompat.setOnApplyWindowInsetsListener(edge) { _, insets ->
+            val i = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            if (cutoutOverride == null) edge.setSafe(i.left, i.top, i.right, i.bottom, PhoneLayout.cutoutSide(cut.left, cut.right))
             insets
         }
 
@@ -224,6 +251,74 @@ internal class PhoneControls(
         val cp = cropHud.layoutParams as LayoutParams
         cp.width = minOf(ctx.dp(CROP_DP), MeasureSpec.getSize(widthMeasureSpec) - cp.leftMargin - cp.rightMargin)
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+
+    // ---------------------------------------------------------------- layout (Classic / Edge)
+
+    /** The user's pick (Settings panel → Layout); Edge shows only while the screen is landscape. */
+    var layoutMode: PhoneLayout = PhoneLayout.CLASSIC
+        set(v) { field = v; applyLayout() }
+
+    /** What's laid out now: init builds Classic; [applyLayout] moves everything to the edges when asked. */
+    private var mounted = PhoneLayout.CLASSIC
+
+    /** Renders only: a camera hole [px] deep on [side] (Robolectric has no display cutout). */
+    private var cutoutOverride: Pair<PhoneLayout.Side, Int>? = null
+
+    internal fun previewCutout(side: PhoneLayout.Side, px: Int) {
+        cutoutOverride = side to px
+        edge.setSafe(if (side == PhoneLayout.Side.LEFT) px else 0, 0, if (side == PhoneLayout.Side.RIGHT) px else 0, 0, side)
+    }
+
+    private val rightButtons get() = listOf(next, toTv, lock, subs, tune)
+
+    private fun landscape() =
+        if (width > 0 && height > 0) width > height
+        else ctx.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        // Turning the phone can swap Classic ↔ Edge; re-parent after this layout pass, not inside it.
+        post { applyLayout() }
+    }
+
+    /**
+     * Moves the one set of buttons, captions and seek bar into the band (Classic) or the edge frame
+     * (Edge). One set, so listeners, icons and refresh never need to know which layout shows.
+     */
+    private fun applyLayout() {
+        val want = PhoneLayout.effective(layoutMode, landscape())
+        if (want == mounted) return
+        mounted = want
+        val moving = listOf(back, rew, play, ffwd, info, elapsed, remaining, seek) + rightButtons
+        for (v in moving) (v.parent as? ViewGroup)?.removeView(v)
+        if (want == PhoneLayout.EDGE) {
+            seek.line = false
+            seek.edge = true
+            edge.mount()
+            classic.visibility = GONE
+            edge.visibility = VISIBLE
+        } else {
+            seek.edge = false
+            seek.line = true
+            row.mount()
+            times.addView(elapsed, 0, LinearLayout.LayoutParams(-2, -2))
+            times.addView(remaining, LinearLayout.LayoutParams(-2, -2))
+            band.addView(seek, seekBandParams)
+            edge.visibility = GONE
+            classic.visibility = VISIBLE
+        }
+        val centred = want == PhoneLayout.EDGE
+        for (t in listOf(titleView, metaView)) t.gravity = if (centred) Gravity.CENTER_HORIZONTAL else Gravity.START
+        placeBubbles()
+        if (visible) post { onShown?.invoke(true) }
+    }
+
+    /** The double-tap bubbles sit clear of the edge columns (Edge) or 56 dp in (Classic). */
+    private fun placeBubbles() {
+        val inset = if (mounted == PhoneLayout.EDGE) edge.columnReach() else 0
+        (leftBubble.layoutParams as? LayoutParams)?.let { it.marginStart = maxOf(ctx.dp(56), inset); leftBubble.layoutParams = it }
+        (rightBubble.layoutParams as? LayoutParams)?.let { it.marginEnd = maxOf(ctx.dp(56), inset); rightBubble.layoutParams = it }
     }
 
     /** White text and icons, each with the TV strip's small tight shadow (never a halo). */
@@ -266,6 +361,7 @@ internal class PhoneControls(
 
     /** How much of the bottom the band covers right now, in px (0 when hidden). */
     fun coveredBottomPx(): Int {
+        if (mounted == PhoneLayout.EDGE) return if (visible) edge.coveredBottom else 0
         val b = bandView ?: return 0
         if (!visible || b.height == 0) return 0
         val loc = IntArray(2).also { b.getLocationInWindow(it) }
@@ -681,8 +777,11 @@ internal class PhoneControls(
 
         init {
             clipChildren = false
-            for (v in left + middle + right) addView(v)
+            mount()
         }
+
+        /** (Back) into the row, after the Edge layout had its views. */
+        fun mount() { for (v in left + middle + right) if (v.parent == null) addView(v) }
 
         private fun shown(group: List<View>) = group.filter { it.visibility != GONE }
 
@@ -718,6 +817,121 @@ internal class PhoneControls(
         }
     }
 
+    /**
+     * Edge layout (landscape), built around the camera hole on one short side:
+     *  - that side: back at the top; back 10, play / pause, forward 10 stacked on the screen's middle
+     *    (beside the hole), just past the cutout's safe inset, so they sit over the side bar of a
+     *    wide video rather than the picture;
+     *  - the other side: every other button in one column, centred too;
+     *  - the title and "Ends at" centred at the top, between back and that column, where they fit;
+     *  - the seek bar a hairline along the very bottom edge, end to end (like the TV), with a 48 dp
+     *    touch area above it; elapsed / remaining just above its ends.
+     * Low shades (the band's tokens) only along the edges that carry text or buttons.
+     */
+    private inner class EdgeFrame : ViewGroup(ctx) {
+        private val safe = android.graphics.Rect()
+        private var side = PhoneLayout.Side.LEFT
+        private fun shade(o: GradientDrawable.Orientation) = View(ctx).apply {
+            background = GradientDrawable(o, intArrayOf(PlayerColors.SHADE_BAND, PlayerColors.SHADE_BAND_MID, PlayerColors.SHADE_CLEAR))
+        }
+        private val topShade = shade(GradientDrawable.Orientation.TOP_BOTTOM)
+        private val bottomShade = shade(GradientDrawable.Orientation.BOTTOM_TOP)
+        private val leftShade = shade(GradientDrawable.Orientation.LEFT_RIGHT)
+        private val rightShade = shade(GradientDrawable.Orientation.RIGHT_LEFT)
+        private val btn = ctx.dp(BUTTON_DP)
+        private var titleWidth = 0
+
+        /** How much of the bottom the seek bar and times cover (px), for the captions. */
+        var coveredBottom = 0; private set
+
+        init {
+            clipChildren = false
+            for (s in listOf(topShade, bottomShade, leftShade, rightShade)) addView(s)
+        }
+
+        fun setSafe(left: Int, top: Int, right: Int, bottom: Int, cutoutSide: PhoneLayout.Side) {
+            safe.set(left, top, right, bottom)
+            side = cutoutSide
+            requestLayout()
+            placeBubbles()
+        }
+
+        /** The seek bar first, so the times (no touches) draw over its touch area, not under it. */
+        fun mount() {
+            for (v in listOf(seek, back, rew, play, ffwd, info, elapsed, remaining) + rightButtons) if (v.parent == null) addView(v)
+        }
+
+        /** How far in from either short edge the columns reach (px), for the double-tap bubbles. */
+        fun columnReach() = maxOf(safe.left, safe.right) + ctx.dp(ROW_EDGE_DP) + btn + ctx.dp(8)
+
+        private fun stripLeft() = side == PhoneLayout.Side.LEFT
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val w = MeasureSpec.getSize(widthMeasureSpec)
+            val h = MeasureSpec.getSize(heightMeasureSpec)
+            setMeasuredDimension(w, h)
+            val exact = MeasureSpec.makeMeasureSpec(btn, MeasureSpec.EXACTLY)
+            for (v in listOf(back, rew, play, ffwd) + rightButtons) if (v.parent === this && v.visibility != GONE) v.measure(exact, exact)
+            if (seek.parent === this) seek.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), exact)
+            val wrap = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+            for (t in listOf(elapsed, remaining)) if (t.parent === this) t.measure(wrap, wrap)
+            // The title: centred between back and the far column, never under either.
+            val free = w - 2 * (maxOf(safe.left, safe.right) + ctx.dp(ROW_EDGE_DP) + btn + ctx.dp(TITLE_GAP_DP))
+            titleWidth = minOf(free, ctx.dp(EDGE_TITLE_MAX_DP)).takeIf { it >= ctx.dp(TITLE_MIN_DP) } ?: 0
+            if (info.parent === this) info.measure(MeasureSpec.makeMeasureSpec(titleWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(btn, MeasureSpec.AT_MOST))
+            // Shades are measured in onLayout (their sizes follow the controls' places).
+        }
+
+        override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+            val w = r - l
+            val h = b - t
+            val gap = ctx.dp(8)
+            val edgeIn = ctx.dp(ROW_EDGE_DP)
+            val stripX = if (stripLeft()) safe.left + edgeIn else w - safe.right - edgeIn - btn
+            val farX = if (stripLeft()) w - safe.right - edgeIn - btn else safe.left + edgeIn
+            val top = safe.top + gap
+            val bottom = h - safe.bottom
+
+            // Bottom edge: the seek bar's touch area, its line on the very edge; times just above.
+            val seekTop = bottom - btn
+            seek.layout(0, seekTop, w, bottom)
+            val timesBottom = bottom - ctx.dp(EDGE_TIMES_LIFT_DP)
+            val timesTop = timesBottom - maxOf(elapsed.measuredHeight, remaining.measuredHeight)
+            val ex = safe.left + ctx.dp(EDGE_DP)
+            elapsed.layout(ex, timesBottom - elapsed.measuredHeight, ex + elapsed.measuredWidth, timesBottom)
+            val rx = w - safe.right - ctx.dp(EDGE_DP)
+            remaining.layout(rx - remaining.measuredWidth, timesBottom - remaining.measuredHeight, rx, timesBottom)
+            coveredBottom = h - timesTop
+
+            // Neither column may reach into the seek bar's touch area or the times.
+            val limit = minOf(seekTop, timesTop) - ctx.dp(4)
+            val centre = h / 2
+            back.layout(stripX, top, stripX + btn, top + btn)
+            val transport = listOf(rew, play, ffwd)
+            val tops = PhoneLayout.stack(transport.size, btn, gap, top + btn + gap, limit, centre)
+            transport.forEachIndexed { i, v -> v.layout(stripX, tops[i], stripX + btn, tops[i] + btn) }
+            val far = rightButtons.filter { it.visibility != GONE }
+            val farTops = PhoneLayout.stack(far.size, btn, gap, top, limit, centre)
+            far.forEachIndexed { i, v -> v.layout(farX, farTops[i], farX + btn, farTops[i] + btn) }
+
+            val tx = (w - titleWidth) / 2
+            val ty = top + (btn - info.measuredHeight) / 2
+            info.layout(tx, ty, tx + titleWidth, ty + info.measuredHeight)
+
+            // Shades: a low one behind each edge's controls, clear where the picture starts.
+            fun put(v: View, x0: Int, y0: Int, x1: Int, y1: Int) {
+                v.measure(MeasureSpec.makeMeasureSpec(x1 - x0, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(y1 - y0, MeasureSpec.EXACTLY))
+                v.layout(x0, y0, x1, y1)
+            }
+            put(topShade, 0, 0, w, top + btn + ctx.dp(SHADE_REACH_DP))
+            put(bottomShade, 0, timesTop - ctx.dp(SHADE_REACH_DP), w, h)
+            val reachL = (safe.left + edgeIn + btn) * 2
+            val reachR = (safe.right + edgeIn + btn) * 2
+            put(leftShade, 0, 0, reachL, h)
+            put(rightShade, w - reachR, 0, w, h)
+        }
+    }
+
     private companion object {
         /** Every control's size: its touch area (docs/DESIGN_STYLE.md §2). */
         const val BUTTON_DP = 48
@@ -735,6 +949,12 @@ internal class PhoneControls(
         /** The title only where at least this much room is left beside the buttons. */
         const val TITLE_MIN_DP = 120
         const val TITLE_GAP_DP = 16
+        /** Edge: the centred title's widest. */
+        const val EDGE_TITLE_MAX_DP = 360
+        /** Edge: the times' baseline area sits this far above the bottom edge (clear of the thumb's halo). */
+        const val EDGE_TIMES_LIFT_DP = 10
+        /** Edge: each shade runs this far past the controls it sits behind before it's clear. */
+        const val SHADE_REACH_DP = 16
         const val PANEL_DP = 340
         /** Crop bars' adjust bar: wide enough for a fine slider, narrower than the landscape screen so the picture shows beside it. */
         const val CROP_DP = 420

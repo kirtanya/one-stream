@@ -157,6 +157,8 @@ internal object PlayerScenes {
         panel: Boolean, withPlayer: Boolean = false, next: Boolean = true, scrubAtMs: Long? = null, file: Boolean = false, panelEnd: Boolean = false,
         overlay: Overlay? = null, slider: String? = null,
         cropPercent: Float = 0f, crop: Boolean = false, cropAuto: Boolean = false, video: ((FrameLayout, PlayerView) -> Unit)? = null,
+        layout: com.kirtanya.reel.core.player.PhoneLayout = com.kirtanya.reel.core.player.PhoneLayout.CLASSIC,
+        cutout: com.kirtanya.reel.core.player.PhoneLayout.Side? = null,
     ): Phone {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
@@ -168,9 +170,16 @@ internal object PlayerScenes {
             onBack = {}, onPip = {}, nextLabel = { if (next) "Next · S1 E4" else null }, onNext = {},
             onSendToTv = {}, canSendToTv = { true })
         // The rows the activity adds (PlayerActivity.buildLayout), so the panel shows its real length.
-        c.setToggles(pictureRows(cropPercent))
+        c.setToggles(pictureRows(cropPercent) + layoutRow(layout))
         val (subRows, audioRows, playRows) = rows()
         c.setRows(subRows, audioRows, playRows) {}
+        if (cutout != null && activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+            // Robolectric has no display cutout: say where the Pixel's camera hole is, and draw it (landscape: on a short side).
+            val px = (CUTOUT_DP * activity.resources.displayMetrics.density).toInt()
+            c.previewCutout(cutout, px)
+            root.addView(cameraHole(activity, cutout, px))
+        }
+        c.layoutMode = layout
         root.addView(c, FrameLayout.LayoutParams(-1, -1))
         val o = PlayerOverlays(activity, { null }, tv = false)
         o.addTo(root)
@@ -200,6 +209,27 @@ internal object PlayerScenes {
             c.previewScrub(scrubAtMs)
         }
         return scene
+    }
+
+    /** The phone's Layout row (PlayerActivity.buildLayout). */
+    fun layoutRow(current: com.kirtanya.reel.core.player.PhoneLayout): PanelRow {
+        val layouts = com.kirtanya.reel.core.player.PhoneLayout.entries
+        return PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_tune, "Layout", layouts.map { it.label }, { current.ordinal }) {}
+    }
+
+    /** The Pixel 8's camera-hole safe inset in landscape at the user's display size (≈ 40 dp). */
+    const val CUTOUT_DP = 40
+
+    /** A stand-in camera hole: a black dot in the middle of the cutout strip, on [side]. */
+    private fun cameraHole(activity: ComponentActivity, side: com.kirtanya.reel.core.player.PhoneLayout.Side, insetPx: Int): android.view.View {
+        val d = (insetPx * 0.55f).toInt()
+        return android.view.View(activity).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.BLACK) }
+            layoutParams = FrameLayout.LayoutParams(d, d, android.view.Gravity.CENTER_VERTICAL or
+                if (side == com.kirtanya.reel.core.player.PhoneLayout.Side.LEFT) android.view.Gravity.START else android.view.Gravity.END).apply {
+                marginStart = (insetPx - d) / 2; marginEnd = (insetPx - d) / 2
+            }
+        }
     }
 
     /** Where a scrub render puts the finger: an hour in. */

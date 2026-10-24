@@ -1,6 +1,8 @@
 package com.kirtanya.reel.player
 
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.kirtanya.reel.core.player.PhoneLayout
+import com.kirtanya.reel.core.player.PhoneLayout.Side
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -47,11 +49,22 @@ class PhoneControlsRender {
     @Test fun renderPhoneAudioDelay() = render("phone_controls_audio_delay", panel = true, slider = "Audio delay")
     @Test @Config(qualifiers = PORT) fun renderPortraitSubtitleDelay() = render("phone_controls_portrait_subtitle_delay", panel = true, slider = "Subtitle delay")
 
+    // Edge layout (Settings → Layout): the camera hole on the left, on the right, a finger on the
+    // seek bar, a film without Next, 130 %, the panel (its Layout row), and portrait (stays Classic).
+    @Test fun renderEdgeLeft() = render("phone_edge_cutout_left", panel = false, edge = Side.LEFT)
+    @Test fun renderEdgeRight() = render("phone_edge_cutout_right", panel = false, edge = Side.RIGHT)
+    @Test fun renderEdgeScrub() = render("phone_edge_scrub", panel = false, scrub = true, edge = Side.LEFT)
+    @Test fun renderEdgeMovie() = render("phone_edge_movie", panel = false, next = false, edge = Side.RIGHT)
+    @Test @Config(fontScale = 1.3f) fun renderEdge130() = render("phone_edge_130", panel = false, edge = Side.LEFT)
+    @Test fun renderEdgeSettings() = render("phone_edge_settings", panel = true, edge = Side.LEFT, panelEnd = true)
+    @Test @Config(qualifiers = PORT) fun renderEdgePortrait() = render("phone_edge_portrait", panel = false, edge = Side.LEFT)
+
     private fun render(
         name: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
-        overlay: PlayerScenes.Overlay? = null, slider: String? = null,
+        overlay: PlayerScenes.Overlay? = null, slider: String? = null, edge: Side? = null,
     ) {
-        val scene = PlayerScenes.phone(panel, withPlayer = panel, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider)
+        val scene = PlayerScenes.phone(panel, withPlayer = panel, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider,
+            layout = if (edge != null) PhoneLayout.EDGE else PhoneLayout.CLASSIC, cutout = edge)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }
