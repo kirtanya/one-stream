@@ -2,6 +2,7 @@ package com.kirtanya.reel.ui.title
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -36,11 +37,18 @@ fun SeasonWatched(d: TitleDetails, season: Int?, sidePadding: Dp) {
     val lookup by watched.state.collectAsState(initial = null)
     val count = remember(lookup, d, season) { watched.count(d, season) }
     if (count.total == 0) return
-    Row(Modifier.padding(horizontal = sidePadding), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+    // Count left, button right; at big font sizes the button drops under the count instead of squeezing it.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = sidePadding),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
             if (count.all) "All ${count.total} watched" else "${count.watched} of ${count.total} watched",
             style = Tokens.Type.label, color = if (count.all) Tokens.Colors.accentBright else Tokens.Colors.textSecondary,
-            modifier = Modifier.weight(1f), maxLines = 2,
+            maxLines = 1, modifier = Modifier.padding(end = Tokens.Space.s),
         )
         ReelButton(
             if (count.all) "Mark unwatched" else "Mark season watched",

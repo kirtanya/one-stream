@@ -195,7 +195,9 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
                                 val card = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
                                 val scope = androidx.compose.runtime.rememberCoroutineScope()
                                 Column(Modifier.width(240.dp).bringIntoViewRequester(card), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, onFocus = { scope.launch { card.bringIntoView() } }, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
+                                    // Lifts from the bottom edge (like posters with a label) and keeps a gap, so the focus
+                                    // glow never sits behind the episode's name.
+                                    Box(Modifier.padding(bottom = Tokens.Space.s).fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, origin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f), onFocus = { scope.launch { card.bringIntoView() } }, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
                                         RemoteImage(TmdbImages.still(e.stillPath, "w780"), Modifier.fillMaxSize())
                                         when {
                                             watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), icon = Icons.Rounded.Check, accent = true)
