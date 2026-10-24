@@ -40,7 +40,7 @@ fun SeasonWatched(d: TitleDetails, season: Int?, sidePadding: Dp) {
         Text(
             if (count.all) "All ${count.total} watched" else "${count.watched} of ${count.total} watched",
             style = Tokens.Type.label, color = if (count.all) Tokens.Colors.accentBright else Tokens.Colors.textSecondary,
-            modifier = Modifier.weight(1f), maxLines = 1,
+            modifier = Modifier.weight(1f), maxLines = 2,
         )
         ReelButton(
             if (count.all) "Mark unwatched" else "Mark season watched",

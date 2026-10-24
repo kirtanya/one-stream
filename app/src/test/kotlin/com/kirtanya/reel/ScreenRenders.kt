@@ -244,7 +244,7 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun titleFilm() = render("title-film", history = true, content = phone { open(Dest.Title(Fake.film)) })
     @Test fun titleShow() = render("title-show", history = true, content = phone { open(Dest.Title(Fake.show)) })
     @Test fun titleRotten() = render("title-rotten", content = phone { open(Dest.Title(Fake.rotten)) })
-    @Test fun titleShowEpisodes() = render("title-show-episodes", history = true, scrollDp = 760, content = phone { open(Dest.Title(Fake.show)) })
+    @Test fun titleShowEpisodes() = render("title-show-episodes", history = true, scrollDp = 700, content = phone { open(Dest.Title(Fake.show)) })
     @Test fun titleReviews() = render("title-reviews", scrollDp = 440, content = phone { open(Dest.Title(Fake.film)) })
     @Test fun reviewOpen() = render("review-open", windows = true) { com.kirtanya.reel.ui.title.ReviewSheet(Fake.reviews.items[0], onDismiss = {}) }
     @Test fun titleBare() = render("title-bare", content = phone { open(Dest.Title(Fake.long)) })

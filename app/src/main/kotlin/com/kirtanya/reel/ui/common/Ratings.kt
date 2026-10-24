@@ -191,7 +191,7 @@ private fun FreshTomato(size: Dp) {
         val s = this.size.minDimension
         drawCircle(BrandColors.tomatoRed, radius = s * 0.42f, center = Offset(s * 0.5f, s * 0.56f))
         // Soft highlight, so it reads as round rather than a red dot.
-        drawCircle(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.28f), radius = s * 0.09f, center = Offset(s * 0.33f, s * 0.44f))
+        drawCircle(BrandColors.tomatoShine, radius = s * 0.09f, center = Offset(s * 0.33f, s * 0.44f))
         val leaf = Path()
         val c = Offset(s * 0.5f, s * 0.2f)
         for (i in 0 until 10) {
@@ -233,7 +233,8 @@ fun Eyebrow(d: TitleDetails, modifier: Modifier = Modifier, maxLines: Int = 2) {
     Text(
         parts.joinToString("  ·  ") { it.replace(' ', ' ') },
         style = Tokens.Type.caption.copy(letterSpacing = 1.2.sp),
-        color = Tokens.Colors.textSecondary,
+        // Full text colour: small caps over a backdrop need every bit of contrast (textSecondary measured 4.3:1).
+        color = Tokens.Colors.text,
         maxLines = maxLines,
         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         modifier = modifier,

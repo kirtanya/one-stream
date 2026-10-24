@@ -16,6 +16,8 @@ object BrandColors {
     val tomatoRed = Color(0xFFFA320A)
     val tomatoLeaf = Color(0xFF00912D)
     val splatGreen = Color(0xFF0AC855)
+    /** The soft shine on the tomato. */
+    val tomatoShine = Color(0x47FFFFFF)
 
     /** Metacritic score squares: 61+ green, 40–60 yellow, under 40 red. */
     val metaGreen = Color(0xFF66CC33)

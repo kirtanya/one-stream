@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import kotlinx.coroutines.launch
 import com.kirtanya.reel.core.playback.EpisodeNumber
@@ -122,12 +124,18 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
         EpisodeOptions(d, e, progress[EpisodeNumber(e.season, e.number)], onPlay = { s, n -> onPlay(s, n) }, onOpenDest = onOpenDest, onDismiss = { episodeOptions = null })
     }
     val side = Tokens.Space.tvSafeH
+    var heroFocused by remember { mutableStateOf(true) }
+    // Not dimmed before Play first takes focus (the page opening isn't "focus left the hero").
+    var heroHadFocus by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         // The backdrops fill the screen and change slowly (no zoom: the TV is a small 32-bit box).
         HeroImage(heroBackdrops(d), Modifier.fillMaxSize(), kenBurns = false)
         HeroScrims(top = false, start = true)
         AmbientGlow(glow, height = 700.dp, strength = 0.3f)
+        // Once focus leaves the hero (reviews, episodes, cast…), the backdrop dims so rows below read on any picture.
+        val dim by androidx.compose.animation.core.animateFloatAsState(if (heroFocused) 0f else 0.86f, androidx.compose.animation.core.tween(Tokens.Motion.stateMs), label = "dim")
+        if (dim > 0f) Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas.copy(alpha = dim)))
 
         @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides com.kirtanya.reel.ui.common.MinimalBringIntoView) {
@@ -137,7 +145,7 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
         ) {
             item(key = "hero") {
-                Column(Modifier.padding(horizontal = side), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+                Column(Modifier.onFocusChanged { f -> if (f.hasFocus || heroHadFocus) heroFocused = f.hasFocus; if (f.hasFocus) heroHadFocus = true }.padding(horizontal = side), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                     Spacer(Modifier.height(Tokens.Space.l))
                     Column(Modifier.fillMaxWidth(0.55f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         com.kirtanya.reel.ui.common.Eyebrow(d, maxLines = 1)

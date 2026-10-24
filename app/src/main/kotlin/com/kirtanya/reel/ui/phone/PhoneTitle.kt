@@ -204,7 +204,7 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
                                 RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 52.dp, onClick = { openProvider(p) }, sublabel = label)
                             }
                         }
-                        Text("Availability in India · data by JustWatch", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, modifier = Modifier.padding(horizontal = gutter))
+                        Text("Availability in India · data by JustWatch", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(horizontal = gutter))
                     }
                 }
             }
@@ -287,9 +287,11 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier
             Text(com.kirtanya.reel.core.tmdb.EpisodeFacts.title(e), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val facts = com.kirtanya.reel.core.tmdb.EpisodeFacts.facts(e)
             if (facts.isNotEmpty() || imdb != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                // Wraps under the pill at big font sizes rather than cutting the date short.
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), itemVerticalAlignment = Alignment.CenterVertically) {
                     com.kirtanya.reel.ui.title.EpisodeImdb(imdb)
-                    if (facts.isNotEmpty()) Text(facts, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (facts.isNotEmpty()) Text(facts, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
                 }
             }
             if (e.overview.isNotBlank()) Text(e.overview, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)

@@ -128,7 +128,7 @@ fun RingAvatar(
             else if (placeholder != null) Text(placeholder, style = Tokens.Type.heading, color = Tokens.Colors.text)
         }
         if (label != null) Text(label, style = Tokens.Type.caption, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-        if (sublabel != null) Text(sublabel, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        if (sublabel != null) Text(sublabel, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }
 
