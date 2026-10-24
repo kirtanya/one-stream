@@ -122,6 +122,7 @@ Every one returns a Bundle `{ok: Boolean, message: String?}` and never throws fo
 | `download` | `token` | the app's Download button for that source (torrent → engine download with its notification; direct → Android's download manager). Service links: ok=false. |
 | `prepare` | `token` | torrents: the player's own stream start in the background (stream mode, the opening pieces first), no player; if nobody plays it, it stops after 5 min without reads, like a stream handed to an external player. Direct links: ok=true, nothing to do. Service links: ok=false. Returns at once ("Preparing"). |
 | `cancel_download` | `key` (info-hash) | the Downloads tab's Delete (removes the download and its files) |
+| `stop_engine` | none | TV "Speed up": if no One Stream screen is open, nothing is streaming and no download is transferring, saves resume data, stops the engine's foreground service and ends One Stream's process (the next launch starts fresh). Otherwise `ok=false` with the reason ("One Stream is open", "Something is playing", "2 downloads are running"); running downloads are never paused or stopped by this call. |
 
 ### Play link
 `onestream://play?source=<token>[&type=&tmdb=&season=&episode=]` → the player straight away with that

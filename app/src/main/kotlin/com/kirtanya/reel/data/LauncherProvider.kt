@@ -226,6 +226,34 @@ class LauncherProvider : ContentProvider() {
                 engine.remove(t.infoHash, deleteFiles = true)
                 true to null
             }
+            LauncherPage.STOP_ENGINE -> {
+                val engine = app.engineIfCreated
+                val list = engine?.torrents?.value.orEmpty()
+                val verdict = com.kirtanya.reel.core.launcher.StopEngine.decide(
+                    visibleScreens = app.startedActivities.get(),
+                    streams = list.count { it.streaming },
+                    downloads = list.count {
+                        it.mode == TorrentMode.DOWNLOAD && !it.userPaused &&
+                            (it.phase == com.kirtanya.reel.engine.TorrentPhase.DOWNLOADING || it.phase == com.kirtanya.reel.engine.TorrentPhase.METADATA)
+                    },
+                )
+                when (verdict) {
+                    is com.kirtanya.reel.core.launcher.StopEngine.Verdict.Keep -> false to verdict.reason
+                    com.kirtanya.reel.core.launcher.StopEngine.Verdict.Stop -> {
+                        // Answer first, then stop in the background: saving resume data waits ~1.5 s, and
+                        // ending the process (as Quit does) means the next launch starts a fresh engine.
+                        val ctx = app.applicationContext
+                        Thread({
+                            runCatching { engine?.shutdown() }
+                            runCatching { ctx.stopService(android.content.Intent(ctx, com.kirtanya.reel.engine.EngineService::class.java)) }
+                            Log.i(TAG, "stop_engine: stopped for One Launcher")
+                            Thread.sleep(300)
+                            android.os.Process.killProcess(android.os.Process.myPid())
+                        }, "reel-stop-engine").start()
+                        true to "One Stream stopped"
+                    }
+                }
+            }
             else -> false to "Unknown action $method"
         }
     }

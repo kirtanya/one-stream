@@ -70,8 +70,20 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         com.kirtanya.reel.data.sync.PhoneSync(this, sources, watchlist, watched, hidden, OkHttpFetcher(syncHttp, null), appScope)
     }
 
+    /** One Stream activities currently started (visible, PiP included): One Launcher's stop_engine never stops under them. */
+    val startedActivities = java.util.concurrent.atomic.AtomicInteger()
+
     override fun onCreate() {
         super.onCreate()
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) { startedActivities.incrementAndGet() }
+            override fun onActivityStopped(activity: android.app.Activity) { startedActivities.decrementAndGet() }
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
+            override fun onActivityResumed(activity: android.app.Activity) {}
+            override fun onActivityPaused(activity: android.app.Activity) {}
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) {}
+            override fun onActivityDestroyed(activity: android.app.Activity) {}
+        })
         // First, so a crash anywhere below is reported too.
         reports.install()
         appScope.launch { sources.ensureReady() }

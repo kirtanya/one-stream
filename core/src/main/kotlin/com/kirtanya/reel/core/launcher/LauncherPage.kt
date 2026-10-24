@@ -42,6 +42,8 @@ object LauncherPage {
     const val DOWNLOAD = "download"
     const val PREPARE = "prepare"
     const val CANCEL_DOWNLOAD = "cancel_download"
+    /** One Launcher's TV "Speed up": stop the engine if nothing is in use (StopEngine). No extras. */
+    const val STOP_ENGINE = "stop_engine"
 
     /** A title from call() extras: `type` + `tmdb` (int, long or text — launchers differ). */
     fun titleRef(type: Any?, tmdb: Any?): TitleRef? {

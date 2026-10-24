@@ -2,6 +2,7 @@ package com.kirtanya.reel.core
 
 import com.kirtanya.reel.core.launcher.CastHint
 import com.kirtanya.reel.core.launcher.CastRequest
+import com.kirtanya.reel.core.launcher.StopEngine
 import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tvremote.CastOutcome
@@ -73,5 +74,15 @@ class WakeThenPlayTest {
         assertEquals(754_000L, back.startMs)
         // A download link never carries a position.
         assertEquals(null, CastRequest.parse("download", mapOf("type" to "movie", "tmdb" to "550", "t" to "1000"))!!.startMs)
+    }
+}
+
+class StopEngineTest {
+    @Test fun stopsOnlyWhenNothingIsInUse(): Unit {
+        val s = StopEngine
+        assertEquals(StopEngine.Verdict.Stop, s.decide(0, 0, 0))
+        assertEquals(StopEngine.Verdict.Keep("One Stream is open"), s.decide(1, 0, 0))
+        assertEquals(StopEngine.Verdict.Keep("Something is playing"), s.decide(0, 1, 0))
+        assertEquals(StopEngine.Verdict.Keep("2 downloads are running"), s.decide(0, 0, 2))
     }
 }
