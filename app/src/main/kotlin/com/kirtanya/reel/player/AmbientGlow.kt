@@ -47,6 +47,16 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
             kick()
         }
 
+    /**
+     * Crop bars (share of the frame's height cut per side, 0…0.2): the copied frame still has the
+     * baked-in black, so the glow takes its strips from inside the crop, next to what shows.
+     */
+    var crop = 0f
+        set(v) {
+            field = v
+            invalidate()
+        }
+
     init {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
@@ -95,14 +105,19 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
         invalidate()
     }
 
-    /** Where the video is, in this view's coordinates; false when there are no bars to fill. */
+    /**
+     * Where the picture shows, in this view's coordinates; false when there are no bars to fill. The
+     * video's frame (the surface's parent), not the surface: with Crop bars the surface is taller
+     * than what shows and the frame cuts it.
+     */
     private fun videoRect(): Boolean {
         previewVideo?.let { video.set(it); return true }
         val sv = playerView.videoSurfaceView as? SurfaceView ?: return false
-        if (!Ambient.hasBars(sv.width, sv.height, width, height)) return false
-        val a = IntArray(2).also { sv.getLocationInWindow(it) }
+        val shown = sv.parent as? View ?: sv
+        if (!Ambient.hasBars(shown.width, shown.height, width, height)) return false
+        val a = IntArray(2).also { shown.getLocationInWindow(it) }
         val b = IntArray(2).also { getLocationInWindow(it) }
-        video.set(a[0] - b[0], a[1] - b[1], a[0] - b[0] + sv.width, a[1] - b[1] + sv.height)
+        video.set(a[0] - b[0], a[1] - b[1], a[0] - b[0] + shown.width, a[1] - b[1] + shown.height)
         return true
     }
 
@@ -174,7 +189,10 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
         bitmapPaint.alpha = alpha
         val fw = frame.width
         val fh = frame.height
-        val rows = (fh * Ambient.EDGE_SHARE).toInt().coerceAtLeast(1)
+        // The cropped-off rows (baked-in black) are left out: [top0, bottom0) is the picture that shows.
+        val top0 = (fh * crop).toInt().coerceIn(0, fh / 2 - 1)
+        val bottom0 = fh - top0
+        val rows = ((bottom0 - top0) * Ambient.EDGE_SHARE).toInt().coerceAtLeast(1)
         val cols = (fw * Ambient.EDGE_SHARE).toInt().coerceAtLeast(1)
         fun mirrored(src: Rect, l: Float, t: Float, r: Float, b: Float, sx: Float, sy: Float, px: Float, py: Float) {
             canvas.save()
@@ -188,19 +206,19 @@ internal class AmbientGlow(private val playerView: PlayerView) : View(playerView
         val left = video.left.toFloat()
         val right = video.right.toFloat()
         if (video.top > 0) { // above: rows 0…25 %, row 0 against the video
-            srcRect.set(0, 0, fw, rows)
+            srcRect.set(0, top0, fw, top0 + rows)
             mirrored(srcRect, left, top, right, top + video.top, 1f, -1f, 0f, top)
         }
         if (video.bottom < height) { // below: rows 75…100 %, the last row against the video
-            srcRect.set(0, fh - rows, fw, fh)
+            srcRect.set(0, bottom0 - rows, fw, bottom0)
             mirrored(srcRect, left, bottom - (height - video.bottom), right, bottom, 1f, -1f, 0f, bottom)
         }
         if (video.left > 0) { // left: columns 0…25 %
-            srcRect.set(0, 0, cols, fh)
+            srcRect.set(0, top0, cols, bottom0)
             mirrored(srcRect, left, top, left + video.left, bottom, -1f, 1f, left, 0f)
         }
         if (video.right < width) { // right: columns 75…100 %
-            srcRect.set(fw - cols, 0, fw, fh)
+            srcRect.set(fw - cols, top0, fw, bottom0)
             mirrored(srcRect, right - (width - video.right), top, right, bottom, -1f, 1f, right, 0f)
         }
     }

@@ -325,7 +325,19 @@ internal class PanelToggle(
     val set: (Int) -> Unit,
 ) : PanelRow
 
-/** A row of the settings panel: a toggle / list ([PanelToggle]), an action ([PanelExtra]) or a delay slider ([PanelSlider]). */
+/**
+ * Crop bars (black bars baked into the picture): the share cut off the top and the bottom, a slider
+ * with Auto (looks at the picture: [auto] reports a line to show, again with the result) and Reset.
+ */
+internal class PanelCrop(
+    val icon: Int,
+    val label: String,
+    val current: () -> Float,
+    val set: (Float) -> Unit,
+    val auto: (report: (String) -> Unit) -> Unit,
+) : PanelRow
+
+/** A row of the settings panel: a toggle / list ([PanelToggle]), an action ([PanelExtra]), a delay slider ([PanelSlider]) or Crop bars ([PanelCrop]). */
 internal sealed interface PanelRow
 
 /** A delay row: opens a slider over [delay]'s range (the remote's ←/→ or a finger), with Reset. */
@@ -349,6 +361,9 @@ internal const val CHANGE_SOURCE_ROW = "Change source"
 /** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
 internal const val REPORT_ROW = "Report a problem"
 
+/** The settings panel's Crop bars row (next to Picture). */
+internal const val CROP_ROW = "Crop bars"
+
 /** The phone settings panel's picture-in-picture row (the button left the controls row). */
 internal const val PIP_ROW = "Picture in picture"
 
@@ -365,6 +380,8 @@ internal class SettingsPanel(
     private val onExtra: () -> Unit,
     /** Shortest row: 48 dp on the phone (touch areas), 44 on the TV (remote only). */
     private val minRowDp: Int = 48,
+    /** One ←/→ / step of Crop bars: 1 % on the TV (fewer presses), 0.5 % on the phone. */
+    private val cropStep: Float = com.kirtanya.reel.core.player.CropBars.PHONE_STEP,
 ) {
     private val list = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -386,8 +403,14 @@ internal class SettingsPanel(
     private var submenu: String? = null
     val open get() = panel.visibility == View.VISIBLE
 
-    /** Rows after Speed that step through a few values in place on OK (e.g. Cinema mode). */
-    var toggles: List<PanelToggle> = emptyList()
+    /** Rows after Speed: Picture, Crop bars, Cinema mode. */
+    var toggles: List<PanelRow> = emptyList()
+
+    /**
+     * Phone: Crop bars opens a small bar over the picture instead (the panel would cover what's
+     * being cropped); the caller closes the panel. Null = its page in the panel (TV).
+     */
+    var onCrop: ((PanelCrop) -> Unit)? = null
 
     /** Rows under the Subtitles track (delay, search again), the Audio track (night mode, voice boost, delay) and Speed (sleep timer). */
     var subtitleRows: List<PanelRow> = emptyList()
@@ -464,6 +487,9 @@ internal class SettingsPanel(
                 }
             })
             is PanelSlider -> list.addView(row(r.icon, r.label, r.delay.label(r.current()), r.label) { showSlider(r) })
+            is PanelCrop -> list.addView(row(r.icon, r.label, com.kirtanya.reel.core.player.CropBars.label(r.current()), r.label) {
+                onCrop?.invoke(r) ?: showCrop(r)
+            }.also { cropKeys(it, r) })
             is PanelExtra -> {
                 val icon = r.icon ?: when (r.label) {
                     REPORT_ROW -> R.drawable.ic_pl_report
@@ -504,6 +530,65 @@ internal class SettingsPanel(
             slider.value = 0
             value.text = s.delay.label(0)
         })
+        slider.requestFocus()
+    }
+
+    /**
+     * The remote's ←/→ on the Crop bars row change it right there (the value updates in the row), so
+     * the bars can be trimmed without opening its page.
+     */
+    private fun cropKeys(rowView: LinearLayout, r: PanelCrop) {
+        rowView.setOnKeyListener { _, code, event ->
+            val dir = when (code) { KeyEvent.KEYCODE_DPAD_LEFT -> -1; KeyEvent.KEYCODE_DPAD_RIGHT -> 1; else -> 0 }
+            if (dir == 0) return@setOnKeyListener false
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                val next = com.kirtanya.reel.core.player.CropBars.step(r.current(), dir, cropStep)
+                r.set(next)
+                (rowView.getChildAt(rowView.childCount - 1) as? TextView)?.text = com.kirtanya.reel.core.player.CropBars.label(next) + "  ›"
+            }
+            true
+        }
+    }
+
+    /** Crop bars' page: the value, the slider (←/→ on the remote), Auto and Reset. The video changes live behind. */
+    private fun showCrop(r: PanelCrop) {
+        submenu = r.label
+        list.removeAllViews()
+        list.addView(header(r.label))
+        val value = text(22f, medium = true).apply {
+            text = com.kirtanya.reel.core.player.CropBars.label(r.current())
+            gravity = Gravity.CENTER
+            setPadding(0, context.dp(4), 0, context.dp(4))
+        }
+        list.addView(value, LinearLayout.LayoutParams(-1, -2))
+        val slider = CropSlider(context, r.current(), cropStep) { p ->
+            r.set(p)
+            value.text = com.kirtanya.reel.core.player.CropBars.label(p)
+        }
+        slider.tag = SELECTED
+        list.addView(slider, LinearLayout.LayoutParams(-1, context.dp(48)).apply { setMargins(context.dp(6), 0, context.dp(6), 0) })
+        val ends = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(context.dp(14), 0, context.dp(14), context.dp(4)) }
+        ends.addView(text(12f).apply { text = "Off"; setTextColor(PlayerColors.PANEL_VALUE) }, LinearLayout.LayoutParams(0, -2, 1f))
+        ends.addView(text(12f).apply { text = "20 % top and bottom"; setTextColor(PlayerColors.PANEL_VALUE) })
+        list.addView(ends)
+        val status = note("").apply { visibility = View.GONE }
+        fun show(p: Float) {
+            slider.value = p
+            value.text = com.kirtanya.reel.core.player.CropBars.label(p)
+        }
+        list.addView(choice("Auto", false) {
+            r.auto { message ->
+                status.text = message
+                status.visibility = View.VISIBLE
+                show(r.current())
+            }
+        })
+        list.addView(choice("Reset", false) {
+            r.set(0f)
+            show(0f)
+            status.visibility = View.GONE
+        })
+        list.addView(status)
         slider.requestFocus()
     }
 

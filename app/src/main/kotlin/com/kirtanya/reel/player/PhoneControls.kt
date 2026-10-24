@@ -99,8 +99,12 @@ internal class PhoneControls(
         onExtra = { closePanel() },
     )
 
-    /** On/off rows in the settings panel (Picture, Cinema mode). */
-    fun setToggles(list: List<PanelToggle>) { settingsPanel.toggles = list }
+    /** The panel's picture rows (Picture, Crop bars, Cinema mode). */
+    fun setToggles(list: List<PanelRow>) { settingsPanel.toggles = list }
+
+    /** Crop bars' adjust bar (the panel hands over to it so the picture stays in view). */
+    private val cropHud = CropHud(ctx, font) { closeCrop() }.apply { visibility = GONE }
+    val cropOpen get() = cropHud.visibility == VISIBLE
 
     /** The panel's section rows (subtitle delay…, night mode…, sleep timer) and its choice callback. */
     fun setRows(subtitle: List<PanelRow>, audio: List<PanelRow>, playback: List<PanelRow>, onChoice: (String) -> Unit) {
@@ -182,6 +186,8 @@ internal class PhoneControls(
         addView(unlock, LayoutParams(ctx.dp(52), ctx.dp(52), Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = ctx.dp(24) })
         unlock.visibility = GONE
         addView(settingsPanel.panel, LayoutParams(ctx.dp(PANEL_DP), -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(ctx.dp(16), ctx.dp(16), ctx.dp(16), ctx.dp(16)) })
+        addView(cropHud, LayoutParams(ctx.dp(CROP_DP), -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(ctx.dp(16), ctx.dp(16), ctx.dp(16), ctx.dp(16)) })
+        settingsPanel.onCrop = { openCrop(it) }
 
         // Keep the band clear of the notch / gesture bars.
         ViewCompat.setOnApplyWindowInsetsListener(safe) { v, insets ->
@@ -215,6 +221,8 @@ internal class PhoneControls(
         // Portrait is 360 dp wide: the panel narrows to keep its 16 dp margins.
         val lp = settingsPanel.panel.layoutParams as LayoutParams
         lp.width = minOf(ctx.dp(PANEL_DP), MeasureSpec.getSize(widthMeasureSpec) - lp.leftMargin - lp.rightMargin)
+        val cp = cropHud.layoutParams as LayoutParams
+        cp.width = minOf(ctx.dp(CROP_DP), MeasureSpec.getSize(widthMeasureSpec) - cp.leftMargin - cp.rightMargin)
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
@@ -267,6 +275,7 @@ internal class PhoneControls(
 
     fun show() {
         if (locked) { flashUnlock(); return }
+        if (cropOpen) return
         if (!visible) {
             controls.visibility = VISIBLE
             // After layout, so the band has its size.
@@ -294,6 +303,7 @@ internal class PhoneControls(
         onShown?.invoke(false)
         unlock.visibility = GONE
         hud.visibility = GONE
+        cropHud.visibility = GONE
         main.removeCallbacks(hideRunnable)
         main.removeCallbacks(tick)
     }
@@ -305,6 +315,7 @@ internal class PhoneControls(
 
     /** System Back: closes the settings panel first. True when it did. */
     fun handleBack(): Boolean {
+        if (cropOpen) { closeCrop(); return true }
         if (settingsPanel.open) { if (!settingsPanel.back()) closePanel(); return true }
         return false
     }
@@ -320,6 +331,23 @@ internal class PhoneControls(
         if (!settingsPanel.open) return
         settingsPanel.hide()
         touch()
+    }
+
+    /** Crop bars: the panel and the band step aside for the adjust bar; the picture changes live above it. */
+    private fun openCrop(r: PanelCrop) {
+        settingsPanel.hide()
+        controls.animate().cancel()
+        controls.visibility = GONE
+        onShown?.invoke(false)
+        main.removeCallbacks(hideRunnable)
+        main.removeCallbacks(tick)
+        cropHud.show(r)
+    }
+
+    private fun closeCrop() {
+        if (!cropOpen) return
+        cropHud.visibility = GONE
+        show()
     }
 
     private fun setLocked(on: Boolean) {
@@ -432,6 +460,7 @@ internal class PhoneControls(
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (locked) { flashUnlock(); return true }
             if (settingsPanel.open) { closePanel(); return true }
+            if (cropOpen) { closeCrop(); return true }
             // A tap while the skip bubble is up adds another step on that side.
             val side = when { e.x < width / 3f -> -1; e.x > width * 2 / 3f -> 1; else -> 0 }
             if (tapSeekSide != 0 && side == tapSeekSide) { tapSeek(side); return true }
@@ -440,7 +469,7 @@ internal class PhoneControls(
         }
 
         override fun onDoubleTap(e: MotionEvent): Boolean {
-            if (locked) return true
+            if (locked || cropOpen) return true
             val third = width / 3f
             when {
                 e.x < third -> tapSeek(-1)
@@ -451,7 +480,7 @@ internal class PhoneControls(
         }
 
         override fun onLongPress(e: MotionEvent) {
-            if (locked || drag != Drag.NONE) return
+            if (locked || cropOpen || drag != Drag.NONE) return
             val p = player ?: return
             // While playing or waiting for data (not when the user paused).
             if (!p.playWhenReady) return
@@ -462,7 +491,7 @@ internal class PhoneControls(
         }
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
-            if (locked || fastHeld || e1 == null) return false
+            if (locked || cropOpen || fastHeld || e1 == null) return false
             val p = player ?: return false
             val tx = e2.x - e1.x
             val ty = e2.y - e1.y
@@ -707,5 +736,7 @@ internal class PhoneControls(
         const val TITLE_MIN_DP = 120
         const val TITLE_GAP_DP = 16
         const val PANEL_DP = 340
+        /** Crop bars' adjust bar: wide enough for a fine slider, narrower than the landscape screen so the picture shows beside it. */
+        const val CROP_DP = 420
     }
 }

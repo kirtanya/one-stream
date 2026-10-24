@@ -56,10 +56,10 @@ internal class TvControls(
     private val elapsed = text(14f, medium = true)
     private val remaining = text(14f, medium = true)
     private val seek = SeekStrip(context, font(true))
-    private val settingsPanel = SettingsPanel(context, font, { player }, extraSettings, onExtra = { hide() }, minRowDp = 44)
+    private val settingsPanel = SettingsPanel(context, font, { player }, extraSettings, onExtra = { hide() }, minRowDp = 44, cropStep = com.kirtanya.reel.core.player.CropBars.TV_STEP)
 
-    /** On/off rows in the settings panel (Cinema mode). */
-    fun setToggles(list: List<PanelToggle>) { settingsPanel.toggles = list }
+    /** The panel's picture rows (Picture, Crop bars, Cinema mode). */
+    fun setToggles(list: List<PanelRow>) { settingsPanel.toggles = list }
 
     /** The panel's section rows (subtitle delay…, night mode…, sleep timer) and its choice callback. */
     fun setRows(subtitle: List<PanelRow>, audio: List<PanelRow>, playback: List<PanelRow>, onChoice: (String) -> Unit) {

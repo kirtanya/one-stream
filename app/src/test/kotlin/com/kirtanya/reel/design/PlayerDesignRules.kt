@@ -152,6 +152,32 @@ class PlayerDesignRules {
     @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
     fun phonePortraitSubtitleDelay130() = phoneSlider("player/phone-portrait-subtitle-delay-130", "Subtitle delay")
 
+    // Crop bars: the phone's adjust bar (after Auto, so its result line shows) and the TV's page.
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneCrop() = phoneCrop("player/phone-crop")
+
+    @Test @Config(sdk = [34], qualifiers = PHONE, fontScale = 1.3f)
+    fun phoneCrop130() = phoneCrop("player/phone-crop-130")
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitCrop() = phoneCrop("player/phone-portrait-crop")
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortraitCrop130() = phoneCrop("player/phone-portrait-crop-130")
+
+    private fun phoneCrop(where: String) {
+        val scene = PlayerScenes.phone(panel = true, withPlayer = true, cropPercent = 13f, crop = true, cropAuto = true)
+        check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvCrop() {
+        val scene = PlayerScenes.tv(PlayerScenes.MID, panel = true, cropPercent = 13f, crop = true)
+        check("player/tv-crop", ViewChecks(scene.root, "player/tv-crop"), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
+        scene.release()
+    }
+
     private fun phoneOverlay(where: String, overlay: PlayerScenes.Overlay) {
         val scene = PlayerScenes.phone(panel = false, withPlayer = true, overlay = overlay)
         check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)

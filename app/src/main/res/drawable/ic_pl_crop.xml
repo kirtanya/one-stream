@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One Stream player icon set: rounded, filled, 24 dp. Crop bars: a frame with its top and bottom cut in. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M3,8.5h18c0.55,0 1,0.45 1,1v5c0,0.55 -0.45,1 -1,1H3c-0.55,0 -1,-0.45 -1,-1v-5c0,-0.55 0.45,-1 1,-1z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,7.2l-3,-3h2V1.5h2v2.7h2zM12,16.8l3,3h-2v2.7h-2v-2.7H9z"/>
+</vector>

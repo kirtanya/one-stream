@@ -124,6 +124,27 @@ internal object PlayerScenes {
         ShadowLooper.idleMainLooper()
     }
 
+    /** The picture rows PlayerActivity adds (buildLayout): Picture, Crop bars (at [cropPercent]), Cinema mode. */
+    fun pictureRows(cropPercent: Float = 0f): List<PanelRow> {
+        val modes = com.kirtanya.reel.core.playback.PictureMode.entries
+        val levels = com.kirtanya.reel.core.playback.Ambient.Level.entries
+        var crop = cropPercent
+        return listOf(
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Picture", modes.map { it.label }, { 0 }, asList = true) {},
+            PanelCrop(com.kirtanya.reel.R.drawable.ic_pl_crop, CROP_ROW, { crop }, { crop = it }) { report -> report("Bars found · " + com.kirtanya.reel.core.player.CropBars.label(crop)) },
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Cinema mode", levels.map { it.label }, { 0 }) {},
+        )
+    }
+
+    /** Opens Crop bars from the panel (phone: the adjust bar; TV: its page); [auto] presses Auto (phone). */
+    fun openCrop(root: android.view.View, auto: Boolean) {
+        openSlider(root, CROP_ROW)
+        if (auto) {
+            root.findViewWithTag<android.view.View>("crop:Auto")?.performClick()
+            ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
+        }
+    }
+
     private fun playerView(activity: ComponentActivity) =
         PlayerView(activity).apply { useController = false; setShutterBackgroundColor(Color.TRANSPARENT); setBackgroundColor(Color.TRANSPARENT) }
 
@@ -135,22 +156,19 @@ internal object PlayerScenes {
     fun phone(
         panel: Boolean, withPlayer: Boolean = false, next: Boolean = true, scrubAtMs: Long? = null, file: Boolean = false, panelEnd: Boolean = false,
         overlay: Overlay? = null, slider: String? = null,
+        cropPercent: Float = 0f, crop: Boolean = false, cropAuto: Boolean = false, video: ((FrameLayout, PlayerView) -> Unit)? = null,
     ): Phone {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
         root.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF6E8FB5.toInt(), 0xFF2B3A55.toInt(), 0xFFC98B5E.toInt()))
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        video?.invoke(root, playerView)
         val c = PhoneControls(activity, playerView, TITLE, { null }, { extras(file) },
             onBack = {}, onPip = {}, nextLabel = { if (next) "Next · S1 E4" else null }, onNext = {},
             onSendToTv = {}, canSendToTv = { true })
         // The rows the activity adds (PlayerActivity.buildLayout), so the panel shows its real length.
-        val modes = com.kirtanya.reel.core.playback.PictureMode.entries
-        val levels = com.kirtanya.reel.core.playback.Ambient.Level.entries
-        c.setToggles(listOf(
-            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Picture", modes.map { it.label }, { 0 }, asList = true) {},
-            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Cinema mode", levels.map { it.label }, { 0 }) {},
-        ))
+        c.setToggles(pictureRows(cropPercent))
         val (subRows, audioRows, playRows) = rows()
         c.setRows(subRows, audioRows, playRows) {}
         root.addView(c, FrameLayout.LayoutParams(-1, -1))
@@ -167,6 +185,7 @@ internal object PlayerScenes {
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
         if (panel && panelEnd) scrollPanelToEnd(root)
         if (panel && slider != null) openSlider(root, slider)
+        if (panel && crop) openCrop(root, cropAuto)
         if (overlay == Overlay.SKIP_OVER_BAND) {
             ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
             o.placeSkipChip(c.coveredBottomPx())
@@ -187,13 +206,18 @@ internal object PlayerScenes {
     const val SCRUB_MS = 3_600_000L
 
     /** TV strip over a picture [picture] (top → bottom); always white with its small shadow. */
-    fun tv(picture: IntArray, panel: Boolean = false, file: Boolean = false, panelEnd: Boolean = false, overlay: Overlay? = null, slider: String? = null, strip: Boolean = false): Tv {
+    fun tv(
+        picture: IntArray, panel: Boolean = false, file: Boolean = false, panelEnd: Boolean = false, overlay: Overlay? = null, slider: String? = null, strip: Boolean = false,
+        cropPercent: Float = 0f, crop: Boolean = false, video: ((FrameLayout, PlayerView) -> Unit)? = null,
+    ): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
         root.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, picture)
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        video?.invoke(root, playerView)
         val c = TvControls(playerView, TITLE, { null }, extraSettings = { extras(file) })
+        c.setToggles(pictureRows(cropPercent))
         val (subRows, audioRows, playRows) = rows()
         c.setRows(subRows, audioRows, playRows) {}
         root.addView(c.view, FrameLayout.LayoutParams(-1, -1))
@@ -210,6 +234,7 @@ internal object PlayerScenes {
         ShadowLooper.idleMainLooper()
         if (panel && panelEnd) scrollPanelToEnd(root)
         if (panel && slider != null) openSlider(root, slider)
+        if (panel && crop) openCrop(root, auto = false)
         val scene = Tv(root, c, exo, o)
         scene.midFilm()
         return scene

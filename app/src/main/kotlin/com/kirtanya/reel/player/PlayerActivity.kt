@@ -640,12 +640,24 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         val view = playerView.subtitleView ?: return
         val style = prefs.caption
         com.kirtanya.reel.captions.CaptionLook.apply(view, style)
-        val covered = phoneControls?.coveredBottomPx() ?: 0
-        if (covered > 0 && playerView.height > 0) {
-            val lift = (covered + dp(8)).toFloat() / playerView.height
-            view.setBottomPaddingFraction(maxOf(style.position.bottomFraction, lift))
+        // The SubtitleView fills the video's frame, which can run past the screen (Fill, a crop) or sit
+        // under the band: keep captions where they show (CaptionSpace).
+        if (view.height > 0 && playerView.height > 0) {
+            val a = IntArray(2).also { view.getLocationInWindow(it) }
+            val b = IntArray(2).also { playerView.getLocationInWindow(it) }
+            val top = a[1] - b[1]
+            view.setBottomPaddingFraction(com.kirtanya.reel.core.player.CaptionSpace.bottomFraction(
+                style.readable.position.bottomFraction, top, top + view.height, 0, playerView.height,
+                phoneControls?.coveredBottomPx() ?: 0, dp(8),
+            ))
+        }
+        if (!captionWatch) {
+            // The frame changes shape (picture mode, crop, the video's size): place captions again.
+            captionWatch = true
+            view.addOnLayoutChangeListener { _, l, t, r, bt, ol, ot, or, ob -> if (l != ol || t != ot || r != or || bt != ob) view.post { applyCaptionLook() } }
         }
     }
+    private var captionWatch = false
 
     // ---------------------------------------------------------------- progress + resume
 
@@ -1205,7 +1217,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         val v = player?.videoSize
         val ratio = if (v != null && v.width > 0 && v.height > 0) {
             // Android allows 1:2.39 … 2.39:1.
-            val r = (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(1 / 2.39f, 2.39f)
+            val r = com.kirtanya.reel.core.player.CropBars.aspect(v.width * v.pixelWidthHeightRatio / v.height, cropPercent).coerceIn(1 / 2.39f, 2.39f)
             android.util.Rational((r * 1000).toInt(), 1000)
         } else android.util.Rational(16, 9)
         return android.app.PictureInPictureParams.Builder().setAspectRatio(ratio).build()
@@ -1265,6 +1277,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         super.onStop()
         saveProgress()
         flushIntroLearning()
+        // A crop changed just before leaving: save it now, not after the pause that waits for the slider to rest.
+        if (cropUnsaved) { playerView.removeCallbacks(saveCrop); saveCrop.run() }
         // Stop (not just pause): ends the loader and closes our reader, keeping the item and position.
         player?.stop()
         reconnectJob?.cancel()
@@ -1677,15 +1691,68 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
      */
     private fun applyPicture(mode: com.kirtanya.reel.core.playback.PictureMode = currentPicture) {
         if (!::playerView.isInitialized) return
-        playerView.resizeMode = when (mode) {
-            com.kirtanya.reel.core.playback.PictureMode.FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            com.kirtanya.reel.core.playback.PictureMode.STRETCH -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-            else -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-        }
-        val frame = playerView.findViewById<androidx.media3.ui.AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
         val own = player?.videoSize?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width * it.pixelWidthHeightRatio / it.height }
-        (mode.ratio ?: own)?.let { frame?.setAspectRatio(it) }
-        if (::ambient.isInitialized) playerView.post { ambient.refresh() }
+        // Crop bars first, then the mode works on what's left (PictureLayout).
+        PictureLayout.apply(playerView, mode, own, cropPercent)
+        if (::ambient.isInitialized) {
+            ambient.crop = cropPercent / 100f
+            playerView.post { ambient.refresh() }
+        }
+    }
+
+    // ---------------------------------------------------------------- crop bars (black bars baked into the picture)
+
+    /** Share of the video's height cut off the top and the bottom (each), 0–20 %; this title's, remembered. */
+    private var cropPercent = 0f
+    private var cropUnsaved = false
+    private val saveCrop = Runnable {
+        cropUnsaved = false
+        app.titlePrefs.update(playback.titleKey) { it.copy(cropPercent = com.kirtanya.reel.core.player.CropBars.saved(cropPercent)) }
+        stat("crop", mapOf("pct" to cropPercent, "how" to cropHow))
+    }
+    private var cropHow = "slider"
+
+    /**
+     * A new crop ([how]: slider / auto / reset): the picture follows at once (live while the slider
+     * moves); saving for the title and the telemetry line wait until it rests for a moment.
+     */
+    private fun setCrop(percent: Float, how: String) {
+        val p = com.kirtanya.reel.core.player.CropBars.clamp(percent)
+        cropHow = if (p == 0f && how == "slider") "reset" else how
+        if (p == cropPercent) return
+        cropPercent = p
+        cropUnsaved = true
+        applyPicture()
+        playerView.removeCallbacks(saveCrop)
+        playerView.postDelayed(saveCrop, 800)
+    }
+
+    /**
+     * Auto: three copies of the frame 0.3 s apart (CropBars.detect: bars on both sides, flat black,
+     * the smallest across frames), then crop to them. [report] gets what to show under the slider.
+     */
+    private fun autoCrop(report: (String) -> Unit) {
+        val sv = playerView.videoSurfaceView as? android.view.SurfaceView
+        if (sv == null || sv.holder.surface?.isValid != true || (player?.videoSize?.width ?: 0) == 0) {
+            report("No picture to look at yet")
+            return
+        }
+        report("Looking for bars…")
+        val started = now()
+        FrameGrab.luma(sv, count = 3, gapMs = 300) { frames ->
+            val d = com.kirtanya.reel.core.player.CropBars.detect(frames)
+            stat("crop", mapOf("auto" to d.outcome.name.lowercase(), "pct" to d.percent, "frames" to frames.size,
+                "perFrame" to d.perFrame.joinToString("/") { it?.let { v -> "%.1f".format(Locale.ROOT, v) } ?: "dark" }, "ms" to now() - started))
+            when {
+                frames.isEmpty() -> report("Couldn't read the picture")
+                d.outcome == com.kirtanya.reel.core.player.CropBars.Outcome.FOUND -> {
+                    setCrop(d.percent, "auto")
+                    report("Bars found · " + com.kirtanya.reel.core.player.CropBars.label(d.percent))
+                }
+                d.outcome == com.kirtanya.reel.core.player.CropBars.Outcome.NONE -> report("No bars found")
+                else -> report("Too dark to tell. Try on a brighter scene")
+            }
+        }
     }
 
     // ---------------------------------------------------------------- helpers
@@ -1832,6 +1899,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         val picture = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_fit, "Picture", modes.map { it.label }, { currentPicture.ordinal }, asList = true) { i ->
             setPicture(modes[i])
         }
+        cropPercent = com.kirtanya.reel.core.player.CropBars.clamp(saved?.cropPercent ?: 0f)
+        if (cropPercent > 0f) stat("crop", mapOf("pct" to cropPercent, "how" to "start"))
+        val crop = PanelCrop(com.kirtanya.reel.R.drawable.ic_pl_crop, CROP_ROW, { cropPercent }, { setCrop(it, "slider") }) { report -> autoCrop(report) }
         playerView = PlayerView(this).apply {
             keepScreenOn = true
             // No centre spinner: a small chip at the top right says it (TV and phone).
@@ -1866,7 +1936,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 hasNext = { nextReady != null },
                 onNext = { playNext() },
             ).also {
-                it.setToggles(listOf(picture, cinema))
+                it.setToggles(listOf(picture, crop, cinema))
                 it.seekStepMs = options.seekStepS * 1_000L
                 root.addView(it.view, FrameLayout.LayoutParams(-1, -1))
             }
@@ -1903,7 +1973,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 setPicture(if (fill) com.kirtanya.reel.core.playback.PictureMode.FILL else com.kirtanya.reel.core.playback.PictureMode.FIT)
             },
         )
-        phoneControls?.setToggles(listOf(picture, cinema))
+        phoneControls?.setToggles(listOf(picture, crop, cinema))
         phoneControls?.seekStepMs = options.seekStepS * 1_000L
         phoneControls?.syncZoom(currentPicture == com.kirtanya.reel.core.playback.PictureMode.FILL)
         root.addView(phoneControls, FrameLayout.LayoutParams(-1, -1))

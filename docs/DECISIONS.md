@@ -5,6 +5,31 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-24 · Crop bars: cut baked-in black bars, then the picture mode fills the screen**
+Decision (user request: Stretch / Fill can't remove black bars that are inside the video). Settings panel → Playback →
+"Crop bars" (between Picture and Cinema mode): the same share off the top and the bottom, 0–20 % of the video's height
+per side, remembered per title (`TitlePrefs.cropPercent`, null = off). Logic + tests: `core/player/CropBars.kt`
+(`CropBarsTest`); player: `player/CropControls.kt`, `PlayerKit` (PanelCrop), `PhoneControls`, `TvControls`, `AmbientGlow`.
+Also decided (Claude):
+- Layout: the content frame takes the shape of what's left (video shape / (1 − 2c)), the video surface is scaled
+  1 / (1 − 2c) vertically inside it and the frame clips; then Fit / Fill / Stretch / forced shapes work as before on the
+  cropped picture. Stays on the SurfaceView (no TextureView switch: the R4 is weak and SurfaceView keeps HDR /
+  hardware composition). Where an Android version doesn't clip a SurfaceView by its parent, the cut rows still don't
+  show: the surface is under the window, which is opaque outside the frame.
+- Phone: tapping the row closes the panel and the band and shows a small adjust bar at the bottom (title + value,
+  − slider +, Auto, Reset, Done; 0.5 % steps), so the picture stays in view and changes live. Tap on the picture /
+  Back = Done. TV: ←/→ on the row change it in place (1 % steps); OK opens its page (value, slider, Auto, Reset).
+- Auto: 3 PixelCopy frames (128 × 200) 0.3 s apart. A bar row is flat black (≤ 28 luma, mean ≤ 20, spread ≤ 6) over
+  97 % of the row, or over half of it with both ends black (burnt-in subtitles in the bar). Per frame the smaller of
+  top / bottom (both bars needed); a frame whose film averages < 24 luma is skipped as too dark; across frames the
+  smallest wins (a dark scene can only inflate bars). Rounded up to 0.5 %, < 1 % = "No bars found", all dark = "Too
+  dark to tell". Telemetry `crop` (pct, how = slider / reset / auto / start; Auto adds result, frames, per-frame, ms).
+- Captions: the SubtitleView fills the cropped frame, so they sit on the picture; when the frame runs past the screen
+  (Fill) or under the phone band, `CaptionSpace` lifts them to stay visible. Cinema mode keeps working: the glow
+  reads the frame's bounds (not the scaled surface) and takes its strips from inside the crop.
+Evidence: before / after renders `CropRender` (letterboxed 2.4:1-in-16:9 stand-in), PlayerDesignRules crop scenes (phone
+land / portrait, 100 / 130 %, TV) pass with no new violations. Not yet checked on the devices.
+
 **2026-10-22 · Debrid "downloading" placeholder clips: detect, stop, fall back**
 Decision (user report: a Debridio link played "[Debridio] Downloading to Provider — Please wait" instead of the film).
 Logic + tests: `core/player/Placeholder.kt` (PlaceholderCheck, PlaceholderFallback, NotReadySources),
