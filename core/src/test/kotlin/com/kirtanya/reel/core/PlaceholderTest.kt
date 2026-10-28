@@ -3,6 +3,10 @@ package com.kirtanya.reel.core
 import com.kirtanya.reel.core.player.NotReadySources
 import com.kirtanya.reel.core.player.PlaceholderCheck
 import com.kirtanya.reel.core.player.PlaceholderFallback
+import com.kirtanya.reel.core.player.Readiness
+import com.kirtanya.reel.core.player.ReadyCheck
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 import com.kirtanya.reel.core.sources.CacheState
 import com.kirtanya.reel.core.sources.DebridCache
 import com.kirtanya.reel.core.sources.Quality
@@ -141,6 +145,40 @@ class PlaceholderTest {
         assertEquals(cached, PlaceholderFallback.pick(current, ranked) { false }, "cached first")
         assertEquals(unknown, PlaceholderFallback.pick(current, ranked) { it == cached.key }, "then unknown")
         assertNull(PlaceholderFallback.pick(current, ranked) { it == cached.key || it == unknown.key }, "never torrents, trailers or uncached")
+    }
+
+    @Test fun candidatesSkipWhatTheDeviceCantPlay(): Unit {
+        val current = direct("current")
+        val av1 = direct("av1", cache = CacheState.CACHED).copy(quality = Quality(resolution = 1080, av1 = true))
+        val h264 = direct("h264")
+        val ranked = listOf(current, av1, h264)
+        assertEquals(listOf(av1, h264), PlaceholderFallback.candidates(current, ranked, { false }))
+        assertEquals(listOf(h264), PlaceholderFallback.candidates(current, ranked, { false }, skip = { it.quality.av1 }), "no AV1 decoder: skipped")
+    }
+
+    @Test fun readyCheckReadsWhereTheLinkEnded(): Unit {
+        // Debridio: an uncached link ends at its "downloading" clip; a cached one at the debrid service's file.
+        assertEquals(Readiness.NOT_READY, ReadyCheck.classify("https://static.debridio.com/videos/downloading.mp4", 206))
+        assertEquals(Readiness.READY, ReadyCheck.classify("https://n3zy9n.debrid.it/dl/abc/Avengers.Age.of.Ultron.2015.1080p.mkv", 206))
+        assertEquals(Readiness.FAILED, ReadyCheck.classify("https://addon.debridio.com/x/play/y", 500))
+        assertEquals(Readiness.FAILED, ReadyCheck.classify(null, 0))
+    }
+
+    @Test fun firstReadyWaitsForBetterRankedOnes() = runTest {
+        val a = direct("a"); val b = direct("b"); val c = direct("c"); val d = direct("d")
+        // b answers last but is ranked above c, so b wins; a isn't ready.
+        val slow = mapOf(a to 10L, b to 300L, c to 20L, d to 5L)
+        val ready = mapOf(a to Readiness.NOT_READY, b to Readiness.READY, c to Readiness.READY, d to Readiness.READY)
+        val (pick, answers) = ReadyCheck.firstReady(listOf(a, b, c, d), parallel = 4) { delay(slow.getValue(it)); ready.getValue(it) }
+        assertEquals(b, pick)
+        assertEquals(Readiness.NOT_READY, answers[a], "the not-ready one is reported, to be marked")
+    }
+
+    @Test fun firstReadyGivesUpInTime() = runTest {
+        val a = direct("a"); val b = direct("b")
+        val (pick, answers) = ReadyCheck.firstReady(listOf(a, b), budgetMs = 1_000) { if (it == a) Readiness.NOT_READY else { delay(5_000); Readiness.READY } }
+        assertNull(pick, "nothing ready within the budget")
+        assertEquals(Readiness.NOT_READY, answers[a])
     }
 
     @Test fun notReadyLastsThirtyMinutes(): Unit {

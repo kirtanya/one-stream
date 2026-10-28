@@ -1146,24 +1146,52 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun addonName() = com.kirtanya.reel.core.sources.SourceFacts.providerLabel(playback.source.provider)
 
     /**
-     * Another source for this film / episode (PlaceholderFallback): the test hook's list, else a fresh search
-     * (up to 15 s, taking whatever has answered by then).
+     * Another source for this film / episode that is ready now. Candidates (PlaceholderFallback: the test hook's
+     * list, else a fresh search, up to 15 s, taking whatever has answered by then; no AV1 where the device can't
+     * decode it) are checked before switching (ReadyCheck: where each link ends up, 3 at a time, ≤ 12 s): debrid
+     * addons list hundreds of links and most aren't cached, so trying them blindly meant player after player
+     * playing "downloading" clips. Not-ready ones are marked so the Sources page lists them last.
      */
     private suspend fun findAlternative(): Source? {
         val notReady = { key: String -> NotReadyMemory.isNotReady(key) }
-        intent.getStringExtra(EXTRA_ALTERNATIVES)?.let { list ->
-            val given = runCatching { json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Source.serializer()), list) }.getOrDefault(emptyList())
-            return com.kirtanya.reel.core.player.PlaceholderFallback.pick(playback.source, given, notReady)
+        val ranked: List<Source> = intent.getStringExtra(EXTRA_ALTERNATIVES)?.let { list ->
+            runCatching { json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Source.serializer()), list) }.getOrDefault(emptyList())
+        } ?: run {
+            val req = sourceRequest(playback.episode) ?: return null
+            var latest: List<Source> = emptyList()
+            app.sources.ensureReady()
+            withTimeoutOrNull(15_000) {
+                app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision()))
+                    .transformWhile { emit(it); !it.done }
+                    .collect { latest = it.sources }
+            }
+            latest
         }
-        val req = sourceRequest(playback.episode) ?: return null
-        var latest: List<Source> = emptyList()
-        app.sources.ensureReady()
-        withTimeoutOrNull(15_000) {
-            app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision()))
-                .transformWhile { emit(it); !it.done }
-                .collect { latest = it.sources }
+        val avoidAv1 = rankPrefs(this, isTelevision()).avoidAv1
+        val candidates = com.kirtanya.reel.core.player.PlaceholderFallback
+            .candidates(playback.source, ranked, notReady, skip = { avoidAv1 && it.quality.av1 })
+            .take(com.kirtanya.reel.core.player.ReadyCheck.MAX_CHECKS)
+        if (candidates.isEmpty()) return null
+        val client = app.http.newBuilder()
+            .connectTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        val started = now()
+        val (pick, answers) = com.kirtanya.reel.core.player.ReadyCheck.firstReady(candidates) { s ->
+            withContext(Dispatchers.IO) {
+                com.kirtanya.reel.core.player.ReadyCheck.check(client, s.url!!, s.headers, com.kirtanya.reel.core.sources.CHROME_UA)
+            }
         }
-        return com.kirtanya.reel.core.player.PlaceholderFallback.pick(playback.source, latest, notReady)
+        answers.forEach { (s, r) -> if (r == com.kirtanya.reel.core.player.Readiness.NOT_READY) NotReadyMemory.mark(s.key) }
+        stat("placeholderCheck", mapOf(
+            "candidates" to candidates.size,
+            "checked" to answers.size,
+            "notReady" to answers.count { it.value == com.kirtanya.reel.core.player.Readiness.NOT_READY },
+            "failed" to answers.count { it.value == com.kirtanya.reel.core.player.Readiness.FAILED },
+            "found" to (pick != null),
+            "ms" to now() - started,
+        ))
+        return pick
     }
 
     /** Plays [alt] from where this one was to start, with a chip saying why (Change source's hand-over). */

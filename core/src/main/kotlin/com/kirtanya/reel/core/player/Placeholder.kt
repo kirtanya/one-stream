@@ -5,6 +5,14 @@ import com.kirtanya.reel.core.sources.DebridCache
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceFacts
 import com.kirtanya.reel.core.sources.SourceKind
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /** How the player knew a debrid link played the addon's "downloading" clip instead of the film. */
 enum class PlaceholderReason(val stat: String) { DURATION("duration"), PATTERN("pattern") }
@@ -90,10 +98,84 @@ object PlaceholderCheck {
  */
 object PlaceholderFallback {
     fun pick(current: Source, ranked: List<Source>, notReady: (String) -> Boolean): Source? =
+        candidates(current, ranked, notReady).firstOrNull()
+
+    /**
+     * Every source that could take over, best first (see [pick]); [skip] drops ones this device can't play
+     * (AV1 where there's no decoder). Debrid addons list hundreds of links and most aren't cached, so the player
+     * checks these with [ReadyCheck] before switching instead of trying them one by one.
+     */
+    fun candidates(current: Source, ranked: List<Source>, notReady: (String) -> Boolean, skip: (Source) -> Boolean = { false }): List<Source> =
         ranked.filter {
             it.kind == SourceKind.DIRECT && !it.isExtra && it.url != null && it.key != current.key && !notReady(it.key) &&
-                DebridCache.of(it) != CacheState.UNCACHED
-        }.sortedBy { if (DebridCache.of(it) == CacheState.CACHED) 0 else 1 }.firstOrNull()
+                DebridCache.of(it) != CacheState.UNCACHED && !skip(it)
+        }.sortedBy { if (DebridCache.of(it) == CacheState.CACHED) 0 else 1 }
+}
+
+/** What a debrid link leads to right now. */
+enum class Readiness { READY, NOT_READY, FAILED }
+
+/**
+ * Is a link's file there yet, without playing it: a debrid addon's link redirects to the service's file when
+ * it's cached and to its "downloading" clip when not (Debridio: `static.debridio.com/…/downloading.mp4`). One
+ * tiny ranged request follows the redirects and reads where it ended ([PlaceholderCheck.matchUrl]).
+ *
+ * Opening an uncached link makes the addon start fetching it on the service, as playing it would: it's only
+ * done for the few the player would otherwise try anyway.
+ */
+object ReadyCheck {
+    /** Where a link ended up: placeholder → not ready; an answer with the file → ready; an error → failed. */
+    fun classify(finalUrl: String?, httpCode: Int): Readiness = when {
+        finalUrl == null || httpCode !in 200..299 -> Readiness.FAILED
+        PlaceholderCheck.matchUrl(finalUrl) != null -> Readiness.NOT_READY
+        else -> Readiness.READY
+    }
+
+    /** Follows [url]'s redirects with a 1-byte request (blocking; call off the main thread). */
+    fun check(client: OkHttpClient, url: String, headers: Map<String, String> = emptyMap(), userAgent: String? = null): Readiness = try {
+        val req = Request.Builder().url(url).header("Range", "bytes=0-0").apply {
+            userAgent?.let { header("User-Agent", it) }
+            headers.forEach { (k, v) -> header(k, v) }
+        }.build()
+        client.newCall(req).execute().use { classify(it.request.url.toString(), it.code) }
+    } catch (e: Exception) {
+        Readiness.FAILED
+    }
+
+    /**
+     * The best-ranked of [candidates] that's ready, checking [parallel] at a time within [budgetMs] (a later one
+     * that answered first still waits for the better ones). Also returns every answer, so the player can mark the
+     * not-ready ones. Null source = none ready in time.
+     */
+    suspend fun firstReady(
+        candidates: List<Source>,
+        parallel: Int = 3,
+        budgetMs: Long = 12_000,
+        check: suspend (Source) -> Readiness,
+    ): Pair<Source?, Map<Source, Readiness>> {
+        val answers = java.util.concurrent.ConcurrentHashMap<Source, Readiness>()
+        val found = withTimeoutOrNull(budgetMs) {
+            coroutineScope {
+                val gate = Semaphore(parallel)
+                val jobs: List<Deferred<Readiness>> = candidates.map { s ->
+                    async { gate.withPermit { check(s).also { answers[s] = it } } }
+                }
+                var winner: Source? = null
+                for ((i, job) in jobs.withIndex()) {
+                    if (job.await() == Readiness.READY) {
+                        winner = candidates[i]
+                        break
+                    }
+                }
+                jobs.forEach { it.cancel() } // the rest aren't needed (or the winner came first)
+                winner
+            }
+        }
+        return found to answers.toMap()
+    }
+
+    /** How many candidates are checked at most: enough to get past a run of uncached links, not the whole list. */
+    const val MAX_CHECKS = 8
 }
 
 /**
