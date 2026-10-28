@@ -5,6 +5,21 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-28 · Debrid fallback checks links before switching (Debridio kept loading)**
+Decision (user report: Debridio "doesn't load properly / keeps loading"). Logic + tests: `core/player/Placeholder.kt`
+(`PlaceholderFallback.candidates`, `ReadyCheck`, `Readiness`; `PlaceholderTest`). Player: `PlayerActivity.findAlternative`.
+Why: on a real search (Avengers: Age of Ultron, TV) Debridio's Scraper AD listed ~700 links with no cache markers; of the
+first 8 opened, 7 redirected to `static.debridio.com/…/downloading.mp4` and the one cached file was AV1 (no decoder on the
+TV). The fallback picked one unknown link at a time, each a whole new player that played the clip again, up to 3 hops
+plus a 15 s search each → a minute of loading, then Not ready.
+Also decided (Claude):
+- After a placeholder, up to 8 candidates (cached first, ranker order; AV1 skipped where `avoidAv1`) are checked with one
+  1-byte ranged request each that follows the redirects, 3 at a time, ≤ 12 s; the best-ranked ready one is played. Not-ready
+  ones are marked (Sources page: "Fetching…", listed last). Opening an uncached link makes the addon start fetching it, as
+  playing it did, so only the few that would have been tried are opened.
+- Telemetry `placeholderCheck` (candidates, checked, notReady, failed, found, ms). Hosts / links never logged.
+Evidence: core tests (20/20 PlaceholderTest); Mac check of Debridio links (redirect ≈ 1.7–2.3 s each).
+
 **2026-10-24 · Edge layout: one line through the camera hole (replaces the flank as the default)**
 Decision (user): everything on the camera side in ONE vertical line in the cutout strip, centred on the hole's
 horizontal middle: back at the top, the hole, then back 10 / play / forward 10 from the hole's bounding rect + 8 dp,
