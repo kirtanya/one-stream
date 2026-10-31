@@ -5,7 +5,8 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
 ## 1. Colour (`ui/theme/Accent.kt`, `Tokens.kt`)
 
 - **One seed → one scheme.** `AccentState.build(seed, dark)` runs Google's Material colour algorithm (MaterialKolor: HCT, tonal palettes) with the **Tonal spot** style (what Android uses for wallpaper colours).
-- **Where the seed comes from:** the user's choice in Settings → Appearance: **System** (`android.R.color.system_accent1_500`, Android 12+, the default), Blue, Teal, Green, Violet, Rose, Amber. The scheme never follows the poster in focus (removed 2026-10-31, see DECISIONS.md: it recomposed the whole screen on every focus move). Only the TV's Afterglow light (`AmbientGlow`) takes the poster's colour, drawn without recomposing.
+- **Black & white (`AccentPreset.Mono`, the default, and the TV's only look):** a hand-made scheme (`AccentState.mono`), not seeded: pure black canvas (#000), neutral untinted greys for raised surfaces (#121212 / #1C1C1C / #262626), white text and white as the accent (black text on the main button), `textSecondary` #B3B3B3. Light mode is the same inverted. Pictures carry all the colour, like Netflix / YouTube on a TV. `AmbientGlow` draws nothing in it. The TV has no Appearance page.
+- **Where the seed comes from otherwise (phone):** the user's choice in Settings → Appearance: **System** (`android.R.color.system_accent1_500`, Android 12+), Blue, Teal, Green, Violet, Rose, Amber. The scheme never follows the poster in focus (removed 2026-10-31, see DECISIONS.md: it recomposed the whole screen on every focus move). Only the TV's Afterglow light (`AmbientGlow`) takes the poster's colour, drawn without recomposing.
 - **Light / dark:** System (default), Dark or Light on the phone; TV is always dark. Status- and navigation-bar icons follow.
 - **Changes:** `AccentHost` swaps the scheme at once when the colour or light / dark changes (no cross-fade).
 - **Tokens map to roles** (never hard-code a colour):
@@ -52,7 +53,7 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
   - Secondary = tonal.
   - Ghost = outlined; also used as unselected chips.
   - Glass = for use on images.
-  - TV focus: the ring only (no scale, no glow: focus never scales and nothing animates while idle).
+  - TV focus: the focused button, any kind, turns solid accent (white) with a 2 dp ring 3 dp outside it (`Size.focusGap`); no ripple wash, no scale, no glow.
 - **ReelCard:** surfaceContainer, radius 16, hairline. Use `spacing = 0.dp` for list cards with dividers.
 - **Pill:** meta chip. `accent = true` is filled primary.
 - **GlassIconButton:** 40 dp circle.
@@ -89,7 +90,7 @@ Reel is a **Material 3** app with one cinematic idea on top: **the colour comes 
 3. **Resume beats search.** Play resumes with the same source; Sources appears only when there's a choice to make.
 4. **Glass over images, solid on canvas.**
 5. **Compact by default.** Phone: three posters across (104 dp); collection and search grids use three columns. TV: posters 112 dp, collections 7 columns, search 8.
-6. **TV:** focus is always obvious (ring), focus is remembered per row, and there are no touch-only controls. Everything sits inside the overscan-safe area, the tab bar included (`TvTopBarHeight` = safe margin + button + 8 dp).
+6. **TV:** focus is always obvious (ring), focus is remembered per row, and there are no touch-only controls. Everything sits inside the overscan-safe area, the tab bar included (`TvTopBarHeight` = safe margin + button + 8 dp). The top bar is plain text tabs from the left edge (Search with its icon, Home, Downloads, Settings): selected = white with a short white underline, the rest `textSecondary`; no pill behind them and no logo (Netflix's 2024 TV layout). A title's seasons use the same text tabs (`TvTab`). The TV title page's header sits low (`Cinema.tvTitleTop`): logo, then the facts line, scores, story, buttons; the next row peeks below.
 7. **Nothing squeezes:** rows of chips wrap (`FlowRow`) or scroll sideways (`LazyRow`); long names get `maxLines` + ellipsis; a text column next to buttons always has `weight(1f)`. Check at font scale 1.3.
 
 ## 5. Settings

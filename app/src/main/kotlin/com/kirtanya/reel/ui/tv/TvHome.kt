@@ -37,7 +37,6 @@ import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
-import com.kirtanya.reel.ui.common.AmbientGlow
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.ContinueRow
 import com.kirtanya.reel.ui.common.EmptyState
@@ -53,7 +52,6 @@ import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.common.ServicesRow
 import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.continueDetail
-import com.kirtanya.reel.ui.common.rememberAmbientColor
 import com.kirtanya.reel.ui.common.rememberCatalog
 import com.kirtanya.reel.ui.common.rememberContinueWatching
 import com.kirtanya.reel.ui.common.rememberLoad
@@ -178,12 +176,10 @@ private fun TvHomeContent(
         }
     }
 
-    val glow = rememberAmbientColor(TmdbImages.poster(settled.posterPath, "w185"))
     Box(Modifier.fillMaxSize()) {
-        // The focused title fills the room: its backdrop, light in its colour, the canvas behind the text.
+        // The focused title fills the room: its backdrop over pure black, black behind the text.
         HeroImage(listOfNotNull(TmdbImages.backdrop(settled.backdropPath)), Modifier.fillMaxSize(), fadeMs = 200)
         HeroScrims(top = true, start = true, topHeight = TvTopBarHeight + Tokens.Space.xxxl)
-        AmbientGlow({ glow.value }, height = 620.dp, strength = 0.3f)
 
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(TvTopBarHeight))

@@ -16,10 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -145,43 +142,38 @@ fun TvApp(
     if (incomingMagnet != null) AddLinkSheet(initialLink = incomingMagnet, onDismiss = onIncomingHandled, onDownloadStarted = { nav.select(Tab.Downloads) })
 }
 
+/**
+ * The TV's top bar, like Netflix's TV app: plain text tabs from the left edge, the selected one white
+ * and underlined, the rest grey. No pill behind them and no logo: the bar is only for getting around.
+ */
 @Composable
 internal fun TvTopBar(nav: Navigator) {
     Row(
         Modifier.fillMaxWidth().height(TvTopBarHeight).padding(horizontal = Tokens.Space.tvSafeH).padding(top = Tokens.Space.tvSafeV, bottom = Tokens.Space.s),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
     ) {
-        // Wordmark: the One Stream mark + name.
-        com.kirtanya.reel.ui.common.BrandMark(32.dp)
-        Spacer(Modifier.width(Tokens.Space.s))
-        Text("One Stream", style = Tokens.Type.title, color = Tokens.Colors.text)
-        Spacer(Modifier.width(Tokens.Space.xl))
-        val shape = RoundedCornerShape(Tokens.Radius.pill)
-        Row(
-            Modifier.clip(shape).background(Tokens.Colors.glass).padding(Tokens.Space.xs),
-            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xxs),
-        ) {
-            listOf(Tab.Home to Icons.Rounded.Home, Tab.Search to Icons.Rounded.Search, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings)
-                .forEach { (tab, icon) -> TvTab(tab.label, icon, selected = nav.tab == tab) { nav.select(tab) } }
-        }
+        TvTab("Search", Icons.Rounded.Search, selected = nav.tab == Tab.Search) { nav.select(Tab.Search) }
+        listOf(Tab.Home, Tab.Downloads, Tab.Settings).forEach { tab -> TvTab(tab.label, null, selected = nav.tab == tab) { nav.select(tab) } }
     }
 }
 
-/** A top tab: the selected one is a filled primary pill, the rest plain; focus lifts it with a ring. */
+/**
+ * A text tab (top bar, a title's seasons): text only, an optional icon; selected = white with a
+ * short underline, the rest grey; focus = the ring.
+ */
 @Composable
-private fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
+internal fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
-    val fg = if (selected) Tokens.Colors.onAccent else Tokens.Colors.textSecondary
-    Row(
-        Modifier
-            .focusCard(shape = shape, onClick = onClick)
-            .background(if (selected) Tokens.Colors.accent else Color.Transparent)
-            .height(36.dp)
-            .padding(horizontal = Tokens.Space.m),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
+    val fg = if (selected) Tokens.Colors.text else Tokens.Colors.textSecondary
+    Box(
+        Modifier.focusCard(shape = shape, onClick = onClick).height(36.dp).padding(horizontal = Tokens.Space.m),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
-        Text(label, style = Tokens.Type.label, color = fg)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+            if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
+            Text(label, style = if (selected) Tokens.Type.heading else Tokens.Type.heading.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = fg)
+        }
+        if (selected) Box(Modifier.align(Alignment.BottomCenter).width(20.dp).height(Tokens.Size.focusBorder).clip(shape).background(Tokens.Colors.text))
     }
 }

@@ -5,6 +5,18 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-31 · Black & white, pure black canvas (TV always, phone default); Netflix-style TV top bar and title page**
+Decision (user): the TV felt grey and blue, with the logo sitting oddly next to the tabs. Now:
+- `AccentPreset.Mono` = a hand-made black/white scheme (`AccentState.mono`): #000 canvas, neutral greys, white accent.
+  Default on the phone (other colours stay selectable), the only look on the TV (no Appearance page there). No poster glow.
+- TV top bar: text tabs, selected white + underline, no pill, no logo. Seasons use the same tabs.
+- TV buttons: focused = solid white + an outer ring (a ring on a white button was invisible; the ripple washed it grey).
+- TV title header sits lower (64 dp), facts line under the logo, the backdrop goes to 90 % black once focus leaves it.
+Evidence: Netflix moved its TV nav to a top bar in 2024 (macrumors.com/2024/06/06/netflix-tv-app-redesign); renders in
+`app/build/screens/tv/` (home, title-film, title-show, title-show-episodes, settings).
+
+---
+
 **2026-10-31 · New app icon family "Glass O, centred" (shared with One Launcher, One Watch, One Canvas)**
 Decision (user picked it on the comparison page): One Stream's icon is a blue tile with a thin near-white glass ring and the
 play triangle in it. Source of truth is `~/one-logos` (`generate.py` writes the SVGs, `make.sh` renders PNGs with WebKit).

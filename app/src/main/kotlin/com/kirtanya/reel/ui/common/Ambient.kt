@@ -99,6 +99,8 @@ fun AmbientGlow(color: Color, modifier: Modifier = Modifier, height: Dp = 520.dp
 /** [color] is read while drawing, so an animated colour never recomposes the caller. */
 @Composable
 fun AmbientGlow(color: () -> Color, modifier: Modifier = Modifier, height: Dp = 520.dp, strength: Float = 0.42f) {
+    // Black & white (and always on the TV): no coloured light, the canvas stays pure black.
+    if (com.kirtanya.reel.ui.theme.AccentState.isMono) return
     Box(
         modifier
             .fillMaxWidth()

@@ -52,6 +52,12 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
             walk(root)
         }
         val screenPx = Rect(0f, 0f, width.toFloat(), height.toFloat())
+        /** Every pixel within a few levels of the first: a capture with nothing drawn on it. */
+        fun blank(): Boolean {
+            val first = pixels.firstOrNull() ?: return true
+            fun ch(c: Int, shift: Int) = (c ushr shift) and 0xFF
+            return pixels.all { p -> listOf(0, 8, 16).all { kotlin.math.abs(ch(p, it) - ch(first, it)) <= 12 } }
+        }
         fun dp(px: Float) = px / density
         fun box(r: Rect) = Box(dp(r.left).toDouble(), dp(r.top).toDouble(), dp(r.right).toDouble(), dp(r.bottom).toDouble())
     }
@@ -179,13 +185,27 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
         val inner = ceil(s.density).toInt()
         val outer = (TextContrast.RING_DP * s.density).roundToInt()
         val bar = floatingBar(s)
-        for (n in s.nodes) {
+        // A dialog / sheet window that Robolectric captured as one flat colour: nothing on it can be measured
+        // (it used to show up only as "covered"; with a black canvas and black button text it read as 1:1).
+        if (s.blank()) {
+            s.nodes.mapNotNull { it.textLayout()?.layoutInput?.text?.text }.filter { it.isNotBlank() }
+                .forEach { skipped += "text \"${it.short()}\": window captured blank (one flat colour)" }
+            return Result(0, found, skipped)
+        }
+        // Controls in the order they're drawn: text under one drawn later (an Undo snackbar over a row) is covered.
+        val controls = s.nodes.withIndex().filter { (_, it) -> it.isTouchTarget() }
+        var covered = 0
+        // Text that doesn't show at all: a real failure, unless the capture missed the window (decided after the loop).
+        val sameAsBackground = ArrayList<Pair<String, String>>()
+        for ((index, n) in s.nodes.withIndex()) {
             val layout = n.textLayout() ?: continue
             val full = layout.layoutInput.text.text
             if (full.isBlank()) continue
             val element = "text \"${full.short()}\""
             if (n.disabled()) { skipped += "$element: disabled (WCAG exempts inactive controls)"; continue }
             if (!n.fullyShown(s)) continue
+            val over = controls.firstOrNull { (i, c) -> i > index && !c.contains(n) && !n.contains(c) && c.unclipped().overlaps(n.unclipped()) }
+            if (over != null) { skipped += "$element: under a control drawn over it"; continue }
             // Partly under the floating tab bar: the bar's glass would count as its background (fully under it is
             // caught below as covered). The same row is checked where it sits clear of the bar.
             if (bar != null && n.unclipped().overlaps(bar)) { skipped += "$element: partly under the floating tab bar"; continue }
@@ -196,6 +216,7 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
                 val shows = TextContrast.visibility(declared.toArgb(), m.text, m.background)
                 if (shows == null || shows < 0.35) {
                     skipped += "$element: covered by something drawn over it (shows ${hex(m.text)} on ${hex(m.background)}, asked ${hex(declared.toArgb())})"
+                    covered++
                     continue
                 }
             }
@@ -203,9 +224,18 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
             val sp = layout.layoutInput.style.fontSize.let { if (it.isSp) it.value else 14f }
             val need = TextRules.requiredContrast(sp)
             if (m.ratio < need) {
-                found += DesignBaseline.line(where, element, "%.2f:1, needs %.1f:1 (%s on %s, %.0f sp)".format(m.ratio, need, hex(m.text), hex(m.worstBackground), sp))
+                val line = DesignBaseline.line(where, element, "%.2f:1, needs %.1f:1 (%s on %s, %.0f sp)".format(m.ratio, need, hex(m.text), hex(m.worstBackground), sp))
+                // Indistinguishable from what's around it (under 1.2:1): either invisible text or a window the capture missed.
+                if (m.ratio < 1.2) sameAsBackground += line to element
+                else found += line
             }
         }
+        // Every other text on this capture is hidden (a dialog window Robolectric didn't capture): the ones that don't
+        // show at all can't be told apart from "not drawn" either. Otherwise they're real.
+        if (sameAsBackground.isNotEmpty() && covered >= 2 && checked == sameAsBackground.size) {
+            sameAsBackground.forEach { (_, element) -> skipped += "$element: window not captured (every other text on it is hidden)" }
+            checked -= sameAsBackground.size
+        } else found += sameAsBackground.map { it.first }
         checked += iconTabs(s, found, skipped)
         return Result(checked, found, skipped)
     }
@@ -354,6 +384,12 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
     }
 
     // ─── Semantics helpers ──────────────────────────────────────────────────────────────────
+
+    private fun SemanticsNode.contains(other: SemanticsNode): Boolean {
+        var p = other.parent
+        while (p != null) { if (p.id == id) return true; p = p.parent }
+        return false
+    }
 
     private fun SemanticsNode.unclipped() = Rect(positionInRoot, androidx.compose.ui.geometry.Size(size.width.toFloat(), size.height.toFloat()))
 

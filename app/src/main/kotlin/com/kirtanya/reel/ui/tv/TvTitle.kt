@@ -50,7 +50,6 @@ import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
-import com.kirtanya.reel.ui.common.AmbientGlow
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.EmptyState
 import com.kirtanya.reel.ui.common.GenreChips
@@ -70,7 +69,6 @@ import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.VideoRow
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.common.openVideo
-import com.kirtanya.reel.ui.common.rememberAmbientColor
 import com.kirtanya.reel.ui.common.rememberWatchlistToggle
 import com.kirtanya.reel.ui.common.watchlistIcon
 import com.kirtanya.reel.ui.nav.Dest
@@ -106,7 +104,6 @@ fun TvTitle(ref: TitleRef, initialSeason: Int? = null, onPlay: (season: Int?, ep
 @Composable
 private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?) -> Unit, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
     val context = LocalContext.current
-    val glow = rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
     val action = rememberPlayAction(d)
     val ratings = com.kirtanya.reel.ui.common.rememberTitleRatings(d)
     val reviews = com.kirtanya.reel.ui.title.rememberReviews(d.summary.ref)
@@ -133,10 +130,9 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
         // One still: the 8 s backdrop cross-fade is an animation while idle, which the TV chip pays for.
         HeroImage(heroBackdrops(d).take(1), Modifier.fillMaxSize())
         HeroScrims(top = false, start = true)
-        AmbientGlow({ glow.value }, height = 700.dp, strength = 0.3f)
-        // Once focus leaves the hero (reviews, episodes, cast…), the backdrop dims so rows below read on any picture.
+        // Once focus leaves the hero (reviews, episodes, cast…), the backdrop goes almost to black so rows below read on any picture.
         // Switches at once: fading a full-screen layer on every focus move is what the TV chip chokes on.
-        val dim = if (heroFocused) 0f else 0.86f
+        val dim = if (heroFocused) 0f else 0.9f
         if (dim > 0f) Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas.copy(alpha = dim)))
 
         @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -148,10 +144,12 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
         ) {
             item(key = "hero") {
                 Column(Modifier.onFocusChanged { f -> if (f.hasFocus || heroHadFocus) heroFocused = f.hasFocus; if (f.hasFocus) heroHadFocus = true }.padding(horizontal = side), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
-                    Spacer(Modifier.height(Tokens.Space.l))
-                    Column(Modifier.fillMaxWidth(0.55f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                        com.kirtanya.reel.ui.common.Eyebrow(d, maxLines = 1)
+                    // The header sits low, like a cinema poster: the picture shows above it and the next row peeks below.
+                    Spacer(Modifier.height(Tokens.Cinema.tvTitleTop))
+                    Column(Modifier.fillMaxWidth(0.5f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         TitleLogo(d.logoPath, d.summary.title, Tokens.Type.hero, Tokens.Cinema.logoMaxWidthTv, Tokens.Cinema.logoMaxHeightTv, textMaxLines = 2)
+                        // Under the name, as on Netflix: year · runtime or seasons · certificate · genres, then the scores.
+                        com.kirtanya.reel.ui.common.Eyebrow(d, maxLines = 1)
                         com.kirtanya.reel.ui.common.RatingsRow(ratings, d.summary.rating)
                         if (d.summary.overview.isNotBlank()) {
                             Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -177,9 +175,10 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
                 item(key = "seasons") {
                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         SectionHeader("Episodes", Modifier.padding(horizontal = side))
-                        LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        // Seasons as text tabs (like the top bar), not a row of grey chips; the tab inset lines the text up with the header.
+                        LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side - Tokens.Space.m, vertical = Tokens.Space.xs), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                             items(d.seasons, key = { it.number }) { s ->
-                                ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost)
+                                TvTab(s.name, null, selected = s.number == season) { season = s.number }
                             }
                         }
                         com.kirtanya.reel.ui.title.SeasonWatched(d, season, side)

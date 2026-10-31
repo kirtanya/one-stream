@@ -158,6 +158,8 @@ object Tokens {
         val buttonLarge = 48.dp
         val progressBar = 4.dp
         val focusBorder = 2.dp
+        /** TV buttons: the gap between a focused button and its ring. */
+        val focusGap = 3.dp
         val ring = 2.dp
         val hairline = 1.dp
         /** Floating tab bar (phone): one tab slot (a 48 dp touch height) and the bar's inner padding. */
@@ -229,6 +231,8 @@ object Tokens {
         val logoMaxHeightPhone = 96.dp
         val logoMaxWidthTv = 380.dp
         val logoMaxHeightTv = 110.dp
+        /** TV title page: room above the header, so the picture shows and the next row peeks below. */
+        val tvTitleTop = 64.dp
         /** TV Home: the info block above the rows. */
         val tvInfoHeight = 196.dp
         /** Netflix-style action tiles on the phone title page (icon over a short label). */

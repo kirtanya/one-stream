@@ -232,7 +232,8 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
 
     PageList(isTv) {
         item { PageTitle("Settings", null, isTv, onBack = null) }
-        GROUPS.forEach { (group, pages) ->
+        // The TV is always black & white, so it has no Appearance page.
+        GROUPS.map { (group, pages) -> group to pages.filter { !isTv || it != SettingsPage.Appearance } }.forEach { (group, pages) ->
             item(key = group) {
                 Column(Modifier.widthIn(max = 860.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                     GroupLabel(group)
@@ -543,8 +544,8 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
 @Composable
 private fun Swatch(preset: AccentPreset, selected: Boolean, onClick: () -> Unit) {
     val dark = AccentState.scheme.surface.luminance() < 0.5f
-    val primary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark).primary }
-    val onPrimary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark).onPrimary }
+    val primary = remember(preset, dark) { AccentState.schemeFor(preset, dark).primary }
+    val onPrimary = remember(preset, dark) { AccentState.schemeFor(preset, dark).onPrimary }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
         Box(
             Modifier.size(44.dp)

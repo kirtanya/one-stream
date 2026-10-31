@@ -50,33 +50,42 @@ fun ReelButton(
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val shape = RoundedCornerShape(Tokens.Radius.pill)
-    val fg = when (kind) {
-        ButtonKind.Primary -> Tokens.Colors.onAccent
-        ButtonKind.Secondary -> Tokens.Colors.onTonal
+    // TV: the focused button, whatever its kind, turns solid accent (white) with a ring a little
+    // outside it, like the big streaming apps; a ring drawn on the button itself vanishes on a white one.
+    val tv = LocalIsTv.current
+    val lit = tv && focused
+    val fg = when {
+        lit -> Tokens.Colors.onAccent
+        kind == ButtonKind.Primary -> Tokens.Colors.onAccent
+        kind == ButtonKind.Secondary -> Tokens.Colors.onTonal
         else -> Tokens.Colors.text
     }
     Row(
         modifier = modifier
             .minimumInteractiveComponentSize()
             .then(if (enabled) Modifier else Modifier.alpha(0.38f))
+            .then(if (tv) Modifier.border(Tokens.Size.focusBorder, if (focused) Tokens.Colors.text else Color.Transparent, shape).padding(Tokens.Size.focusGap) else Modifier)
             .clip(shape)
             .then(
-                when (kind) {
-                    ButtonKind.Primary -> Modifier.background(Tokens.Colors.accent)
-                    ButtonKind.Secondary -> Modifier.background(Tokens.Colors.tonal)
-                    ButtonKind.Ghost -> Modifier.background(Color.Transparent)
-                    ButtonKind.Glass -> Modifier.background(Tokens.Colors.glass)
+                when {
+                    lit -> Modifier.background(Tokens.Colors.accent)
+                    kind == ButtonKind.Primary -> Modifier.background(Tokens.Colors.accent)
+                    kind == ButtonKind.Secondary -> Modifier.background(Tokens.Colors.tonal)
+                    kind == ButtonKind.Ghost -> Modifier.background(Color.Transparent)
+                    else -> Modifier.background(Tokens.Colors.glass)
                 },
             )
             .then(
                 when {
+                    lit -> Modifier
                     focused -> Modifier.border(Tokens.Size.focusBorder, Tokens.Colors.text, shape)
                     kind == ButtonKind.Ghost || kind == ButtonKind.Glass -> Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, shape)
                     else -> Modifier
                 },
             )
             .okGuard()
-            .clickable(interactionSource = interaction, indication = ripple(), enabled = enabled, onClick = onClick)
+            // TV: no grey focus wash from the ripple (focus is the white fill and the ring).
+            .clickable(interactionSource = interaction, indication = if (tv) null else ripple(), enabled = enabled, onClick = onClick)
             .heightIn(min = if (large) Tokens.Size.buttonLarge else Tokens.Size.button)
             .padding(
                 start = if (icon != null && text.isNotEmpty()) Tokens.Space.m else Tokens.Space.l,
