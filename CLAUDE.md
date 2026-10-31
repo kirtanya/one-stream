@@ -99,6 +99,7 @@ prints `rule → pass / N baselined / N new`. `tool/build_release.sh` runs it fi
   - `--ez playTest true --es url <direct> [--ei tmdb --ei season --ei episode --ei nextEpisode --el startMs --el durationMs]`
   - `--ez placeholderTest true [--ei runtimeMin 90] [--ez fallback true]` debrid "downloading" placeholder check:
     Not ready card, or with `fallback` the switch to the full film (then `--es removeTitle movie:10378`)
+  - `--ez warmEngine true` start the engine as One Launcher's `warm_engine` does (logcat `ReelEngineIdle` has the time)
   - `--ez history true` dump watch history + Continue watching
   - `--es setPosition <titleKey> --el ms <position>` put a watch position back
   - `--es removeTitle <titleKey>` remove a title from watch history

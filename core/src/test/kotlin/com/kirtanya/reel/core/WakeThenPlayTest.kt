@@ -84,5 +84,16 @@ class StopEngineTest {
         assertEquals(StopEngine.Verdict.Keep("One Stream is open"), s.decide(1, 0, 0))
         assertEquals(StopEngine.Verdict.Keep("Something is playing"), s.decide(0, 1, 0))
         assertEquals(StopEngine.Verdict.Keep("2 downloads are running"), s.decide(0, 0, 2))
+        assertEquals(StopEngine.Verdict.Keep("A download waits for night"), s.decide(0, 0, 0, waiting = 1))
+    }
+
+    @Test fun idleStopsOnlyAfterTheLimitWithNothingInUse(): Unit {
+        val stop = StopEngine.Verdict.Stop
+        val keep = StopEngine.Verdict.Keep("Something is playing")
+        assertEquals(1_000L to false, StopEngine.idleCheck(stop, null, 1_000, limitMs = 600))
+        assertEquals(1_000L to false, StopEngine.idleCheck(stop, 1_000, 1_599, limitMs = 600))
+        assertEquals(1_000L to true, StopEngine.idleCheck(stop, 1_000, 1_600, limitMs = 600))
+        // Anything in use resets the clock.
+        assertEquals(null to false, StopEngine.idleCheck(keep, 1_000, 5_000, limitMs = 600))
     }
 }

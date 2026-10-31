@@ -5,6 +5,16 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-31 · TV engine stops itself when idle; One Launcher warms it before Play**
+Decision (user goal: a faster TV). The TV's engine ends after 10 min with nothing in use (`StopEngine.idleCheck`,
+`EngineIdle.watch`); One Launcher's TV title page sends `warm_engine`. `stop_engine` now also keeps downloads waiting
+for the night window (the night alarm can't restart a dead engine from the background).
+- Why: on the 2 GB Acer R4 (≈420 MB available, 560 MB of swap in use) the idle engine kept One Stream at 82 MB as a
+  Perceptible process all day, even under YouTube. Not merging One Stream into One Launcher for the same reason: the
+  home process would carry that memory permanently.
+- Evidence: cold engine start 1.1 s (process ~0.7 s + engine ~0.4 s), warm 0 s (SourcesProbe `--ez warmEngine true`).
+  Tests: `StopEngineTest`.
+
 **2026-10-31 · Player: up-front Change source / Audio, Next chip, grouped settings, English first**
 Decision (user request). Logic + tests: `core/player/TrackPick.kt` (`TrackPickTest`); UI: `PhoneControls`, `TvControls`,
 `PlayerKit` (`NextChip`, `SettingsPanel`), `PlayerActivity` (`applyLanguagePicks`, `onNextChip`).

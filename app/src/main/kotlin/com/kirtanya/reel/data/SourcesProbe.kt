@@ -72,6 +72,11 @@ class SourcesProbe : BroadcastReceiver() {
             "freeze" -> android.os.Handler(android.os.Looper.getMainLooper()).post { Log.i(TAG, "blocking the main thread for 8 s"); Thread.sleep(8_000) }
         }
         if (intent.hasExtra("reportTest")) return
+        if (intent.getBooleanExtra("warmEngine", false)) {
+            // What One Launcher's warm_engine does; logcat ReelEngineIdle has the time.
+            com.kirtanya.reel.engine.EngineIdle.warm(app, "probe")
+            return
+        }
         if (intent.getBooleanExtra("history", false)) {
             // Watch history + what Continue watching would show right now.
             app.history.entries.value.take(20).forEach { e ->

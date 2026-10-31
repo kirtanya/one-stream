@@ -101,6 +101,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         // Before anything can start the engine: the P2P network rule must hold downloads from the first moment.
         home.start()
         if (isTv) tvSync.start() else phoneSync.start()
+        // The TV's engine stops itself when idle (One Launcher warms it again before Play).
+        if (isTv) com.kirtanya.reel.engine.EngineIdle.watch(this)
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

@@ -1405,6 +1405,14 @@ Restore order:
 
 EngineService then runs `stopSelf` and `killProcess` as today.
 
+**Idle stop and warm-up (TV, 0.12.1; `engine/EngineIdle.kt`, rule in core `launcher/StopEngine`).** On the TV, once
+the engine exists, a check every 30 s asks `StopEngine.decide` (no One Stream screen started, nothing streaming, no
+download transferring or waiting for the night window). After `StopEngine.IDLE_STOP_MS` (10 min) of uninterrupted
+"nothing in use" it runs the shutdown above, stops EngineService and ends the process, like One Launcher's
+`stop_engine`. Why: an idle engine kept the whole process (~82 MB) pinned by the foreground service on a 2 GB TV.
+One Launcher's TV title page calls `warm_engine` (starts the engine off the main thread), so Play still finds it
+running: measured cold start 1.1 s (process ~0.7 s + engine ~0.4 s), warm 0. The phone is unchanged.
+
 ### 9.4 Keys and alert routing
 - The key is computed on the alert thread from the handle itself, with no id cache:
   - `val ih = InfoHash(h.swig().info_hashes())` (a direct field read);
