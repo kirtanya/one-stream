@@ -151,7 +151,7 @@ private fun WhereRowView(row: WhereRow, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             // A row that can't be picked keeps readable text; its status line says why (and the icon goes grey).
-            .then(if (row.enabled) Modifier.focusCard(shape = shape, scale = 1.02f, onClick = onClick) else Modifier)
+            .then(if (row.enabled) Modifier.focusCard(shape = shape, onClick = onClick) else Modifier)
             .clip(shape)
             .background(Tokens.Colors.surface2)
             .padding(Tokens.Space.l),

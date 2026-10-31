@@ -78,7 +78,7 @@ fun SourceRow(
     Row(
         modifier
             .fillMaxWidth()
-            .focusCard(shape = shape, scale = 1.02f, onLongClick = onLongClick, onClick = onClick)
+            .focusCard(shape = shape, onLongClick = onLongClick, onClick = onClick)
             .background(Tokens.Colors.surface1)
             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
             .padding(Tokens.Space.m),
@@ -154,7 +154,7 @@ fun RecommendedCard(
         }
         Text(releaseName(v.source.title), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (!fits) Text("Too big to stream on this device. Pick a smaller one below.", style = Tokens.Type.caption, color = Tokens.Colors.warn)
-        // TV: a wide button would grow over its neighbours when focused (it lifts by 6 %).
+        // TV: keep the button a fixed width (the focus ring sits on its edge).
         Row(Modifier.padding(top = Tokens.Space.xs), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
             ReelButton(
                 label, onClick,

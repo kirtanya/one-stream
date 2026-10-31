@@ -46,7 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.height
 import com.kirtanya.reel.ui.common.focusCard
-import com.kirtanya.reel.ui.common.pageTransition
+import com.kirtanya.reel.ui.common.tvPageTransition
 import com.kirtanya.reel.ui.theme.Tokens
 
 /** Height reserved at the top of every TV tab for the tab bar (it sits inside the overscan-safe area). */
@@ -106,10 +106,10 @@ fun TvApp(
     val open: (Dest) -> Unit = { nav.open(it) }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas).idleWatch(idle)) {
         // Screen to screen: a short cross-fade with a slight zoom; each screen keeps its state underneath.
-        androidx.compose.animation.AnimatedContent(nav.top ?: nav.tab, transitionSpec = { pageTransition() }, label = "screen") { screen ->
+        androidx.compose.animation.AnimatedContent(nav.top ?: nav.tab, transitionSpec = { tvPageTransition() }, label = "screen") { screen ->
             when (screen) {
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
-                    TvTitle(screen.ref, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
+                    TvTitle(screen.ref, screen.season, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
                 }
                 is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs)
                 is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
@@ -174,7 +174,7 @@ private fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.Image
     val fg = if (selected) Tokens.Colors.onAccent else Tokens.Colors.textSecondary
     Row(
         Modifier
-            .focusCard(shape = shape, scale = 1.04f, onClick = onClick)
+            .focusCard(shape = shape, onClick = onClick)
             .background(if (selected) Tokens.Colors.accent else Color.Transparent)
             .height(36.dp)
             .padding(horizontal = Tokens.Space.m),

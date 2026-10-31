@@ -1,7 +1,5 @@
 package com.kirtanya.reel.ui.common
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -14,39 +12,60 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
+import com.kirtanya.reel.core.input.OkKeyGuard
 import com.kirtanya.reel.ui.theme.Tokens
 
 /**
- * Clickable for touch, focusable for the TV remote: focused = scale up + white outline.
- * [onFocus] lets TV screens react (e.g. swap the backdrop).
+ * Clickable for touch, focusable for the TV remote: focused = accent-bright outline, nothing else.
+ * No scale and no glow: both cost a re-layer / blurred shadow per focus move, which the weak TV chip shows
+ * as lag. [onFocus] lets TV screens react (e.g. swap the backdrop).
  */
 fun Modifier.focusCard(
     shape: Shape = RoundedCornerShape(Tokens.Radius.m),
-    scale: Float = Tokens.Motion.focusScale,
     onFocus: (() -> Unit)? = null,
     /** Long-press (touch) or hold OK (remote). */
     onLongClick: (() -> Unit)? = null,
-    /** Where the lift grows from: bottom-centre for cards with a label underneath, so it never covers it. */
-    origin: androidx.compose.ui.graphics.TransformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center,
     onClick: () -> Unit,
 ): Modifier = composed {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val s by animateFloatAsState(if (focused) scale else 1f, tween(Tokens.Motion.focusMs), label = "cardFocus")
     if (onFocus != null) androidx.compose.runtime.LaunchedEffect(focused) { if (focused) onFocus() }
-    // Afterglow focus: lift, accent ring and an accent glow (the remote's "you are here").
     this
-        .graphicsLayer { scaleX = s; scaleY = s; transformOrigin = origin }
-        .then(if (focused) Modifier.shadow(24.dp, shape, ambientColor = Tokens.Colors.accent, spotColor = Tokens.Colors.accent) else Modifier)
         .border(Tokens.Size.focusBorder, if (focused) Tokens.Colors.accentBright else Color.Transparent, shape)
         .clip(shape)
+        .okGuard(hasLongClick = onLongClick != null)
         .combinedClickable(interactionSource = interaction, indication = ripple(), onLongClick = onLongClick, onClick = onClick)
+}
+
+private val OkKeys = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.ButtonA)
+
+/**
+ * Lets a held remote OK fire exactly one click (see [OkKeyGuard]). Put it right before the clickable.
+ * Compose clicks on key-up, so without it the repeats and release of a press that opened this screen
+ * click whatever is focused here.
+ */
+fun Modifier.okGuard(hasLongClick: Boolean = false): Modifier = composed {
+    val guard = remember { OkKeyGuard() }
+    this
+        .onFocusChanged { if (!it.isFocused) guard.reset() }
+        .onPreviewKeyEvent { e ->
+            if (e.key !in OkKeys) return@onPreviewKeyEvent false
+            val verdict = when (e.type) {
+                KeyEventType.KeyDown -> guard.onDown(e.nativeKeyEvent.repeatCount, hasLongClick)
+                KeyEventType.KeyUp -> guard.onUp()
+                else -> OkKeyGuard.Verdict.Pass
+            }
+            verdict == OkKeyGuard.Verdict.Swallow
+        }
 }
 
 fun Modifier.roundedClip(radius: Dp) = clip(RoundedCornerShape(radius))

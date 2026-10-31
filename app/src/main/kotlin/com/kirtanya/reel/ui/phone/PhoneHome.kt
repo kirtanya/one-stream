@@ -62,7 +62,6 @@ import com.kirtanya.reel.ui.common.PosterRow
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.ServicesRow
 import com.kirtanya.reel.ui.common.TitleLogo
-import com.kirtanya.reel.ui.common.rememberAmbientColor
 import com.kirtanya.reel.ui.common.rememberCatalog
 import com.kirtanya.reel.ui.common.rememberContinueWatching
 import com.kirtanya.reel.ui.common.rememberLoad
@@ -116,10 +115,8 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd:
             }.ifEmpty { rows.first().items }.take(6)
             val surprise = { (rows.flatMap { it.items } + myList).randomOrNull()?.let(onOpen) }
             val pager = rememberPagerState { hero.size }
-            // The whole app takes the colour of the title in the hero (Settings → Appearance).
-            rememberAmbientColor(TmdbImages.poster(hero.getOrNull(pager.currentPage)?.posterPath, "w185"))
             val list = rememberLazyListState()
-            // Only while the hero is on screen: otherwise the app's colour would keep changing under the rows.
+            // Only while the hero is on screen: no point paging what can't be seen.
             val heroShowing by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
             AutoAdvance(pager, enabled = heroShowing && HomeLayout.heroAutoAdvance)
 
@@ -227,7 +224,6 @@ private fun HeroPage(item: TitleSummary, pager: PagerState, page: Int, onOpen: (
                 val offset = (pager.currentPage - page) + pager.currentPageOffsetFraction
                 translationX = offset * size.width * 0.5f
             },
-            kenBurns = false,
         )
         HeroScrims(top = true, topHeight = 160.dp)
         Column(

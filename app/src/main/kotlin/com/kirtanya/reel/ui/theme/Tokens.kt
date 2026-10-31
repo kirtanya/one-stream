@@ -198,19 +198,15 @@ object Tokens {
     }
 
     object Motion {
-        const val focusScale = 1.06f
-        /** Posters and stills on TV: a bigger lift, since they're the main thing being picked. */
-        const val posterFocusScale = 1.1f
         const val focusMs = 160
         const val stateMs = 220
         const val ambientMs = 600
         /** Screen to screen: a cross-fade with a slight zoom. */
         const val pageMs = 320
         const val pageZoom = 0.96f
-        /** Hero images: how long each backdrop stays, the cross-fade, and the slow zoom (phone only). */
+        /** Hero images: how long each backdrop stays, and the cross-fade. */
         const val slideMs = 8_000
         const val slideFadeMs = 900
-        const val kenBurnsScale = 1.08f
     }
 
     /** The cinematic layer: heroes, title logos, the meta line. */

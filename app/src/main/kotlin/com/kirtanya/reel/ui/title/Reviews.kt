@@ -120,7 +120,7 @@ private fun ReviewCard(r: Review, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier
             .height(REVIEW_CARD_HEIGHT)
-            .focusCard(shape = shape, scale = Tokens.Motion.focusScale, onClick = onClick)
+            .focusCard(shape = shape, onClick = onClick)
             .background(Tokens.Colors.surface1)
             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
             .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),

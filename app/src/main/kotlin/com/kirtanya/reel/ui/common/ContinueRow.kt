@@ -79,6 +79,7 @@ fun continueDetail(item: ContinueItem): String = when (item) {
 /**
  * Resume → straight back into the player with the same source.
  * Up next → the Sources screen for that episode.
+ * Used by the options sheet and the launcher; a card tap goes to the title page ([openContinueTitle]).
  */
 fun openContinue(context: android.content.Context, item: ContinueItem, onOpenDest: (Dest) -> Unit) {
     val p = item.entry.playback
@@ -89,6 +90,26 @@ fun openContinue(context: android.content.Context, item: ContinueItem, onOpenDes
             onOpenDest(Dest.Sources(TitleRef(MediaType.TV, id), item.next.season, item.next.episode))
         }
     }
+}
+
+/**
+ * A tap on a Continue watching card: the title's page, never the player (the page's Play / Resume button
+ * does that, and one wrong press no longer starts a film). A show opens on the episode's season. A raw
+ * file with no TMDB title has no page, so it resumes straight away.
+ */
+fun openContinueTitle(context: android.content.Context, item: ContinueItem, onOpenDest: (Dest) -> Unit) {
+    val p = item.entry.playback
+    val id = p.tmdbId
+    if (id == null) {
+        openContinue(context, item, onOpenDest)
+        return
+    }
+    val type = if (p.tmdbType == MediaType.TV.path) MediaType.TV else MediaType.MOVIE
+    val season = when (item) {
+        is ContinueItem.UpNext -> item.next.season
+        is ContinueItem.Resume -> p.episode?.season
+    }
+    onOpenDest(Dest.Title(TitleRef(type, id), season))
 }
 
 @Composable
@@ -134,12 +155,9 @@ fun ContinueRow(
                             .aspectRatio(16f / 9f)
                             .focusCard(
                                 shape = shape,
-                                scale = Tokens.Motion.posterFocusScale,
-                                // Grows upward, so it never covers the title underneath.
-                                origin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f),
                                 onFocus = onFocus?.let { { it(item) } },
                                 onLongClick = { options = item },
-                                onClick = { openContinue(context, item, onOpenDest) },
+                                onClick = { openContinueTitle(context, item, onOpenDest) },
                             )
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
                     ) {

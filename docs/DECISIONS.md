@@ -5,6 +5,28 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-31 · TV lag: outline-only focus, no poster-following theme, no idle animation, one click per held OK**
+Decision (user report: app laggy when navigating, worst on the Acer R4). Done in one pass:
+- Focus = outline only, phone and TV: no scale, no accent glow (`focusCard`, `ReelButton`; `Motion.focusScale` /
+  `posterFocusScale` deleted). TV page transitions and Settings page slides are off; the TV title page shows one
+  backdrop (no 8 s cross-fade); the TV title page's dim layer switches at once; Ken Burns zoom deleted.
+- A held remote OK fires one click (or the long press and no click): `core/input/OkKeyGuard` + `Modifier.okGuard`
+  (in `focusCard` and `ReelButton`). Cause: Compose clicks on key-up, so the repeats + release of the press that opened
+  a page landed on the page's focused element. Tests: `OkKeyGuardTest`, `OkHoldTest` (reproduced the double click
+  before the fix).
+- Continue watching cards open the title page (shows: that episode's season preselected); long-press sheet unchanged.
+- **Poster-following Material theme removed** ("Match what's on screen" setting, `MediaAccent`, `adaptive`, the
+  600 ms scheme cross-fade). The scheme is the chosen preset only (Tonal spot, system accent by default).
+  Why: measured on TV Home (Robolectric, composable executions via `CompositionTracer`, one focus move right):
+  - the seed changed on every focus move (poster colour → `AccentHost` rebuilt two schemes);
+  - 35 978 composable executions over the following 3.2 s (52 of 200 frames recomposing, up to 904 in one frame)
+    vs 1 672 with the switch off, and 226 after the change (idle: 0 either way);
+  - one `dynamicColorScheme` call = 1.4 ms on the Mac JVM (warm), ×5-10 on the ARMv7 TV = 7-14 ms, twice per change
+    (target + player "night" scheme) → a dropped frame or two on every focus settle, then 36 frames of full-screen
+    recomposition from the animated scheme.
+  Kept: the poster-coloured Afterglow light on TV Home / Title / Sources, now read in the draw phase
+  (`AmbientGlow(color: () -> Color)`) so its 600 ms animation no longer recomposes the screen.
+
 **2026-10-28 · Debrid fallback checks links before switching (Debridio kept loading)**
 Decision (user report: Debridio "doesn't load properly / keeps loading"). Logic + tests: `core/player/Placeholder.kt`
 (`PlaceholderFallback.candidates`, `ReadyCheck`, `Readiness`; `PlaceholderTest`). Player: `PlayerActivity.findAlternative`.

@@ -60,7 +60,7 @@ fun TvScreensaver(w: IdleWatch, enabled: Boolean) {
     }
     AnimatedVisibility(w.dreaming, enter = fadeIn(tween(1_200)), exit = fadeOut(tween(Tokens.Motion.stateMs))) {
         Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-            HeroImage(art, Modifier.fillMaxSize(), kenBurns = false)
+            HeroImage(art, Modifier.fillMaxSize())
             HeroScrims(top = false, start = false)
             var now by remember { mutableStateOf(java.time.LocalTime.now()) }
             LaunchedEffect(Unit) { while (true) { now = java.time.LocalTime.now(); delay(10_000) } }

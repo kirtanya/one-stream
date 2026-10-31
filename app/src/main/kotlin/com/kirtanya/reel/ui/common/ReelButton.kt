@@ -1,7 +1,5 @@
 package com.kirtanya.reel.ui.common
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,9 +20,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ui.theme.Tokens
@@ -35,7 +33,7 @@ import com.kirtanya.reel.ui.theme.Tokens
  * - [ButtonKind.Secondary] — tonal (secondary container).
  * - [ButtonKind.Ghost] — outlined; also unselected chips.
  * - [ButtonKind.Glass] — for use on images: translucent with hairline.
- * 40 dp tall (48 when [large]) with a 48 dp touch area; on TV a focused button lifts and gets a ring.
+ * 40 dp tall (48 when [large]) with a 48 dp touch area; on TV a focused button gets a ring (no lift, no glow).
  */
 enum class ButtonKind { Primary, Secondary, Ghost, Glass }
 
@@ -51,7 +49,6 @@ fun ReelButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val scale by animateFloatAsState(if (focused) Tokens.Motion.focusScale else 1f, tween(Tokens.Motion.focusMs), label = "focus")
     val shape = RoundedCornerShape(Tokens.Radius.pill)
     val fg = when (kind) {
         ButtonKind.Primary -> Tokens.Colors.onAccent
@@ -61,7 +58,7 @@ fun ReelButton(
     Row(
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.38f }
+            .then(if (enabled) Modifier else Modifier.alpha(0.38f))
             .clip(shape)
             .then(
                 when (kind) {
@@ -78,6 +75,7 @@ fun ReelButton(
                     else -> Modifier
                 },
             )
+            .okGuard()
             .clickable(interactionSource = interaction, indication = ripple(), enabled = enabled, onClick = onClick)
             .heightIn(min = if (large) Tokens.Size.buttonLarge else Tokens.Size.button)
             .padding(

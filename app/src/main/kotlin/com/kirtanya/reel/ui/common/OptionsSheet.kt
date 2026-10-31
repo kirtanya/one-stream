@@ -169,7 +169,7 @@ private fun OptionRow(a: OptionAction, rowHeight: Dp, modifier: Modifier = Modif
     val tint = if (a.danger) Tokens.Colors.danger else Tokens.Colors.text
     Row(
         modifier.fillMaxWidth().heightIn(min = rowHeight)
-            .focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1f, onClick = onClick)
+            .focusCard(shape = RoundedCornerShape(Tokens.Radius.m), onClick = onClick)
             .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.s),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l),
         verticalAlignment = Alignment.CenterVertically,
