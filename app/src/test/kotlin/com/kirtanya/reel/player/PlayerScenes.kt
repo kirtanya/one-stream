@@ -39,23 +39,34 @@ internal object PlayerScenes {
         PanelExtra(REPORT_ROW) {},
     )
 
+    /** A film with two audio tracks and subtitles in two forms, as the panel lists them (renders only). */
+    val AUDIO_TRACKS = listOf("English 5.1" to true, "Hindi 5.1" to false, "Japanese" to false)
+    val SUBTITLE_TRACKS = listOf("English" to true, "English · SDH" to false, "Hindi" to false)
+    fun tracks(): Map<Int, List<Pair<String, Boolean>>> =
+        mapOf(androidx.media3.common.C.TRACK_TYPE_AUDIO to AUDIO_TRACKS, androidx.media3.common.C.TRACK_TYPE_TEXT to SUBTITLE_TRACKS)
+
     /**
-     * The section rows PlayerActivity adds (setPanelRows): subtitle delay + Search subtitles again,
-     * night mode + voice boost + audio delay, sleep timer.
+     * The group rows PlayerActivity adds (setPanelRows): Subtitles (style shortcut, delay, search again), Audio
+     * (delay, night mode, voice boost), Playback (auto-play next, sleep timer).
      */
     fun rows(): Triple<List<PanelRow>, List<PanelRow>, List<PanelRow>> {
         val onOff = listOf("Off", "On")
+        val presets = com.kirtanya.reel.core.playback.CaptionStyle.Preset.entries
         val subtitle = listOf<PanelRow>(
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_subtitles, "Subtitle style", presets.map { it.label }, { 0 }, asList = true) {},
             PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Subtitle delay", com.kirtanya.reel.core.player.Delay.SUBTITLES, { 0 }) {},
             PanelExtra("Search subtitles again", icon = com.kirtanya.reel.R.drawable.ic_pl_search) {},
         )
         val audio = listOf<PanelRow>(
+            PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Audio delay", com.kirtanya.reel.core.player.Delay.AUDIO, { 150 }) {},
             PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_night, "Night mode", onOff, { 1 }) {},
             PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_voice, "Voice boost", onOff, { 0 }) {},
-            PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Audio delay", com.kirtanya.reel.core.player.Delay.AUDIO, { 150 }) {},
         )
         val sleeps = com.kirtanya.reel.core.player.SleepChoice.entries
-        val playback = listOf<PanelRow>(PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_timer, "Sleep timer", sleeps.map { it.label }, { 0 }, asList = true) {})
+        val playback = listOf<PanelRow>(
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_next, "Auto-play next", onOff, { 1 }) {},
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_timer, "Sleep timer", sleeps.map { it.label }, { 0 }, asList = true) {},
+        )
         return Triple(subtitle, audio, playback)
     }
 
@@ -159,6 +170,7 @@ internal object PlayerScenes {
         cropPercent: Float = 0f, crop: Boolean = false, cropAuto: Boolean = false, video: ((FrameLayout, PlayerView) -> Unit)? = null,
         layout: com.kirtanya.reel.core.player.PhoneLayout = com.kirtanya.reel.core.player.PhoneLayout.CLASSIC,
         cutout: com.kirtanya.reel.core.player.PhoneLayout.Side? = null,
+        audio: Boolean = true, audioPanel: Boolean = false, tracks: Boolean = false,
     ): Phone {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
@@ -168,7 +180,9 @@ internal object PlayerScenes {
         video?.invoke(root, playerView)
         val c = PhoneControls(activity, playerView, TITLE, { null }, { extras(file) },
             onBack = {}, onPip = {}, nextLabel = { if (next) "Next · S1 E4" else null }, onNext = {},
-            onSendToTv = {}, canSendToTv = { true })
+            onSendToTv = {}, canSendToTv = { true }, onChangeSource = {}, canChangeSource = { !file })
+        c.previewAudioChoice = audio
+        c.previewTracks(tracks())
         // The rows the activity adds (PlayerActivity.buildLayout), so the panel shows its real length.
         c.setToggles(pictureRows(cropPercent) + layoutRow(layout))
         val (subRows, audioRows, playRows) = rows()
@@ -198,6 +212,7 @@ internal object PlayerScenes {
         if (panel) c.openPanelForPreview()
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
         if (panel && panelEnd) scrollPanelToEnd(root)
+        if (panel && audioPanel) { root.findViewWithTag<android.view.View>("audio")?.performClick(); ShadowLooper.idleMainLooper() }
         if (panel && slider != null) openSlider(root, slider)
         if (panel && crop) openCrop(root, cropAuto)
         if (overlay == Overlay.SKIP_OVER_BAND) {
@@ -239,6 +254,7 @@ internal object PlayerScenes {
     fun tv(
         picture: IntArray, panel: Boolean = false, file: Boolean = false, panelEnd: Boolean = false, overlay: Overlay? = null, slider: String? = null, strip: Boolean = false,
         cropPercent: Float = 0f, crop: Boolean = false, video: ((FrameLayout, PlayerView) -> Unit)? = null,
+        audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false,
     ): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
@@ -246,7 +262,10 @@ internal object PlayerScenes {
         val playerView = playerView(activity)
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         video?.invoke(root, playerView)
-        val c = TvControls(playerView, TITLE, { null }, extraSettings = { extras(file) })
+        val c = TvControls(playerView, TITLE, { null }, extraSettings = { extras(file) },
+            nextLabel = { if (next) "Next · S1 E4" else null }, onChangeSource = {}, canChangeSource = { !file })
+        c.previewAudioChoice = audio
+        c.previewTracks(tracks())
         c.setToggles(pictureRows(cropPercent))
         val (subRows, audioRows, playRows) = rows()
         c.setRows(subRows, audioRows, playRows) {}
@@ -263,6 +282,7 @@ internal object PlayerScenes {
         if (panel) c.openPanel()
         ShadowLooper.idleMainLooper()
         if (panel && panelEnd) scrollPanelToEnd(root)
+        if (panel && audioPanel) { root.findViewWithTag<android.view.View>("audio")?.performClick(); ShadowLooper.idleMainLooper() }
         if (panel && slider != null) openSlider(root, slider)
         if (panel && crop) openCrop(root, auto = false)
         val scene = Tv(root, c, exo, o)

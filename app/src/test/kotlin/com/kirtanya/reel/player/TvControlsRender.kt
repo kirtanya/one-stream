@@ -31,6 +31,10 @@ class TvControlsRender {
     @Test fun renderSettingsSource() = render("tv_controls_settings_source", PlayerScenes.MID, panel = true, panelEnd = true)
     @Test fun renderSettingsFile() = render("tv_controls_settings_file", PlayerScenes.MID, panel = true, panelEnd = true, file = true)
 
+    // Up-front controls: Change source, Audio (several audio tracks), the Next chip above the title; the audio picker; a film with neither.
+    @Test fun renderAudioPicker() = render("tv_controls_audio_picker", PlayerScenes.MID, panel = true, audioPanel = true)
+    @Test fun renderMovieSingleAudio() = render("tv_controls_movie_single_audio", PlayerScenes.MID, next = false, audio = false)
+
     // Roadmap A: Skip intro (focused), Still watching?, sleep chip, Up next at the credits, delay sliders.
     @Test fun renderSkip() = render("tv_skip_intro", PlayerScenes.BRIGHT, overlay = PlayerScenes.Overlay.SKIP)
     @Test fun renderStillWatching() = render("tv_still_watching", PlayerScenes.MID, overlay = PlayerScenes.Overlay.STILL_WATCHING)
@@ -43,9 +47,9 @@ class TvControlsRender {
 
     private fun render(
         name: String, picture: IntArray, panel: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
-        overlay: PlayerScenes.Overlay? = null, slider: String? = null,
+        overlay: PlayerScenes.Overlay? = null, slider: String? = null, audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false,
     ) {
-        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider)
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider, audio = audio, next = next, audioPanel = audioPanel)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

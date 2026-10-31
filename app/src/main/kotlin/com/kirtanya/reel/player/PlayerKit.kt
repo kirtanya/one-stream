@@ -40,7 +40,7 @@ internal fun Context.dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 internal fun withAlpha(c: Int, a: Int) = PlayerColors.withAlpha(c, a)
 
 /**
- * A round icon button: transparent, a soft disc + ring when focused, grows a little on focus.
+ * A round icon button: transparent, a ring when focused (outline only: no fill, no scale, no glow).
  * [sizeDp] is the drawn disc; [touchDp] the view the caller lays out (48 dp on the phone, CLAUDE.md
  * "Design rules"): a larger touch area keeps the disc at [sizeDp] in its centre.
  */
@@ -55,7 +55,6 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
         isFocusable = true
         isClickable = true
         addView(image, LayoutParams(context.dp(iconDp), context.dp(iconDp), Gravity.CENTER))
-        setOnFocusChangeListener { _, f -> animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(140).start() }
         tint(PlayerColors.FOREGROUND)
     }
 
@@ -63,7 +62,7 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
         color = c
         image.imageTintList = ColorStateList.valueOf(c)
         val states = StateListDrawable().apply {
-            val on = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(withAlpha(c, 0x2E)); setStroke(context.dp(2), c) }
+            val on = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.TRANSPARENT); setStroke(context.dp(2), c) }
             addState(intArrayOf(android.R.attr.state_focused), on)
             addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(withAlpha(c, 0x24)) })
             addState(intArrayOf(), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.TRANSPARENT) })
@@ -94,6 +93,64 @@ internal open class RoundButton(context: Context, icon: Int, label: String, priv
             }
         }
         addView(shadow, 0, LayoutParams(lp.width, lp.height, lp.gravity))
+    }
+}
+
+/**
+ * "Next · S1 E4": a very small icon and very small text just above the video title, for an episode with a
+ * next one. Phone: the view is a full 48 dp tall (touch rule, CLAUDE.md design rule 1) with the marks sitting
+ * at the bottom of it, so they read as directly above the title and the box grows upward into free space.
+ * TV: the marks on a small dark glass pill, with a ring when the remote is on it (outline only).
+ */
+@SuppressLint("ViewConstructor")
+internal class NextChip(context: Context, font: Typeface?, private val phone: Boolean) : LinearLayout(context) {
+    private val icon = ImageView(context).apply { setImageResource(R.drawable.ic_pl_next) }
+    private val label = TextView(context).apply {
+        typeface = font
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, if (phone) 11f else 12f)
+        maxLines = 1
+        includeFontPadding = false
+        setTextColor(PlayerColors.FOREGROUND)
+        setShadowLayer(context.dpf(1.5f), 0f, context.dpf(1f), PlayerColors.CONTROL_SHADOW)
+    }
+
+    init {
+        orientation = HORIZONTAL
+        gravity = if (phone) Gravity.BOTTOM else Gravity.CENTER_VERTICAL
+        isFocusable = true
+        isClickable = true
+        clipChildren = false
+        val size = context.dp(if (phone) 12 else 14)
+        addView(icon, LayoutParams(size, size).apply { if (phone) bottomMargin = context.dp(1) })
+        icon.imageTintList = ColorStateList.valueOf(PlayerColors.FOREGROUND)
+        addView(label, LayoutParams(-2, -2).apply { marginStart = context.dp(4) })
+        if (phone) {
+            minimumHeight = context.dp(48)
+            setPadding(0, 0, context.dp(12), context.dp(2))
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply { setColor(PlayerColors.ROW_HIGHLIGHT); cornerRadius = context.dpf(8f) })
+                addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
+            }
+        } else {
+            setPadding(context.dp(8), context.dp(3), context.dp(10), context.dp(3))
+            // The TV strip has no shade behind it, and 12 sp white text on a bright picture fails the contrast rule
+            // (the title and times above it are baselined for that): a dark glass pill keeps this one readable.
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply {
+                    setColor(PlayerColors.CHIP_SCRIM); cornerRadius = context.dpf(999f); setStroke(context.dp(2), PlayerColors.FOREGROUND)
+                })
+                addState(intArrayOf(), GradientDrawable().apply { setColor(PlayerColors.CHIP_SCRIM); cornerRadius = context.dpf(999f) })
+            }
+        }
+    }
+
+    /** "Next · S1 E4", or null to hide. */
+    fun set(text: String?) {
+        visibility = if (text != null) VISIBLE else GONE
+        if (text != null) {
+            label.text = text
+            contentDescription = if (text.startsWith("Next · ")) "Next episode, " + text.removePrefix("Next · ") else text
+        }
     }
 }
 
@@ -322,6 +379,8 @@ internal class PanelToggle(
     val values: List<String>,
     val current: () -> Int,
     val asList: Boolean = false,
+    /** What the row says as its value when that isn't one of [values] (a custom subtitle style); null = the current value. */
+    val display: (() -> String)? = null,
     val set: (Int) -> Unit,
 ) : PanelRow
 
@@ -387,7 +446,15 @@ internal class SettingsPanel(
         orientation = LinearLayout.VERTICAL
         setPadding(context.dp(8), context.dp(8), context.dp(8), context.dp(8))
     }
-    val panel = ScrollView(context).apply {
+    val panel = object : ScrollView(context) {
+        /** Also a plain rectangle clip: software canvases (the renders and design checks) ignore the rounded outline clip below. */
+        override fun dispatchDraw(canvas: Canvas) {
+            canvas.save()
+            canvas.clipRect(scrollX, scrollY, scrollX + width, scrollY + height)
+            super.dispatchDraw(canvas)
+            canvas.restore()
+        }
+    }.apply {
         addView(list)
         isVerticalScrollBarEnabled = false
         background = GradientDrawable().apply {
@@ -403,7 +470,7 @@ internal class SettingsPanel(
     private var submenu: String? = null
     val open get() = panel.visibility == View.VISIBLE
 
-    /** Rows after Speed: Picture, Crop bars, Cinema mode. */
+    /** The Picture group: Picture, Crop bars, Cinema mode (phone: Layout). */
     var toggles: List<PanelRow> = emptyList()
 
     /**
@@ -412,7 +479,7 @@ internal class SettingsPanel(
      */
     var onCrop: ((PanelCrop) -> Unit)? = null
 
-    /** Rows under the Subtitles track (delay, search again), the Audio track (night mode, voice boost, delay) and Speed (sleep timer). */
+    /** Rows under Subtitle track (style, delay, search again), Audio track (delay, night mode, voice boost) and Speed (auto-play next, sleep timer). */
     var subtitleRows: List<PanelRow> = emptyList()
     var audioRows: List<PanelRow> = emptyList()
     var playbackRows: List<PanelRow> = emptyList()
@@ -435,6 +502,7 @@ internal class SettingsPanel(
         panel.animate().alpha(1f).translationY(0f).setDuration(160).start()
         when (section) {
             "sub" -> showTracks(C.TRACK_TYPE_TEXT)
+            "audio" -> showTracks(C.TRACK_TYPE_AUDIO)
             else -> { submenu = null; buildMain() }
         }
         focusSelected()
@@ -451,23 +519,29 @@ internal class SettingsPanel(
         return true
     }
 
-    /** Sections: Subtitles, Audio, Playback (speed, sleep timer, picture), then the extra rows under More. */
+    /**
+     * Four groups in the order people reach for them: Playback (speed, auto-play next, sleep timer), Audio
+     * (track, delay, night mode, voice boost), Subtitles (track, style, delay, search again), Picture
+     * (mode, crop, cinema, layout); then the extra rows under More. Every row says its current value.
+     */
     private fun buildMain() {
         list.removeAllViews()
         val p = player() ?: return
-        list.addView(header("Subtitles"))
-        list.addView(row(R.drawable.ic_pl_subtitles, "Subtitles", current(p, C.TRACK_TYPE_TEXT) ?: "Off", "sub") { showTracks(C.TRACK_TYPE_TEXT) })
-        addRows(subtitleRows)
-        val audioTracks = trackOptions(p, C.TRACK_TYPE_AUDIO).size > 1
-        if (audioTracks || audioRows.isNotEmpty()) {
-            list.addView(header("Audio"))
-            if (audioTracks) list.addView(row(R.drawable.ic_pl_volume, "Audio track", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
-            addRows(audioRows)
-        }
         list.addView(header("Playback"))
         list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
         addRows(playbackRows)
-        addRows(toggles)
+        list.addView(header("Audio"))
+        val audioTracks = trackOptions(p, C.TRACK_TYPE_AUDIO)
+        if (audioTracks.size > 1) list.addView(row(R.drawable.ic_pl_audio, "Audio track", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
+        else list.addView(offRow(R.drawable.ic_pl_audio, "Audio track", audioTracks.firstOrNull()?.label ?: "Only one track"))
+        addRows(audioRows)
+        list.addView(header("Subtitles"))
+        list.addView(row(R.drawable.ic_pl_subtitles, "Subtitle track", current(p, C.TRACK_TYPE_TEXT) ?: "Off", "sub") { showTracks(C.TRACK_TYPE_TEXT) })
+        addRows(subtitleRows)
+        if (toggles.isNotEmpty()) {
+            list.addView(header("Picture"))
+            addRows(toggles)
+        }
         val more = extras()
         if (more.isNotEmpty()) {
             list.addView(header("More"))
@@ -477,7 +551,7 @@ internal class SettingsPanel(
 
     private fun addRows(rows: List<PanelRow>) {
         for (r in rows) when (r) {
-            is PanelToggle -> list.addView(row(r.icon, r.label, r.values[r.current()], r.label) {
+            is PanelToggle -> list.addView(row(r.icon, r.label, (r.display?.invoke() ?: r.values[r.current()]), r.label) {
                 if (r.asList) {
                     showList(r)
                 } else {
@@ -596,7 +670,7 @@ internal class SettingsPanel(
         val p = player() ?: return
         submenu = if (type == C.TRACK_TYPE_TEXT) "sub" else "audio"
         list.removeAllViews()
-        list.addView(header(if (type == C.TRACK_TYPE_TEXT) "Subtitles" else "Audio track"))
+        list.addView(header(if (type == C.TRACK_TYPE_TEXT) "Subtitle track" else "Audio track"))
         val options = trackOptions(p, type)
         if (type == C.TRACK_TYPE_TEXT) {
             val off = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT) || options.none { it.selected }
@@ -608,9 +682,11 @@ internal class SettingsPanel(
         }
         for (o in options) {
             list.addView(choice(o.label, o.selected) {
+                val group = o.group
+                if (group == null) { back(); return@choice }
                 p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(type, false)
-                    .setOverrideForType(TrackSelectionOverride(o.group.mediaTrackGroup, o.index))
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, o.index))
                     .build()
                 onChoice?.invoke(if (type == C.TRACK_TYPE_TEXT) "sub" else "audio")
                 back()
@@ -646,9 +722,13 @@ internal class SettingsPanel(
         (kids.firstOrNull { it.tag == SELECTED } ?: kids.firstOrNull { it.isFocusable })?.requestFocus()
     }
 
-    private class TrackOption(val group: Tracks.Group, val index: Int, val label: String, val selected: Boolean)
+    private class TrackOption(val group: Tracks.Group?, val index: Int, val label: String, val selected: Boolean)
+
+    /** Renders only: tracks to list per type (label → selected) without a real media file. */
+    var previewTracks: Map<Int, List<Pair<String, Boolean>>> = emptyMap()
 
     private fun trackOptions(p: Player, type: Int): List<TrackOption> {
+        previewTracks[type]?.let { fake -> return fake.mapIndexed { i, (label, on) -> TrackOption(null, i, label, on) } }
         val out = mutableListOf<TrackOption>()
         for (g in p.currentTracks.groups) {
             if (g.type != type) continue
@@ -713,7 +793,9 @@ internal class SettingsPanel(
         if (value != null) addView(text(14f).apply {
             text = "$value  ›"
             setTextColor(PlayerColors.PANEL_VALUE)
-            maxLines = 1
+            // Long values (an audio track's name) wrap to a second line before they are cut.
+            maxLines = 2
+            gravity = Gravity.END
             ellipsize = android.text.TextUtils.TruncateAt.END
             maxWidth = context.dp(150)
         })
@@ -761,10 +843,12 @@ internal class SettingsPanel(
         setOnClickListener { onClick() }
     }
 
+    /** Focus is an outline (no fill, no scale, no glow); a finger on a row fills it softly. */
     private fun rowBackground() = StateListDrawable().apply {
-        val on = GradientDrawable().apply { setColor(PlayerColors.ROW_HIGHLIGHT); cornerRadius = context.dpf(12f) }
-        addState(intArrayOf(android.R.attr.state_focused), on)
-        addState(intArrayOf(android.R.attr.state_pressed), on)
+        val ring = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = context.dpf(12f); setStroke(context.dp(2), PlayerColors.FOREGROUND) }
+        val touched = GradientDrawable().apply { setColor(PlayerColors.ROW_HIGHLIGHT); cornerRadius = context.dpf(12f) }
+        addState(intArrayOf(android.R.attr.state_focused), ring)
+        addState(intArrayOf(android.R.attr.state_pressed), touched)
         addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
     }
 
@@ -850,3 +934,7 @@ internal class DelaySlider(
         return true
     }
 }
+
+/** How many audio tracks the video offers (the Audio button shows from two). */
+internal fun Player.audioChoices(): Int =
+    currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }.sumOf { g -> (0 until g.length).count { g.isTrackSupported(it) } }

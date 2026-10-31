@@ -21,9 +21,10 @@ import kotlin.math.pow
  * TV player controls, nothing in the middle of the picture and no dimming:
  *  - the seek bar is a hairline along the very bottom edge, end to end (only the played part
  *    shows); elapsed time above its start, remaining time above its end;
- *  - above that, the title and "ends at" on the left, and every control on the right — back N s,
- *    play / pause, forward N s (N = Settings → Playback → Skip by), next episode (when there is one), subtitles, settings — all the
- *    same size: no button stands out.
+ *  - above that, the title and "ends at" on the left (for an episode with a next one, a very small
+ *    "Next · S1 E4" just above the title), and every control on the right — Change source, Audio
+ *    (only with more than one audio track) first, then back N s, play / pause, forward N s (N = Settings →
+ *    Playback → Skip by), subtitles, settings — all the same size: no button stands out.
  * Settings opens a panel above the controls. Everything is white with a small, tight shadow under it
  * (the user's choice: it never switches to black, and the shadow never spreads into a halo).
  */
@@ -33,9 +34,12 @@ internal class TvControls(
     private val font: (medium: Boolean) -> Typeface?,
     /** Extra rows at the end of the Settings panel, e.g. "Change source", "Open in another player". */
     extraSettings: () -> List<PanelExtra>,
-    /** Whether a next episode is ready (shows the Next button) and how to play it. */
-    private val hasNext: () -> Boolean = { false },
+    /** "Next · S1 E4" while the episode has a next one (the chip above the title), else null; and how to play it. */
+    private val nextLabel: () -> String? = { null },
     private val onNext: () -> Unit = {},
+    /** Change source (the Sources page for this title) and whether there is one to change to. */
+    private val onChangeSource: (() -> Unit)? = null,
+    private val canChangeSource: () -> Boolean = { false },
 ) {
     private val context = playerView.context
     private val main = Handler(Looper.getMainLooper())
@@ -50,7 +54,9 @@ internal class TvControls(
     private val play = RoundButton(context, R.drawable.ic_pl_pause, "Play or pause", BUTTON, 26)
     private val rew = SkipButton(context, forward = false, seconds = 10, sizeDp = BUTTON, iconDp = 28, font = font(true))
     private val ffwd = SkipButton(context, forward = true, seconds = 10, sizeDp = BUTTON, iconDp = 28, font = font(true))
-    private val next = RoundButton(context, R.drawable.ic_pl_next, "Next episode", BUTTON, 24)
+    private val nextChip = NextChip(context, font(true), phone = false).apply { visibility = View.GONE }
+    private val source = RoundButton(context, R.drawable.ic_pl_source, "Change source", BUTTON, 24)
+    private val audioBtn = RoundButton(context, R.drawable.ic_pl_audio, "Audio track", BUTTON, 24)
     private val subs = RoundButton(context, R.drawable.ic_pl_subtitles, "Subtitles", BUTTON, 22)
     private val settings = RoundButton(context, R.drawable.ic_pl_tune, "Settings", BUTTON, 22)
     private val elapsed = text(14f, medium = true)
@@ -93,6 +99,8 @@ internal class TvControls(
 
         // Left: title, then "ends at".
         val info = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        // The chip's ring sits 8 dp left of its marks: pull it back so the marks line up with the title.
+        info.addView(nextChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = -context.dp(8); bottomMargin = context.dp(2) })
         titleView.text = title
         titleView.maxLines = 1
         titleView.ellipsize = android.text.TextUtils.TruncateAt.END
@@ -106,7 +114,7 @@ internal class TvControls(
             gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
         }
-        for ((i, b) in listOf(rew, play, ffwd, next, subs, settings).withIndex()) {
+        for ((i, b) in listOf(source, audioBtn, rew, play, ffwd, subs, settings).withIndex()) {
             buttons.addView(b, LinearLayout.LayoutParams(context.dp(BUTTON), context.dp(BUTTON)).apply { if (i > 0) marginStart = context.dp(8) })
         }
         bar.addView(buttons, LinearLayout.LayoutParams(-2, -2))
@@ -134,7 +142,9 @@ internal class TvControls(
         rew.setOnClickListener { seekBy(-seekStepMs); touch() }
         ffwd.setOnClickListener { seekBy(seekStepMs); touch() }
         play.setOnClickListener { togglePlay(); touch() }
-        next.setOnClickListener { hide(); onNext() }
+        nextChip.setOnClickListener { hide(); onNext() }
+        source.setOnClickListener { hide(); onChangeSource?.invoke() }
+        audioBtn.setOnClickListener { openPanel("audio") }
         subs.setOnClickListener { openPanel("sub") }
         settings.setOnClickListener { openPanel(null) }
         seek.onScrubStart = { touch() }
@@ -255,6 +265,20 @@ internal class TvControls(
         remaining.text = "−" + PlayerActivity.formatTime(durationMs - positionMs)
         play.setIcon(if (playing) R.drawable.ic_pl_pause else R.drawable.ic_pl_play)
         metaView.text = "Ends at 10:42 PM"
+        showButtons()
+    }
+
+    /** Renders only: show the Audio button as if the video had several audio tracks. */
+    internal var previewAudioChoice = false
+
+    /** Renders only: the panel lists these tracks (type → label to selected). */
+    internal fun previewTracks(tracks: Map<Int, List<Pair<String, Boolean>>>) { settingsPanel.previewTracks = tracks }
+
+    /** The Next chip, Change source and Audio come and go with the video. */
+    private fun showButtons() {
+        nextChip.set(nextLabel())
+        source.visibility = if (onChangeSource != null && canChangeSource()) View.VISIBLE else View.GONE
+        audioBtn.visibility = if (previewAudioChoice || (player?.audioChoices() ?: 0) > 1) View.VISIBLE else View.GONE
     }
 
     // ---------------------------------------------------------------- playback
@@ -277,7 +301,7 @@ internal class TvControls(
         val p = player ?: return
         val playing = p.playWhenReady && p.playbackState != Player.STATE_ENDED
         play.setIcon(if (playing) R.drawable.ic_pl_pause else R.drawable.ic_pl_play)
-        next.visibility = if (hasNext()) View.VISIBLE else View.GONE
+        showButtons()
         val d = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
         seek.duration = d
         seek.buffered = p.bufferedPosition
@@ -297,7 +321,11 @@ internal class TvControls(
 
     // ---------------------------------------------------------------- settings panel
 
+    /** The button that opened the panel: focus goes back to it when the panel closes. */
+    private var opener: View = settings
+
     internal fun openPanel(section: String? = null) {
+        opener = when (section) { "audio" -> audioBtn; "sub" -> subs; else -> settings }
         settingsPanel.show(section)
         main.removeCallbacks(hideRunnable)
     }
@@ -305,7 +333,7 @@ internal class TvControls(
     private fun closePanel() {
         if (!panelOpen) return
         settingsPanel.hide()
-        if (visible) settings.requestFocus()
+        if (visible) opener.requestFocus()
         touch()
     }
 
@@ -318,7 +346,7 @@ internal class TvControls(
             t.setTextColor(if (t === metaView) withAlpha(c, 0xD9) else c)
             t.setShadowLayer(context.dpf(1.5f), 0f, context.dpf(1f), PlayerColors.CONTROL_SHADOW)
         }
-        for (b in listOf(play, rew, ffwd, next, subs, settings)) {
+        for (b in listOf(play, rew, ffwd, source, audioBtn, subs, settings)) {
             b.tint(c)
             b.addShadow(PlayerColors.CONTROL_SHADOW)
         }

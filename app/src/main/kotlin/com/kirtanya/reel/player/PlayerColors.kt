@@ -28,6 +28,8 @@ internal object PlayerColors {
     const val SHADE_CLEAR = 0x00000000
     /** The phone's unlock button's disc (alone on the picture). */
     const val SHADOW = 0x66000000
+    /** TV: the Next chip's pill (no shade behind the strip; keeps 12 sp white readable on a bright picture). */
+    const val CHIP_SCRIM = 0x8C000000.toInt()
     /** The double-tap skip bubble. */
     const val BUBBLE = 0x59000000
 

@@ -203,9 +203,11 @@ internal class CropHud(context: Context, private val font: (Boolean) -> Typeface
         isFocusable = true
         tag = "crop:$label"
         background = StateListDrawable().apply {
-            val on = GradientDrawable().apply { setColor(PlayerColors.ROW_HIGHLIGHT); cornerRadius = context.dpf(12f) }
-            addState(intArrayOf(android.R.attr.state_pressed), on)
-            addState(intArrayOf(android.R.attr.state_focused), on)
+            // Focus is an outline (no fill, no scale, no glow); a finger fills it softly.
+            val touched = GradientDrawable().apply { setColor(PlayerColors.ROW_HIGHLIGHT); cornerRadius = context.dpf(12f) }
+            val ring = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = context.dpf(12f); setStroke(context.dp(2), PlayerColors.FOREGROUND) }
+            addState(intArrayOf(android.R.attr.state_pressed), touched)
+            addState(intArrayOf(android.R.attr.state_focused), ring)
             addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
         }
         setOnClickListener { onClick() }

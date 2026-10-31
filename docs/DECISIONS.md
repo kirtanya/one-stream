@@ -5,6 +5,26 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-31 · Player: up-front Change source / Audio, Next chip, grouped settings, English first**
+Decision (user request). Logic + tests: `core/player/TrackPick.kt` (`TrackPickTest`); UI: `PhoneControls`, `TvControls`,
+`PlayerKit` (`NextChip`, `SettingsPanel`), `PlayerActivity` (`applyLanguagePicks`, `onNextChip`).
+- Change source and Audio are buttons in the band / strip (Audio only with 2+ audio tracks, Change source only for a TMDB
+  title); the panel rows stay. TV puts them first in the strip (D-pad: left of back 10 s). The old Next button became a
+  very small "Next · S1 E4" chip just above the title (phone: its 48 dp box grows up, so the touch rule holds; portrait
+  gives the title block its own line, it had none). It shows for any episode with a next one; a tap before the background
+  lookup finished starts the lookup and plays the moment it is ready (same path as Up next's Play now).
+- Settings panel: Playback (speed, auto-play next, sleep timer), Audio (track, delay, night mode, voice boost), Subtitles
+  (track, style shortcut = the four presets, delay, search again), Picture, More. Every row shows its value.
+- English first: audio = remembered language (TitlePrefs) else English, never commentary / audio description, beats the
+  file's "default" flag; subtitles = remembered language / Settings language (English by default), full set before SDH
+  before forced-only, Off stays Off, a language that isn't there means none. Applied on every track change until the
+  user picks by hand. ExoPlayer also gets `setPreferredAudioLanguage` so the first audio is already right.
+- Focus is outline only in the player: no 1.12 scale, no soft fill on the round buttons, panel rows and crop buttons.
+- TV Next chip sits on a dark glass pill (`PlayerColors.CHIP_SCRIM`): 12 sp white on a bright picture fails the contrast
+  rule and the strip has no shade; the baseline was not grown.
+- The settings panel's ScrollView now also clips with a plain rectangle: the rounded outline clip is ignored by software
+  canvases, so the design checks saw rows from below the panel drawn over the strip.
+
 **2026-10-28 · Debrid fallback checks links before switching (Debridio kept loading)**
 Decision (user report: Debridio "doesn't load properly / keeps loading"). Logic + tests: `core/player/Placeholder.kt`
 (`PlaceholderFallback.candidates`, `ReadyCheck`, `Readiness`; `PlaceholderTest`). Player: `PlayerActivity.findAlternative`.

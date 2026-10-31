@@ -597,6 +597,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             logSelectedSubtitle(tracks)
             readChapters(tracks)
             applySavedSubtitleLabel(tracks)
+            applyLanguagePicks(tracks)
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -737,8 +738,31 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         val position = exo.currentPosition
         val credits = creditsStartMs(duration)
         if (position < duration * 0.8 && duration - position > 5 * 60_000 && (credits == null || position < credits - 60_000)) return
+        prepareNext(next)
+    }
+
+    /** Play the next episode as soon as its lookup is done (the Next chip was tapped before that). */
+    private var playNextWhenReady = false
+
+    /**
+     * The Next chip (shown for any episode with a next one): plays it now like Up next's Play now when the
+     * lookup is done; else starts the lookup and plays the moment it is.
+     */
+    private fun onNextChip() {
+        if (nextReady != null) { playNext(); return }
+        val next = playback.next ?: return
+        playNextWhenReady = true
+        flashStatus("Finding ${next.label}…")
+        if (nextJob?.isActive != true) { nextJob = null; prepareNext(next) }
+    }
+
+    private fun prepareNext(next: EpisodeNumber) {
         nextJob = lifecycleScope.launch {
-            val nextPlayback = buildNextPlayback(next) ?: return@launch
+            val nextPlayback = buildNextPlayback(next)
+            if (nextPlayback == null) {
+                if (playNextWhenReady) { playNextWhenReady = false; flashStatus("${next.label} isn't available yet") }
+                return@launch
+            }
             val req = sourceRequest(next) ?: return@launch
             app.sources.ensureReady()
             val search = withTimeoutOrNull(45_000) {
@@ -748,6 +772,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             nextReady = (if (source != null) nextPlayback.copy(source = source) else nextPlayback) to source
             Log.i(TAG, "next ${next.label}: ${source?.provider ?: "no source"}")
             watchForCredits()
+            if (playNextWhenReady) { playNextWhenReady = false; playNext() }
         }
     }
 
@@ -1447,19 +1472,62 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun applyTitlePrefs(exo: ExoPlayer) {
         val subs = com.kirtanya.reel.core.player.TitleStart.subtitles(saved)
         val audio = saved?.audioLanguage
-        if (subs != null || audio != null) {
-            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().apply {
-                if (subs?.off == true) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                else if (subs?.language != null) setPreferredTextLanguage(subs.language)
-                if (audio != null) setPreferredAudioLanguage(audio)
-            }.build()
-        }
+        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().apply {
+            if (subs?.off == true) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            else if (subs?.language != null) setPreferredTextLanguage(subs.language)
+            // English first, unless this title remembers a language. This already beats the file's "default"
+            // flag at the start; applyLanguagePicks refines it once the tracks are known (no commentary).
+            setPreferredAudioLanguage(audio ?: com.kirtanya.reel.core.player.TrackPick.ENGLISH)
+        }.build()
         val speed = com.kirtanya.reel.core.player.TitleStart.speed(saved)
         if (speed != 1f) exo.setPlaybackSpeed(speed)
         if (saved != null) stat("titlePrefs", mapOf("subs" to (saved?.subtitleLanguage ?: "-"), "audio" to (audio ?: "-"), "speed" to speed, "picture" to (saved?.picture ?: "-")))
     }
 
     private var savedLabelApplied = false
+
+    /** The user picked a track in the panel or with the Audio button: the automatic pick keeps out of it. */
+    private var audioUserPicked = false
+    private var subtitleUserPicked = false
+
+    private class Pickable(val group: androidx.media3.common.Tracks.Group, val index: Int, val track: com.kirtanya.reel.core.player.TrackCandidate)
+
+    private fun pickables(tracks: androidx.media3.common.Tracks, type: Int): List<Pickable> = tracks.groups.filter { it.type == type }.flatMap { g ->
+        (0 until g.length).filter { g.isTrackSupported(it) }.map { i ->
+            val f = g.getTrackFormat(i)
+            Pickable(g, i, com.kirtanya.reel.core.player.TrackCandidate(
+                language = f.language, label = f.label,
+                isDefault = f.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
+                isForced = f.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+                isCommentary = f.roleFlags and C.ROLE_FLAG_COMMENTARY != 0,
+                isDescriptive = f.roleFlags and C.ROLE_FLAG_DESCRIBES_VIDEO != 0,
+            ))
+        }
+    }
+
+    /**
+     * English first (TrackPick): the audio track and the subtitle track that start are the English main ones unless
+     * this title remembers a language (TitlePrefs) or the Settings subtitle language says otherwise; Off stays off.
+     * Runs on every track change until the user picks something themselves (subtitles join late).
+     */
+    private fun applyLanguagePicks(tracks: androidx.media3.common.Tracks) {
+        val exo = player ?: return
+        fun choose(list: List<Pickable>, at: Int?, kind: String) {
+            val want = at?.let { list[it] } ?: return
+            if (want.group.isTrackSelected(want.index)) return
+            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                .setOverrideForType(androidx.media3.common.TrackSelectionOverride(want.group.mediaTrackGroup, want.index)).build()
+            stat("languagePick", mapOf("kind" to kind, "lang" to (want.track.language ?: "-"), "label" to (want.track.label ?: "-")))
+        }
+        if (!audioUserPicked) {
+            val audio = pickables(tracks, C.TRACK_TYPE_AUDIO)
+            choose(audio, com.kirtanya.reel.core.player.TrackPick.audio(audio.map { it.track }, saved?.audioLanguage), "audio")
+        }
+        if (!subtitleUserPicked && !exo.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+            val text = pickables(tracks, C.TRACK_TYPE_TEXT)
+            choose(text, com.kirtanya.reel.core.player.TrackPick.subtitle(text.map { it.track }, saved?.subtitleLanguage, saved?.subtitleLabel, prefs.subtitleLanguage), "subtitle")
+        }
+    }
 
     /** Two tracks in the remembered language (e.g. "SDH" and "Forced"): pick the one with the saved label. */
     private fun applySavedSubtitleLabel(tracks: androidx.media3.common.Tracks) {
@@ -1484,6 +1552,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     /** The user picked a track or a speed in the panel: remember it for this title (and its next episodes). */
     private fun onPanelChoice(kind: String) {
         val exo = player ?: return
+        if (kind == "audio") audioUserPicked = true
+        if (kind == "sub") subtitleUserPicked = true
         val params = exo.trackSelectionParameters
         fun chosen(type: Int): androidx.media3.common.Format? =
             params.overrides.values.firstOrNull { it.type == type && it.trackIndices.isNotEmpty() }?.let { it.mediaTrackGroup.getFormat(it.trackIndices[0]) }
@@ -1511,9 +1581,16 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     private val onOff = listOf("Off", "On")
 
-    /** The panel's Subtitles / Audio / Playback rows; set again when something they show changes (effects refused). */
+    /** The panel's group rows (after each group's track / speed row); set again when something they show changes (effects refused). */
     private fun setPanelRows() {
+        val captionPresets = com.kirtanya.reel.core.playback.CaptionStyle.Preset.entries
         val subtitle = listOf<PanelRow>(
+            // A shortcut to the look presets (Settings → Subtitles → Style has every detail); size and position stay the user's.
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_subtitles, "Subtitle style", captionPresets.map { it.label }, { com.kirtanya.reel.core.playback.CaptionStyle.Preset.of(prefs.caption)?.ordinal ?: -1 }, asList = true,
+                display = { if (prefs.caption.system) "Android style" else com.kirtanya.reel.core.playback.CaptionStyle.Preset.of(prefs.caption)?.label ?: "Custom" }) { i ->
+                app.playbackSettings.update { it.copy(caption = captionPresets[i].style.copy(size = it.caption.size, position = it.caption.position)) }
+                applyCaptionLook()
+            },
             PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Subtitle delay", com.kirtanya.reel.core.player.Delay.SUBTITLES, { (delays.subtitlesUs / 1000).toInt() }) { ms ->
                 delays.subtitlesUs = ms * 1_000L
                 store.updateDelays(playback.titleKey) { it.copy(subtitleDelayMs = ms) }
@@ -1534,12 +1611,18 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             PanelExtra("Night mode", note = FX_UNAVAILABLE, icon = com.kirtanya.reel.R.drawable.ic_pl_night, action = null),
             PanelExtra("Voice boost", note = FX_UNAVAILABLE, icon = com.kirtanya.reel.R.drawable.ic_pl_voice, action = null),
         )
-        val audio = fxRows + PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Audio delay", com.kirtanya.reel.core.player.Delay.AUDIO, { (delays.audioUs / 1000).toInt() }) { ms ->
-            delays.audioUs = ms * 1_000L
-            store.updateDelays(playback.titleKey) { it.copy(audioDelayMs = ms) }
-        }
+        val audio = listOf<PanelRow>(
+            PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Audio delay", com.kirtanya.reel.core.player.Delay.AUDIO, { (delays.audioUs / 1000).toInt() }) { ms ->
+                delays.audioUs = ms * 1_000L
+                store.updateDelays(playback.titleKey) { it.copy(audioDelayMs = ms) }
+            },
+        ) + fxRows
         val sleeps = com.kirtanya.reel.core.player.SleepChoice.entries
-        val playbackRows = listOf<PanelRow>(
+        val playbackRows = listOfNotNull<PanelRow>(
+            // The same switch as Settings → Playback; only for episodes (a film has no next).
+            if (playback.episode != null) PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_next, "Auto-play next", onOff, { if (prefs.autoplayNext) 1 else 0 }) { i ->
+                app.playbackSettings.update { it.copy(autoplayNext = i == 1) }
+            } else null,
             PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_timer, "Sleep timer", sleeps.map { it.label }, { sleepChoice.ordinal }, asList = true) { i -> setSleep(sleeps[i]) },
         )
         tvControls?.setRows(subtitle, audio, playbackRows, ::onPanelChoice)
@@ -1986,8 +2069,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                         (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf(PanelExtra("Open in another player") { openExternal() })
                         else emptyList()) + PanelExtra(REPORT_ROW) { reportFromSettings() }
                 },
-                hasNext = { nextReady != null },
-                onNext = { playNext() },
+                nextLabel = { playback.next?.let { "Next · ${it.label}" } },
+                onNext = { onNextChip() },
+                onChangeSource = { changeSource() },
+                canChangeSource = { PlayerSourceChange.available(playback) },
             ).also {
                 it.setToggles(listOf(picture, crop, cinema))
                 it.seekStepMs = options.seekStepS * 1_000L
@@ -2014,8 +2099,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             },
             onBack = { finish() },
             onPip = if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({ enterPip() }) else null,
-            nextLabel = { nextReady?.let { (n, _) -> n.episode?.label?.let { "Next · $it" } ?: "Next episode" } },
-            onNext = { playNext() },
+            nextLabel = { playback.next?.let { "Next · ${it.label}" } },
+            onNext = { onNextChip() },
+            onChangeSource = { changeSource() },
+            canChangeSource = { PlayerSourceChange.available(playback) },
             // Continue on the paired TV (wakes it from standby); the phone pauses, so it can come back.
             onSendToTv = {
                 com.kirtanya.reel.tvremote.SendToTv.sendAndTell(app, playback, player?.currentPosition ?: 0L) { player?.pause() }

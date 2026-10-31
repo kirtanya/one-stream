@@ -35,11 +35,12 @@ import kotlin.math.abs
  * picture). Nothing at the top and nothing over the middle: everything lives in one band along the
  * bottom edge, white with a small tight shadow, no scrim.
  *  - One row of controls, every one the same size (48 dp touch, same icon size, no filled play
- *    disc): back, back 10, play / pause, forward 10 on the left; next episode (when ready), lock,
- *    subtitles, settings on the right. Speed, picture mode and picture-in-picture live in the
- *    settings panel (PiP still starts by itself on Home).
- *  - The title (and "Ends at") is a small caption between the two groups, only where it fits
- *    (landscape); in portrait the row has no room and it's left out.
+ *    disc): back, back 10, play / pause, forward 10 on the left; Change source, Audio (only with
+ *    more than one audio track), send to TV, lock, subtitles, settings on the right. Speed, picture
+ *    mode and picture-in-picture live in the settings panel (PiP still starts by itself on Home).
+ *  - The title (and "Ends at") is a small caption between the two groups where it fits (landscape);
+ *    in portrait it gets a line of its own above the buttons. For an episode with a next one, a very
+ *    small "Next · S1 E4" sits just above the title.
  *  - Under the row, the seek bar: a hairline (played part only), thumb + halo and a time bubble
  *    while touched, a full 48 dp touch area; elapsed / remaining small above its ends.
  *
@@ -61,7 +62,7 @@ internal class PhoneControls(
     private val onBack: () -> Unit,
     /** Picture in picture, as a settings row (null: the phone can't). */
     onPip: (() -> Unit)?,
-    /** "Next episode" when one is ready, else null (the button hides). */
+    /** "Next · S1 E4" while the episode has a next one (the chip above the title), else null. */
     private val nextLabel: () -> String?,
     private val onNext: () -> Unit,
     /** Pinch picked fill (true) or fit (false): the activity applies and remembers it. */
@@ -70,6 +71,10 @@ internal class PhoneControls(
     private val onSendToTv: (() -> Unit)? = null,
     /** Whether this playback can be sent (a TMDB title); checked on every refresh. */
     private val canSendToTv: () -> Boolean = { false },
+    /** Change source (the Sources page for this title); null hides the button. */
+    private val onChangeSource: (() -> Unit)? = null,
+    /** Whether this playback has sources to change to (a TMDB title); checked on every refresh. */
+    private val canChangeSource: () -> Boolean = { false },
 ) : FrameLayout(activity) {
     private val ctx: Context = activity
     private val main = Handler(Looper.getMainLooper())
@@ -92,7 +97,9 @@ internal class PhoneControls(
     private val rew = SkipButton(ctx, forward = false, seconds = 10, sizeDp = BUTTON_DP, iconDp = SKIP_ICON_DP, font = font(true))
     private val play = RoundButton(ctx, R.drawable.ic_pl_pause, "Play or pause", BUTTON_DP, ICON_DP)
     private val ffwd = SkipButton(ctx, forward = true, seconds = 10, sizeDp = BUTTON_DP, iconDp = SKIP_ICON_DP, font = font(true))
-    private val next = RoundButton(ctx, R.drawable.ic_pl_next, "Next episode", BUTTON_DP, ICON_DP).apply { visibility = GONE }
+    private val nextChip = NextChip(ctx, font(true), phone = true).apply { visibility = GONE }
+    private val source = RoundButton(ctx, R.drawable.ic_pl_source, "Change source", BUTTON_DP, ICON_DP).apply { visibility = GONE }
+    private val audioBtn = RoundButton(ctx, R.drawable.ic_pl_audio, "Audio track", BUTTON_DP, ICON_DP).apply { visibility = GONE }
     private val toTv = RoundButton(ctx, R.drawable.ic_pl_tv, "Send to TV", BUTTON_DP, ICON_DP).apply { visibility = GONE }
     private val lock = RoundButton(ctx, R.drawable.ic_pl_lock_open, "Lock controls", BUTTON_DP, ICON_DP)
     private val subs = RoundButton(ctx, R.drawable.ic_pl_subtitles, "Subtitles", BUTTON_DP, ICON_DP)
@@ -163,6 +170,7 @@ internal class PhoneControls(
         // The title block: title, then "Ends at", both caption size; the row hides it where it doesn't fit.
         info.orientation = LinearLayout.VERTICAL
         info.gravity = Gravity.CENTER_VERTICAL
+        info.addView(nextChip, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.START })
         titleView.text = title
         for (t in listOf(titleView, metaView)) {
             t.maxLines = 1
@@ -239,7 +247,9 @@ internal class PhoneControls(
         tune.setOnClickListener { openPanel(null) }
         lock.setOnClickListener { setLocked(true) }
         unlock.setOnClickListener { setLocked(false) }
-        next.setOnClickListener { onNext() }
+        nextChip.setOnClickListener { onNext() }
+        source.setOnClickListener { onChangeSource?.invoke() }
+        audioBtn.setOnClickListener { openPanel("audio") }
         toTv.setOnClickListener { onSendToTv?.invoke() }
         seek.onScrubStart = { touch() }
         // The bubble above the thumb shows the time while scrubbing the bar (no second read-out up top).
@@ -278,7 +288,7 @@ internal class PhoneControls(
         edge.setSafe(if (side == PhoneLayout.Side.LEFT) px else 0, 0, if (side == PhoneLayout.Side.RIGHT) px else 0, 0, side, hole)
     }
 
-    private val rightButtons get() = listOf(next, toTv, lock, subs, tune)
+    private val rightButtons get() = listOf(source, audioBtn, toTv, lock, subs, tune)
 
     private fun landscape() =
         if (width > 0 && height > 0) width > height
@@ -318,6 +328,7 @@ internal class PhoneControls(
         }
         val centred = want == PhoneLayout.EDGE
         for (t in listOf(titleView, metaView)) t.gravity = if (centred) Gravity.CENTER_HORIZONTAL else Gravity.START
+        (nextChip.layoutParams as? LinearLayout.LayoutParams)?.let { it.gravity = if (centred) Gravity.CENTER_HORIZONTAL else Gravity.START; nextChip.layoutParams = it }
         placeBubbles()
         if (visible) post { onShown?.invoke(true) }
     }
@@ -336,7 +347,7 @@ internal class PhoneControls(
             t.setTextColor(if (t === metaView) PlayerColors.SECONDARY else c)
             t.setShadowLayer(ctx.dpf(1.5f), 0f, ctx.dpf(1f), PlayerColors.CONTROL_SHADOW)
         }
-        for (b in listOf(back, rew, play, ffwd, next, toTv, lock, subs, tune)) {
+        for (b in listOf(back, rew, play, ffwd, source, audioBtn, toTv, lock, subs, tune)) {
             b.tint(c)
             b.addShadow(PlayerColors.CONTROL_SHADOW)
         }
@@ -494,9 +505,17 @@ internal class PhoneControls(
         seek.dispatchTouchEvent(MotionEvent.obtain(t, t, action, x, seek.height / 2f, 0))
     }
 
+    /** Renders only: show the Audio button as if the video had several audio tracks. */
+    internal var previewAudioChoice = false
+
+    /** Renders only: the panel lists these tracks (type → label to selected). */
+    internal fun previewTracks(tracks: Map<Int, List<Pair<String, Boolean>>>) { settingsPanel.previewTracks = tracks }
+
+    /** The chip and the buttons that come and go (Change source, Audio, Send to TV). */
     private fun showNext(label: String?) {
-        next.visibility = if (label != null) VISIBLE else GONE
-        next.contentDescription = label ?: "Next episode"
+        nextChip.set(label)
+        source.visibility = if (onChangeSource != null && canChangeSource()) VISIBLE else GONE
+        audioBtn.visibility = if (previewAudioChoice || (player?.audioChoices() ?: 0) > 1) VISIBLE else GONE
         toTv.visibility = if (onSendToTv != null && canSendToTv()) VISIBLE else GONE
     }
 
@@ -772,16 +791,21 @@ internal class PhoneControls(
     }
 
     /**
-     * The controls row: [left] buttons at the start, [right] at the end, [middle] (the title) in
-     * between when at least [TITLE_MIN_DP] is left over (landscape), else it gets no room at all.
-     * Buttons are 48 dp apart by 8 dp when that fits, touching when not; when even that doesn't
-     * fit (portrait with Next), the right group goes up a line, so no touch area ever shrinks.
+     * The controls row: [left] buttons at the start, [right] at the end, [middle] (the title block) in
+     * between when at least [TITLE_MIN_DP] is left over (landscape). Buttons are 48 dp apart by 8 dp when
+     * that fits, touching when not; when even that doesn't fit (portrait), the right group goes up a
+     * line, so no touch area ever shrinks, and the title block takes a line of its own above both.
+     * The row is as tall as its tallest part: the title block grows by the Next chip's 48 dp box.
      */
     private class BandRow(context: Context, private val left: List<View>, private val middle: View, private val right: List<View>) : ViewGroup(context) {
         private val btn = context.dp(BUTTON_DP)
         private var gap = 0
         private var wrapped = false
         private var titleWidth = 0
+        private var infoHeight = 0
+        /** The Next chip's height inside the title block (0 without it): the buttons' row starts below it. */
+        private var chipHeight = 0
+        private var lineTop1 = 0
 
         init {
             clipChildren = false
@@ -800,28 +824,36 @@ internal class PhoneControls(
             val roomy = context.dp(8)
             wrapped = groupWidth(left, 0) + groupWidth(right, 0) > w
             gap = if (wrapped || groupWidth(left, roomy) + groupWidth(right, roomy) <= w) roomy else 0
-            // The title sits on the line the right group is on; on its own line it has the whole width beside it.
-            val free = if (wrapped) w - groupWidth(right, gap) else w - groupWidth(left, gap) - groupWidth(right, gap)
             val side = context.dp(TITLE_GAP_DP)
-            titleWidth = (free - 2 * side).takeIf { it >= context.dp(TITLE_MIN_DP) } ?: 0
+            // Wrapped: the title block has the whole width on its own line. Else it sits between the groups where it fits.
+            val free = if (wrapped) w else w - groupWidth(left, gap) - groupWidth(right, gap)
+            titleWidth = (free - 2 * side).takeIf { wrapped || it >= context.dp(TITLE_MIN_DP) } ?: 0
             val exact = MeasureSpec.makeMeasureSpec(btn, MeasureSpec.EXACTLY)
             for (v in shown(left) + shown(right)) v.measure(exact, exact)
-            middle.measure(MeasureSpec.makeMeasureSpec(titleWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(btn, MeasureSpec.AT_MOST))
-            setMeasuredDimension(w, if (wrapped) 2 * btn else btn)
+            middle.measure(MeasureSpec.makeMeasureSpec(titleWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(if (titleWidth > 0) 0 else 1, if (titleWidth > 0) MeasureSpec.UNSPECIFIED else MeasureSpec.EXACTLY))
+            infoHeight = if (titleWidth > 0) middle.measuredHeight else 0
+            chipHeight = ((middle as? ViewGroup)?.getChildAt(0)?.takeIf { it.visibility != GONE && titleWidth > 0 }?.measuredHeight) ?: 0
+            // Beside the buttons the title lines stay centred on them and the chip floats above: the row grows by what sticks out.
+            val textHeight = infoHeight - chipHeight
+            lineTop1 = maxOf(0, chipHeight - (btn - minOf(btn, textHeight)) / 2)
+            setMeasuredDimension(w, if (wrapped) infoHeight + 2 * btn else lineTop1 + btn)
         }
 
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             val w = r - l
-            val bottomTop = if (wrapped) btn else 0
-            val rightTop = 0
+            val side = context.dp(TITLE_GAP_DP)
+            // Buttons sit in the bottom 48 dp of the row.
+            val lineTop = if (wrapped) infoHeight else lineTop1
+            val bottomTop = if (wrapped) infoHeight + btn else lineTop
+            val rightTop = lineTop
             var x = 0
             for (v in shown(left)) { v.layout(x, bottomTop, x + btn, bottomTop + btn); x += btn + gap }
             var end = w
             for (v in shown(right).reversed()) { v.layout(end - btn, rightTop, end, rightTop + btn); end -= btn + gap }
-            val side = context.dp(TITLE_GAP_DP)
             val titleLeft = if (wrapped) side else x - gap + side
-            val ty = rightTop + (btn - middle.measuredHeight) / 2
-            middle.layout(titleLeft, ty, titleLeft + titleWidth, ty + middle.measuredHeight)
+            val textHeight = infoHeight - chipHeight
+            val ty = if (wrapped) 0 else maxOf(0, lineTop + (btn - minOf(btn, textHeight)) / 2 - chipHeight)
+            middle.layout(titleLeft, ty, titleLeft + titleWidth, ty + (if (titleWidth > 0) middle.measuredHeight else 0))
         }
     }
 
@@ -891,7 +923,7 @@ internal class PhoneControls(
             // The title: centred between back and the far column, never under either.
             val free = w - 2 * (maxOf(safe.left, safe.right) + ctx.dp(ROW_EDGE_DP) + btn + ctx.dp(TITLE_GAP_DP))
             titleWidth = minOf(free, ctx.dp(EDGE_TITLE_MAX_DP)).takeIf { it >= ctx.dp(TITLE_MIN_DP) } ?: 0
-            if (info.parent === this) info.measure(MeasureSpec.makeMeasureSpec(titleWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(btn, MeasureSpec.AT_MOST))
+            if (info.parent === this) info.measure(MeasureSpec.makeMeasureSpec(titleWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
             // Shades are measured in onLayout (their sizes follow the controls' places).
         }
 
@@ -960,7 +992,7 @@ internal class PhoneControls(
             far.forEachIndexed { i, v -> v.layout(farX, farTops[i], farX + btn, farTops[i] + btn) }
 
             val tx = (w - titleWidth) / 2
-            val ty = top + (btn - info.measuredHeight) / 2
+            val ty = if (info.measuredHeight > btn) top else top + (btn - info.measuredHeight) / 2
             info.layout(tx, ty, tx + titleWidth, ty + info.measuredHeight)
 
             // Shades: a low one behind each edge's controls, clear where the picture starts.

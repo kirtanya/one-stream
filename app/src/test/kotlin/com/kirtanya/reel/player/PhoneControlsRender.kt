@@ -33,6 +33,15 @@ class PhoneControlsRender {
     @Test @Config(qualifiers = PORT) fun renderPortraitSettings() = render("phone_controls_portrait_settings", panel = true)
     @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortrait130() = render("phone_controls_portrait_130", panel = false)
 
+    // Up-front controls: Change source + Audio in the band (several audio tracks) and the Next chip above the title;
+    // the audio picker the Audio button opens; a film with one audio track and no next episode; the panel at 130 %.
+    @Test fun renderPhoneAudioPicker() = render("phone_controls_audio_picker", panel = true, audioPanel = true)
+    @Test @Config(qualifiers = PORT) fun renderPortraitAudioPicker() = render("phone_controls_portrait_audio_picker", panel = true, audioPanel = true)
+    @Test fun renderPhoneSingleAudio() = render("phone_controls_single_audio", panel = false, next = false, audio = false)
+    @Test @Config(qualifiers = PORT) fun renderPortraitSingleAudio() = render("phone_controls_portrait_single_audio", panel = false, next = false, audio = false)
+    @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortraitSettings130() = render("phone_controls_portrait_settings_130", panel = true)
+    @Test @Config(qualifiers = PORT) fun renderPortraitSettingsEnd() = render("phone_controls_portrait_settings_end", panel = true, panelEnd = true)
+
     // Roadmap A: Skip intro (controls hidden / above the band), Still watching?, sleep chip, Up next at the credits, delay sliders.
     @Test fun renderPhoneSkip() = render("phone_skip_intro", panel = false, overlay = PlayerScenes.Overlay.SKIP)
     @Test fun renderPhoneSkipOverBand() = render("phone_skip_intro_band", panel = false, overlay = PlayerScenes.Overlay.SKIP_OVER_BAND)
@@ -61,10 +70,10 @@ class PhoneControlsRender {
 
     private fun render(
         name: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
-        overlay: PlayerScenes.Overlay? = null, slider: String? = null, edge: Side? = null,
+        overlay: PlayerScenes.Overlay? = null, slider: String? = null, edge: Side? = null, audio: Boolean = true, audioPanel: Boolean = false,
     ) {
         val scene = PlayerScenes.phone(panel, withPlayer = panel, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider,
-            layout = if (edge != null) PhoneLayout.EDGE else PhoneLayout.CLASSIC, cutout = edge)
+            layout = if (edge != null) PhoneLayout.EDGE else PhoneLayout.CLASSIC, cutout = edge, audio = audio, audioPanel = audioPanel)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

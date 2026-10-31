@@ -90,8 +90,28 @@ class PlayerDesignRules {
     @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
     fun phonePortraitSettings() = phone("player/phone-portrait-settings", panel = true)
 
-    private fun phone(where: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false) {
-        val scene = PlayerScenes.phone(panel, withPlayer = true, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null)
+    // Up-front controls: the audio picker the Audio button opens, a film with one audio track and no next episode, the panel's groups at 130 %.
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneAudioPicker() = phone("player/phone-audio-picker", panel = true, audioPanel = true)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitAudioPicker() = phone("player/phone-portrait-audio-picker", panel = true, audioPanel = true)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitSingleAudio() = phone("player/phone-portrait-single-audio", panel = false, next = false, audio = false)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortraitSettings130() = phone("player/phone-portrait-settings-130", panel = true)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitSettingsEnd() {
+        val scene = PlayerScenes.phone(panel = true, withPlayer = true, panelEnd = true)
+        check("player/phone-portrait-settings-end", ViewChecks(scene.root, "player/phone-portrait-settings-end"), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
+    private fun phone(where: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false, audio: Boolean = true, audioPanel: Boolean = false) {
+        val scene = PlayerScenes.phone(panel, withPlayer = true, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null, audio = audio, audioPanel = audioPanel)
         check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
         scene.release()
     }
@@ -266,8 +286,15 @@ class PlayerDesignRules {
     @Test @Config(sdk = [34], qualifiers = TV)
     fun tvSettingsFile() = tv("player/tv-settings-file", PlayerScenes.MID, panel = true, panelEnd = true, file = true)
 
-    private fun tv(where: String, picture: IntArray, panel: Boolean, panelEnd: Boolean = false, file: Boolean = false) {
-        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd)
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvAudioPicker() = tv("player/tv-audio-picker", PlayerScenes.MID, panel = true, audioPanel = true)
+
+    /** A film: no Next chip, one audio track (no Audio button). */
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvMovieSingleAudio() = tv("player/tv-movie-single-audio", PlayerScenes.MID, panel = false, next = false, audio = false)
+
+    private fun tv(where: String, picture: IntArray, panel: Boolean, panelEnd: Boolean = false, file: Boolean = false, audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false) {
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, audio = audio, next = next, audioPanel = audioPanel)
         // The strip refreshes from the (empty) player while time passes: keep it mid-film.
         check(where, ViewChecks(scene.root, where), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
         scene.release()
