@@ -20,11 +20,11 @@ Decisions (user):
 
 ---
 
-**2026-10-31 · TV player: Back asks "Press OK to exit" instead of leaving**
-Decision (user: Back was easy to hit by accident mid-film). With the controls hidden, Back shows a "Press OK to exit"
-chip at the bottom for 3 s, however often it's pressed; OK while it shows leaves. Open controls / panels still close on
-Back first; an error screen still leaves on Back. Phone unchanged. Logic: `core/input/PlayerExitGuard` (+ tests),
-chip: `PlayerOverlays.exitChip`.
+**2026-10-31 · TV player: Back twice to exit**
+Decision (user: Back was easy to hit by accident mid-film; then: "two Back presses", not OK). With the controls hidden,
+the first Back shows "Press Back again to exit" at the bottom for 3 s; a second Back while it shows leaves. Holding Back
+never leaves. Open controls / panels still close on Back first; an error screen still leaves on Back. Phone unchanged.
+Logic: `core/input/PlayerExitGuard` (+ tests), chip: `PlayerOverlays.exitChip`.
 
 ---
 

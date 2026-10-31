@@ -1015,20 +1015,15 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private var exitChipJob: Job? = null
     private val exitGuard = com.kirtanya.reel.core.input.PlayerExitGuard()
 
-    /** TV: Back shows "Press OK to exit" instead of leaving; OK while it shows leaves ([PlayerExitGuard]). */
+    /** TV: the first Back shows "Press Back again to exit" instead of leaving; a second one leaves ([PlayerExitGuard]). */
     private fun exitGuard(event: KeyEvent): Boolean {
-        if (!tvDevice) return false
-        val key = when (event.keyCode) {
-            KeyEvent.KEYCODE_BACK -> com.kirtanya.reel.core.input.PlayerExitGuard.Key.Back
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> com.kirtanya.reel.core.input.PlayerExitGuard.Key.Ok
-            else -> return false
-        }
+        if (!tvDevice || event.keyCode != KeyEvent.KEYCODE_BACK) return false
         val verdict = when (event.action) {
-            KeyEvent.ACTION_DOWN -> exitGuard.onDown(
-                key, event.repeatCount, controlsOpen = tvControls?.visible == true,
+            KeyEvent.ACTION_DOWN -> exitGuard.onBackDown(
+                event.repeatCount, controlsOpen = tvControls?.visible == true,
                 errorShown = errorPanel.visibility == View.VISIBLE, chipShown = exitChip.visibility == View.VISIBLE,
             )
-            KeyEvent.ACTION_UP -> exitGuard.onUp(key)
+            KeyEvent.ACTION_UP -> exitGuard.onBackUp()
             else -> return false
         }
         return when (verdict) {

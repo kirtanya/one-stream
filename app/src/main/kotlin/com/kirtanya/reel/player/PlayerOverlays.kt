@@ -33,9 +33,9 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
     /** "Skip intro" / "Skip recap" / "Skip credits": primary, so it reads at a glance. */
     val skipChip: Button = smallButton("Skip intro", primary = true) {}.apply { visibility = View.GONE }
 
-    /** TV: "Press OK to exit", bottom centre, after Back (Back alone never leaves the player there). */
+    /** TV: "Press Back again to exit", bottom centre, after Back (one Back never leaves the player there). */
     val exitChip: TextView = TextView(context).apply {
-        text = "Press OK to exit"
+        text = "Press Back again to exit"
         setTextColor(PlayerColors.FOREGROUND)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         typeface = font(true)

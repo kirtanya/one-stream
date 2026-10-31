@@ -257,7 +257,7 @@ internal object PlayerScenes {
         audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false,
         /** Which page the panel opens on ("sub" = the Subtitles button). */
         section: String? = null,
-        /** "Press OK to exit" showing (after Back). */
+        /** "Press Back again to exit" showing (after the first Back). */
         exitChip: Boolean = false,
     ): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()

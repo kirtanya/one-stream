@@ -46,7 +46,7 @@ class TvControlsRender {
     @Test fun renderSubtitleDelay() = render("tv_controls_subtitle_delay", PlayerScenes.MID, panel = true, slider = "Subtitle delay")
     /** The Subtitles button: tracks first, then style, delay, search again. */
     @Test fun renderSubtitlePage() = render("tv_controls_subtitle_page", PlayerScenes.MID, panel = true, section = "sub")
-    /** Back with the controls hidden: "Press OK to exit". */
+    /** Back with the controls hidden: "Press Back again to exit". */
     @Test fun renderExitChip() = render("tv_exit_chip", PlayerScenes.BRIGHT, exitChip = true)
 
     private fun render(
