@@ -36,7 +36,9 @@ class WatchHistoryStore(context: Context) {
     /** Records [positionMs] of [durationMs] for [playback]. Ignores the first seconds (opened by mistake). */
     fun save(playback: Playback, positionMs: Long, durationMs: Long) {
         if (positionMs < 10_000 && get(playback.key) == null) return
-        val entry = WatchEntry(playback, positionMs, durationMs, System.currentTimeMillis())
+        // A file played again comes in bare: keep the artwork / title its name was matched to (ArtMatcher).
+        val p = com.kirtanya.reel.core.artmatch.ArtMatch.keepMatch(playback, get(playback.key)?.playback)
+        val entry = WatchEntry(p, positionMs, durationMs, System.currentTimeMillis())
         update { list -> (listOf(entry) + list.filterNot { it.playback.key == playback.key }).take(MAX_ENTRIES) }
     }
 
@@ -59,6 +61,17 @@ class WatchHistoryStore(context: Context) {
 
     /** Clears the whole watch history (Continue watching empties too). Watched ticks stay. */
     fun clear() = update { emptyList() }
+
+    /**
+     * Fills in one entry's Playback (ArtMatcher: a raw file's TMDB title and artwork). Additive only: the
+     * entry keeps its place, position and time, and its key, title key and source can't change.
+     */
+    fun enrich(key: String, change: (Playback) -> Playback) {
+        val old = get(key)?.playback ?: return
+        val new = change(old).copy(key = old.key, titleKey = old.titleKey, source = old.source)
+        if (new == old) return
+        update { list -> list.map { if (it.playback.key == key) it.copy(playback = new) else it } }
+    }
 
     /** Removes everything for a film or show from Continue watching. */
     fun removeTitle(titleKey: String) = update { list -> list.filterNot { it.playback.titleKey == titleKey } }

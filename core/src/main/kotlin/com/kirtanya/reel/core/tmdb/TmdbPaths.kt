@@ -18,6 +18,12 @@ object TmdbPaths {
 
     fun search(query: String) = "search/multi?language=en-US&include_adult=false&query=${URLEncoder.encode(query.trim(), Charsets.UTF_8)}"
 
+    /** Films or shows only, optionally in one year (artwork matching for raw files: core/artmatch). */
+    fun searchTitle(type: MediaType, query: String, year: Int? = null): String {
+        val yearParam = year?.let { if (type == MediaType.MOVIE) "&primary_release_year=$it" else "&first_air_date_year=$it" }.orEmpty()
+        return "search/${type.path}?language=en-US&include_adult=false&query=${URLEncoder.encode(query.trim(), Charsets.UTF_8)}$yearParam"
+    }
+
     fun details(ref: TitleRef): String {
         val extras = when (ref.type) {
             MediaType.MOVIE -> "credits,external_ids,watch%2Fproviders,release_dates,$EXTRAS"

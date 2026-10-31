@@ -246,7 +246,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         intent.getStringExtra(EXTRA_NOTE)?.let(::showNotice)
         lifecycleScope.launch {
             try {
-                val subtitles = async { findSubtitles() }
+                // A raw torrent / file / link: look its name up on TMDB while peers are found, so subtitles
+                // (they need the IMDb id) and Up next work; never more than ART_MATCH_WAIT_MS.
+                val matched = if (com.kirtanya.reel.core.artmatch.ArtMatch.needsMatch(playback)) async { matchTitle() } else null
+                val subtitles = async { matched?.await(); findSubtitles() }
                 val url = when (source.kind) {
                     SourceKind.DIRECT -> {
                         showStatus("Loading…")
@@ -293,6 +296,23 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         }
     }
 
+    /**
+     * The file's TMDB title and artwork (core/artmatch, run by ArtMatcher). Waits at most [ART_MATCH_WAIT_MS];
+     * a later answer still fills in the history entry, and saving keeps it (WatchHistoryStore.save).
+     */
+    private suspend fun matchTitle() {
+        val lookup = app.appScope.async { app.artMatcher.forPlay(playback) }
+        // Artwork is decoration: nothing here may fail the start (a failing child would cancel it).
+        val found = try {
+            withTimeoutOrNull(ART_MATCH_WAIT_MS) { lookup.await() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        } ?: return
+        playback = found
+    }
+
     private suspend fun prepareTorrent(source: Source): String {
         showStatus("Finding peers…")
         val engine = app.engine
@@ -314,7 +334,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     /**
      * Subtitles from subtitle addons. They need an IMDb id: a title that came without one (a link
      * from another app, an old Continue watching card) gets it from TMDB first. A raw magnet / file has
-     * no TMDB id, so there's nothing to ask. Logs what each addon answered (ReelPlayer) and a ReelStats line.
+     * no TMDB id unless its name matched one (matchTitle runs first); otherwise there's nothing to ask. Logs what each addon answered (ReelPlayer) and a ReelStats line.
      */
     private suspend fun findSubtitles(): SubtitleSearch {
         val none = SubtitleSearch(emptyList(), emptyList())
@@ -2101,6 +2121,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         private const val EXTRA_NOTE = "placeholderNote"
         /** Placeholders switched away from so far (PlaceholderCheck.MAX_SWITCHES). */
         private const val EXTRA_HOPS = "placeholderHops"
+        /** How long the start waits for a raw file's TMDB match (it runs alongside finding peers). */
+        private const val ART_MATCH_WAIT_MS = 1_500L
         /** Test hook (SourcesProbe placeholderTest): the expected runtime instead of TMDB's. */
         private const val EXTRA_EXPECTED_MS = "expectedMs"
         /** Test hook: the sources a placeholder may switch to (JSON list) instead of a search; empty = none. */

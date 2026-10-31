@@ -48,6 +48,8 @@ object Watched {
     /** Marks to add when history has finished entries that have no newer mark yet (so they sync too). */
     fun fromHistory(marks: Map<String, WatchedMark>, history: List<WatchEntry>): List<WatchedMark> =
         history.filter { it.finished && it.playback.tmdbId != null }
+            // A raw file matched to a title (core/artmatch) keeps its "file:…" key: no tick under that key.
+            .filter { it.playback.key.startsWith("${it.playback.tmdbType}:") }
             .filter { e -> marks[e.playback.key].let { it == null || it.changedAt < e.updatedAt } }
             .map { WatchedMark(it.playback.key, it.playback.titleKey, true, it.updatedAt) }
 

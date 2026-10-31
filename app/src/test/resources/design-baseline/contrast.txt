@@ -15,7 +15,6 @@ phone/settings-plugins-light-100 | text "v3.0.11 · https://raw.githubuserconten
 phone/settings-storage-light-100 | text "0 B" | 3.84:1, needs 4.5:1 (#75777F on #EEEDF4, 12 sp)
 phone/title-bare-light-100 | text "Not on any streaming service in India r…" | 4.26:1, needs 4.5:1 (#75777F on #F9F9FF, 14 sp)
 phone/title-show-light-100 | text "Not on any streaming service in India r…" | 4.25:1, needs 4.5:1 (#807667 on #FFF8F3, 14 sp)
-tv/home | text "8 min left" | 3.20:1, needs 4.5:1 (#8E9099 on #3A4154, 12 sp)
 tv/settings-appearance | text "Blue" | 3.73:1, needs 4.5:1 (#8E9099 on #323746, 12 sp)
 tv/sources-many | text "S2 E6 · The One Where Everything That C…" | 3.67:1, needs 4.5:1 (#EAE1D8 on #847054, 16 sp)
 tv/title-show | text "A hotel night manager is recruited to i…" | 2.96:1, needs 4.5:1 (#D1C5B4 on #776E5F, 14 sp)

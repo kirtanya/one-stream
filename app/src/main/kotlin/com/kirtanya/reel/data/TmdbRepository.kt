@@ -63,6 +63,10 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
     suspend fun search(query: String): List<TitleSummary> =
         if (query.isBlank()) emptyList() else list(TmdbPaths.search(query))
 
+    /** Films or shows named [query] with popularity and original titles (artwork matching for raw files). */
+    suspend fun matchCandidates(type: MediaType, query: String, year: Int?): List<com.kirtanya.reel.core.artmatch.MatchCandidate> =
+        com.kirtanya.reel.core.artmatch.TitleMatcher.parseSearch(get(TmdbPaths.searchTitle(type, query, year)), type)
+
     suspend fun details(ref: TitleRef): TitleDetails =
         TmdbParser.parseDetails(get(TmdbPaths.details(ref)), ref.type, region)
 

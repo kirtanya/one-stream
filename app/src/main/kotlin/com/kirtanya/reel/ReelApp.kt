@@ -44,6 +44,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val aggregator by lazy { SourceAggregator() }
     val addonStore by lazy { com.kirtanya.reel.data.AddonStore(this, fetcher) }
     val history by lazy { WatchHistoryStore(this) }
+    /** TMDB title + artwork for Continue watching entries played from a raw torrent / file / link. */
+    val artMatcher by lazy { com.kirtanya.reel.artmatch.ArtMatcher(this, com.kirtanya.reel.artmatch.TmdbArtLookup(tmdb), history, appScope) }
     val watchlist by lazy { com.kirtanya.reel.data.WatchlistStore(this) }
     val sourceMarks by lazy { com.kirtanya.reel.data.SourceMarksStore(this) }
     val watched by lazy { com.kirtanya.reel.data.WatchedStore(this, history) }
@@ -93,6 +95,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         appScope.launch { ratings.warm() }
         // Finishing something in the player ticks it as watched (and so it syncs to the TV).
         appScope.launch { history.entries.collect { watched.recordHistory(it) } }
+        // Artwork for raw-file entries in Continue watching, once startup has settled.
+        appScope.launch { kotlinx.coroutines.delay(4_000); artMatcher.enrichHistory("start") }
         autoDownloader.start()
         // Before anything can start the engine: the P2P network rule must hold downloads from the first moment.
         home.start()

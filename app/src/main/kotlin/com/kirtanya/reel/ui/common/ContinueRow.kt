@@ -104,6 +104,9 @@ fun ContinueRow(
     if (items.isEmpty()) return
     val context = LocalContext.current
     val history = ReelApp.get(context).history
+    // Cards still on a letter tile (a raw torrent / file / link): look their names up on TMDB in the background.
+    val unmatched = items.count { com.kirtanya.reel.core.artmatch.ArtMatch.needsMatch(it.entry.playback) }
+    androidx.compose.runtime.LaunchedEffect(unmatched) { if (unmatched > 0) ReelApp.get(context).artMatcher.enrichSoon("row") }
     val shape = RoundedCornerShape(Tokens.Radius.media)
     // Long-press (hold OK) opens the options; removing is one of them, with Undo (it used to remove at once,
     // and on a TV remote a long press happens by accident).
@@ -164,7 +167,9 @@ fun ContinueRow(
                         }
                     }
                     Text(continueTitle(item), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(continueDetail(item), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1)
+                    // textSecondary: on the TV this sits over the focused title's backdrop (a bright one left
+                    // textTertiary at ~3.2:1, design rule 3).
+                    Text(continueDetail(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
                 }
             }
         }

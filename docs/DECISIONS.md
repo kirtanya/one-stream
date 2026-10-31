@@ -20,6 +20,47 @@ Also decided (Claude):
 - Telemetry `placeholderCheck` (candidates, checked, notReady, failed, found, ms). Hosts / links never logged.
 Evidence: core tests (20/20 PlaceholderTest); Mac check of Debridio links (redirect ≈ 1.7–2.3 s each).
 
+**2026-10-24 · Artwork for raw files: match the release name on TMDB**
+Decision: Continue watching entries played from a magnet / .torrent / download / link (no TMDB id, "file:<hash>:<idx>"
+or "url:…" keys) get their title's artwork, name and ids from TMDB, so the card shows a still / backdrop instead of the
+letter tile, and subtitles (IMDb id) and Up next work for them.
+- Name → title (`core/artmatch/ReleaseName`): last path segment, extension, leading [tags] / www.site.tld; the first
+  SxxEyy / 1x02 / "Season 1 Episode 2" (or a lone S01 / "Season 2" = season pack) ends the title; then the first
+  quality / source / codec / audio / release token; the year is the last 1900…next-year number before that (so
+  "Blade Runner 2049", "2001 A Space Odyssey 1968", "1917 2019" come out right); "(2018)" / "(US)" survive the cut at
+  the first bracket; trailing US / UK / AU / NZ / CA = a country hint. Nothing similar existed (QualityParser /
+  SourceFacts read tags, not titles).
+- Scoring (`TitleMatcher`, documented there): 0.70 × title similarity (normalised edit distance, TMDB title or
+  original title, leading article ignored) + 0.20 × year (same 1.0, ±1 0.6, unknown 0.4, further = out) + 0.10 ×
+  log popularity, country hint +0.05 / −0.10. Accept only similarity ≥ 0.85, score ≥ 0.80 and no other title within
+  0.03 (no year + two popular namesakes → no match). Search/movie or search/tv by whether the name has a season;
+  one retry with the year. Prefer no match over a wrong one: the letter tile stays.
+- Applying (`ArtMatch.apply`): title, year, tmdbType / tmdbId, imdbId (details), poster / backdrop, and for an episode
+  the episode, "S1 E2 · name", the TMDB still and the next episode. Key, titleKey and source never change (resume and
+  per-title prefs hang off them). A season pack without an episode number gets artwork + name only (a TMDB id without
+  an episode would send "tt…:null:null" source / subtitle requests).
+- When: a background pass (app start + 4 s, and when the Continue row shows a letter tile; passes ≥ 60 s apart,
+  ≤ 24 TMDB calls a pass, 300 ms apart, stops at the first network error) and at play start (alongside finding
+  peers, waited ≤ 1.5 s; a later answer still fills the history entry). Answers incl. "no match" cached 7 days
+  (files/art-match.json, ≤ 400); network errors cache nothing. Telemetry: `ev=artMatch result=matched|none|error
+  why score ms via cached calls type title` (clean title only, never the raw name / path).
+- Touches outside the player/UI (small, additive; One stream session's area): `WatchHistoryStore.enrich(key)` (in
+  place: same order, position, updatedAt) and `save` keeps an existing match when a bare Playback for the same key is
+  saved (`ArtMatch.keepMatch`); `TmdbRepository.matchCandidates`; `TmdbPaths.searchTitle`; `Watched.fromHistory`
+  skips matched file entries (no ticks under "file:" keys, as before).
+Also: the Continue card's detail line moved textTertiary → textSecondary (over a bright focused backdrop on the TV
+it was 3.2:1; the tv/home baseline entry for it is pruned).
+Evidence: ArtMatchTest (32 cases: ~40 real-looking names, scoring, resolver with fakes, cache); renders
+`home-art-matched` (phone + TV) vs `home`; live TMDB samples below.
+Live TMDB from the Mac (real resolver, 10 names): Tears of Steel 2012 → movie 133701 (0.92), Avengers Infinity War
+(2018) [BluRay] → 299536 (0.99), Game.of.Thrones.S01E01 → tv 1399 S1 E1 "Winter Is Coming" + still, next S1 E2 (0.88),
+The.Office.US.S02E03 → tv 2316 (US, not the UK one) "Office Olympics" (0.93), Sintel.2010 → 45745 (0.93),
+Interstellar.2014 → 157336 (0.99), Breaking Bad 1x02 → tv 1396 S1 E2 (0.88); no match, as intended:
+big_buck_bunny_1080p (no year, several TMDB entries of that name → ambiguous), The.Lion.King.1080p (1994 vs 2019),
+Random.Home.Video.2019 (no results). 0.3–2 s per name with 1–3 calls.
+
+---
+
 **2026-10-24 · Edge layout: one line through the camera hole (replaces the flank as the default)**
 Decision (user): everything on the camera side in ONE vertical line in the cutout strip, centred on the hole's
 horizontal middle: back at the top, the hole, then back 10 / play / forward 10 from the hole's bounding rect + 8 dp,

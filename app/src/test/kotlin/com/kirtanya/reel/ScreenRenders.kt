@@ -113,6 +113,8 @@ open class ScreenRenders(protected val variant: Variant) {
         catalog: Catalog = FakeCatalog(),
         data: RenderData? = null,
         history: Boolean = false,
+        /** The seeded raw file (Tears of Steel) matched on TMDB first (ArtMatcher): artwork instead of its letter tile. */
+        artMatched: Boolean = false,
         /** Dialogs and sheets are windows of their own: capture the whole screen. */
         windows: Boolean = false,
         waitMs: Long = 1_800,
@@ -129,6 +131,9 @@ open class ScreenRenders(protected val variant: Variant) {
         SingletonImageLoader.setUnsafe { context -> ImageLoader.Builder(context).components { add(FakeArt) }.build() }
         Fake.clearHistory(app)
         if (history) Fake.seedHistory(app)
+        // Raw-file artwork: fake TMDB only (no render touches the network); matched up front when asked.
+        app.artMatcher.lookup = if (artMatched) ArtFakes.tearsOfSteel else ArtFakes.nothing
+        if (artMatched) kotlinx.coroutines.runBlocking { app.artMatcher.enrichHistory("render", force = true) }
         // Home's hero pages by itself: drive the clock by hand so the test never waits on it.
         compose.mainClock.autoAdvance = false
         compose.setContent {
@@ -224,6 +229,9 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun home() = render("home", history = true, content = phone())
     // Home and Search end renders are dark only: in light, the poster meta line (textTertiary, 4.27:1) is a known
     // contrast issue, baselined on the collection grids and waiting on the user's call (DECISIONS 2026-10-21).
+    // A Continue watching card for a raw file (Tears.of.Steel.2012.1080p…) once its name matched on TMDB;
+    // "home" shows the same card before, on its letter tile.
+    @Test fun homeArtMatched() = render("home-art-matched", history = true, artMatched = true, content = phone())
     @Test fun homeEnd() = assumeDark().let { render("home-end", history = true, scrollToEnd = true, content = phone()) }
     @Test fun homeFirstRun() = render("home-first-run", content = phone())
     @Test fun homeLoading() = render("home-loading", catalog = FakeCatalog(Answer.Loading), content = phone())
@@ -473,6 +481,7 @@ open class ScreenRenders(protected val variant: Variant) {
     // ─── TV (dark, font scale 1.0) ─────────────────────────────────────────────────────────
 
     @Test @Config(qualifiers = TV) fun tvHome() = render("home", tv = true, history = true, content = tvApp())
+    @Test @Config(qualifiers = TV) fun tvHomeArtMatched() = render("home-art-matched", tv = true, history = true, artMatched = true, content = tvApp())
     @Test @Config(qualifiers = TV) fun tvHomeFirstRun() = render("home-first-run", tv = true, content = tvApp())
     @Test @Config(qualifiers = TV) fun tvHomeLoading() = render("home-loading", tv = true, catalog = FakeCatalog(Answer.Loading), content = tvApp())
     @Test @Config(qualifiers = TV) fun tvHomeError() = render("home-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp())
