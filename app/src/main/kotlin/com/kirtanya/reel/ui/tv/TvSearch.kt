@@ -56,7 +56,7 @@ fun TvSearch(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit = {}, in
                 KindChips(kind, { kind = it })
             }
             SearchResults(
-                debounced, kind, GridCells.Fixed(8), Tokens.Space.tvSafeH, Tokens.Space.tvSafeV, onOpen = onOpen,
+                debounced, kind, GridCells.Fixed(8), Tokens.Space.tvSafeH, Tokens.Space.tvSafeV, onOpen = onOpen, rowStartOnDown = 8,
                 browse = { GenreBrowser(kind, rows = 1, onOpen = { g, type -> onOpenDest(Dest.Collection(g.name, genre = g, genreType = type)) }, Modifier.fillMaxWidth()) },
             )
         }

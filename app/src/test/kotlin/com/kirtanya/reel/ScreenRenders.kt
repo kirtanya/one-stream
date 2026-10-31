@@ -1,5 +1,7 @@
 package com.kirtanya.reel
 
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -105,6 +107,11 @@ open class ScreenRenders(protected val variant: Variant) {
 
     /** False in subclasses that check screens instead of saving PNGs (the brand art isn't a screen). */
     protected open val rendersBrand get() = true
+    /**
+     * A render that shows behaviour (where focus lands) on a screen another render already covers: the design
+     * rules skip it, so the same screen isn't checked (and baselined) twice.
+     */
+    protected open fun behaviour() = Unit
 
     @OptIn(ExperimentalRoborazziApi::class)
     private fun render(
@@ -124,6 +131,12 @@ open class ScreenRenders(protected val variant: Variant) {
         scrollDp: Int = 0,
         /** TV: press ↓ this many times first (focus moves down the page). */
         focusDown: Int = 0,
+        /** TV: then press → this many times. */
+        focusRight: Int = 0,
+        /** TV: then press ↑ this many times (focus coming back up). */
+        focusUp: Int = 0,
+        /** TV: then send the remote's ↓ key this many times (screens that handle the key themselves). */
+        keyDown: Int = 0,
         content: @Composable () -> Unit,
     ) {
         if (tv) assumeTrue("TV renders run once", variant == DEFAULT)
@@ -170,6 +183,19 @@ open class ScreenRenders(protected val variant: Variant) {
         }
         repeat(focusDown) {
             focusManager?.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+            settle(500)
+        }
+        repeat(focusRight) {
+            focusManager?.moveFocus(androidx.compose.ui.focus.FocusDirection.Right)
+            settle(500)
+        }
+        repeat(focusUp) {
+            focusManager?.moveFocus(androidx.compose.ui.focus.FocusDirection.Up)
+            settle(500)
+        }
+        repeat(keyDown) {
+            @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+            compose.onAllNodes(androidx.compose.ui.test.isRoot())[0].performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionDown) }
             settle(500)
         }
         onScreenReady(name, tv, windows)
@@ -487,10 +513,14 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvHomeError() = render("home-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp())
     @Test @Config(qualifiers = TV) fun tvSearch() = render("search", tv = true, content = tvApp { select(Tab.Search) })
     @Test @Config(qualifiers = TV) fun tvSearchResults() = render("search-results", tv = true) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "dune") } }
+    /** ↓ from a card in the middle of the first row lands on the next row’s first card (not the one below it). */
+    @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusDown = 1, focusRight = 3, keyDown = 1) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
     @Test @Config(qualifiers = TV) fun tvSearchNone() = render("search-none", tv = true) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
     @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.film)) })
     @Test @Config(qualifiers = TV) fun tvTitleRotten() = render("title-rotten", tv = true, content = tvApp { open(Dest.Title(Fake.rotten)) })
     @Test @Config(qualifiers = TV) fun tvTitleReviews() = render("title-reviews", tv = true, focusDown = 1, content = tvApp { open(Dest.Title(Fake.film)) })
+    /** Down to the episodes and back up: the header shows whole again (not scrolled to just the buttons). */
+    @Test @Config(qualifiers = TV) fun tvTitleShowBackUp() = render("title-show-back-up", tv = true, focusDown = 3, focusUp = 3, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvTitleShowEpisodes() = render("title-show-episodes", tv = true, focusDown = 2, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvReviewOpen() = render("review-open", tv = true, windows = true) { TvScene { com.kirtanya.reel.ui.title.ReviewSheet(Fake.reviews.items[0], onDismiss = {}) } }
     @Test @Config(qualifiers = TV) fun tvTitleShow() = render("title-show", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.show)) })

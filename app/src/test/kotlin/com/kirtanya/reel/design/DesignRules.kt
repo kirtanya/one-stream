@@ -1,5 +1,6 @@
 package com.kirtanya.reel.design
 
+import org.junit.Assume.assumeTrue
 import com.kirtanya.reel.ScreenRenders
 import org.junit.Assert.assertTrue
 import org.robolectric.ParameterizedRobolectricTestRunner
@@ -21,6 +22,7 @@ import org.junit.runner.RunWith
 @Config(qualifiers = ScreenRenders.PHONE)
 class DesignRules(variant: Variant) : ScreenRenders(variant) {
     override val rendersBrand get() = false
+    override fun behaviour() = assumeTrue("Behaviour render: its screen is checked by another render", false)
 
     override fun onScreenReady(name: String, tv: Boolean, windows: Boolean) {
         val where = if (tv) "tv/$name" else "phone/$name-$variant"

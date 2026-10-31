@@ -124,6 +124,8 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
     var heroFocused by remember { mutableStateOf(true) }
     // Not dimmed before Play first takes focus (the page opening isn't "focus left the hero").
     var heroHadFocus by remember { mutableStateOf(false) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     Box(Modifier.fillMaxSize()) {
         // The backdrops fill the screen and change slowly (no zoom: the TV is a small 32-bit box).
@@ -139,11 +141,17 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides com.kirtanya.reel.ui.common.MinimalBringIntoView) {
         LazyColumn(
             Modifier.fillMaxSize(),
+            state = listState,
             contentPadding = PaddingValues(vertical = Tokens.Space.tvSafeV),
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
         ) {
             item(key = "hero") {
-                Column(Modifier.onFocusChanged { f -> if (f.hasFocus || heroHadFocus) heroFocused = f.hasFocus; if (f.hasFocus) heroHadFocus = true }.padding(horizontal = side), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+                Column(Modifier.onFocusChanged { f ->
+                    if (f.hasFocus || heroHadFocus) heroFocused = f.hasFocus
+                    // Back up from the rows: show the whole header again, not just enough to see the buttons.
+                    if (f.hasFocus && heroHadFocus && listState.firstVisibleItemScrollOffset + listState.firstVisibleItemIndex > 0) scope.launch { listState.animateScrollToItem(0) }
+                    if (f.hasFocus) heroHadFocus = true
+                }.padding(horizontal = side), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                     // The header sits low, like a cinema poster: the picture shows above it and the next row peeks below.
                     Spacer(Modifier.height(Tokens.Cinema.tvTitleTop))
                     Column(Modifier.fillMaxWidth(0.5f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {

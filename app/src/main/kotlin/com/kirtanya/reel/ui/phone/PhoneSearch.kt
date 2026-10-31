@@ -1,5 +1,11 @@
 package com.kirtanya.reel.ui.phone
 
+import kotlinx.coroutines.launch
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
 import android.content.Context
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -241,6 +247,8 @@ fun SearchResults(
     onOpen: (TitleSummary) -> Unit,
     focusFirst: FocusRequester? = null,
     browse: (@Composable () -> Unit)? = null,
+    /** TV: cards per row. Down from any card lands on the first card of the next row (not the one below). */
+    rowStartOnDown: Int? = null,
 ) {
     val catalog = rememberCatalog()
     val (load, retry) = rememberLoad(query) {
@@ -254,8 +262,14 @@ fun SearchResults(
             SearchKind.Shows -> it.ref.type == MediaType.TV
         }
     }
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val cardFocus = remember(results) { results.map { FocusRequester() } }
+    // Grid items before the first card: the genre browser (no query) and the heading.
+    val lead = (if (query.isEmpty() && browse != null) 1 else 0) + 1
     LazyVerticalGrid(
         columns = columns,
+        state = gridState,
         contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = Tokens.Space.s, bottom = bottomPadding),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
@@ -274,7 +288,23 @@ fun SearchResults(
             }
         }
         itemsIndexed(results, key = { _, it -> it.ref.toString() }) { i, item ->
-            PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = if (i == 0 && focusFirst != null) Modifier.focusRequester(focusFirst) else Modifier)
+            val first = if (i == 0 && focusFirst != null) Modifier.focusRequester(focusFirst) else Modifier
+            val rowJump = rowStartOnDown?.let { cols ->
+                Modifier.focusRequester(cardFocus[i]).onPreviewKeyEvent { e ->
+                    val next = (i / cols + 1) * cols
+                    if (e.key != Key.DirectionDown || next >= results.size) return@onPreviewKeyEvent false
+                    if (e.type == KeyEventType.KeyDown) scope.launch {
+                        // The row may not be composed yet: bring it in, then focus its first card.
+                        if (gridState.layoutInfo.visibleItemsInfo.none { it.index == lead + next }) gridState.scrollToItem(lead + next)
+                        repeat(5) {
+                            androidx.compose.runtime.withFrameNanos { }
+                            if (runCatching { cardFocus[next].requestFocus(androidx.compose.ui.focus.FocusDirection.Down) }.getOrDefault(false)) return@launch
+                        }
+                    }
+                    true
+                }
+            } ?: Modifier
+            PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = first.then(rowJump))
         }
     }
 }
