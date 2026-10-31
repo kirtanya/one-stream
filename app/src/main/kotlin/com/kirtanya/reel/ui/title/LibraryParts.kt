@@ -37,36 +37,6 @@ fun rememberTitleWatched(d: TitleDetails): Pair<Boolean, () -> Unit> {
     return all to { watched.markTitle(d, !all) }
 }
 
-/** Under the season chips: "3 of 10 watched" and Mark season watched / unwatched. */
-@Composable
-fun SeasonWatched(d: TitleDetails, season: Int?, sidePadding: Dp) {
-    if (season == null) return
-    val watched = ReelApp.get(LocalContext.current).watched
-    // Recount whenever a tick changes (here, in the player or from the phone).
-    val lookup by watched.state.collectAsState(initial = null)
-    val count = remember(lookup, d, season) { watched.count(d, season) }
-    if (count.total == 0) return
-    // Count left, button right; at big font sizes the button drops under the count instead of squeezing it.
-    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-    androidx.compose.foundation.layout.FlowRow(
-        Modifier.fillMaxWidth().padding(horizontal = sidePadding),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            if (count.all) "All ${count.total} watched" else "${count.watched} of ${count.total} watched",
-            style = Tokens.Type.label, color = if (count.all) Tokens.Colors.accentBright else Tokens.Colors.textSecondary,
-            maxLines = 1, modifier = Modifier.padding(end = Tokens.Space.s),
-        )
-        ReelButton(
-            if (count.all) "Mark unwatched" else "Mark season watched",
-            { watched.markSeason(d, season, !count.all) },
-            kind = ButtonKind.Ghost, icon = if (count.all) Icons.Rounded.Undo else Icons.Rounded.Check,
-        )
-    }
-}
-
 /** "The Dune Collection": the series' other films, in release order. */
 @Composable
 fun FranchiseRow(d: TitleDetails, sidePadding: Dp, posterWidth: Dp, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, showText: Boolean = true) {

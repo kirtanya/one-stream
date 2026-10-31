@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -125,6 +126,7 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
     val openProvider = rememberProviderOpener(d.providers.link)
     val (saved, toggleSaved) = rememberWatchlistToggle(d.summary)
+    val (watchedAll, toggleWatched) = com.kirtanya.reel.ui.title.rememberTitleWatched(d)
     var overviewOpen by rememberSaveable { mutableStateOf(false) }
     val openSources: (EpisodeNumber?) -> Unit = { ep -> onPlay(ep?.season, ep?.episode) }
     var episodeOptions by remember { mutableStateOf<Episode?>(null) }
@@ -176,6 +178,9 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                         ActionTile(watchlistIcon(saved), "My list", toggleSaved, Modifier.weight(1f), active = saved)
                         d.trailer?.let { t -> ActionTile(Icons.Rounded.Movie, "Trailer", { openVideo(context, t) }, Modifier.weight(1f)) }
                         ActionTile(Icons.Rounded.Hub, "Sources", { openSources(ep) }, Modifier.weight(1f))
+                        // Seen: the whole film or show (every aired episode); seasons have no watched line of their own. "Seen", not
+                        // "Watched": five tiles share 360 dp, and "Watched" cuts off at large text.
+                        ActionTile(if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility, "Seen", toggleWatched, Modifier.weight(1f), active = watchedAll)
                         ActionTile(Icons.Rounded.Share, "Share", { shareTitle(context, d) }, Modifier.weight(1f))
                     }
                 }
@@ -215,7 +220,6 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                                 ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost)
                             }
                         }
-                        com.kirtanya.reel.ui.title.SeasonWatched(d, season, gutter)
                     }
                 }
                 when (episodes) {
