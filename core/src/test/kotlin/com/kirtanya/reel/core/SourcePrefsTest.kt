@@ -40,3 +40,21 @@ class SourcePrefsTest {
         assertEquals(emptySet(), p.pinned)
     }
 }
+
+class EnglishFirstTest {
+    private fun t(title: String, seeds: Int = 100) =
+        Source(SourceKind.TORRENT, title, "Torrentio", Quality(resolution = 1080), infoHash = title.hashCode().toString().padEnd(40, '0'), seeders = seeds)
+
+    @Test fun englishBeatsDubbedAmongEquals(): Unit {
+        val hindi = t("Movie 2024 1080p Hindi", seeds = 300)
+        val plain = t("Movie 2024 1080p WEB", seeds = 100)
+        val eng = t("Movie 2024 1080p English ESub", seeds = 100)
+        val multi = t("Movie 2024 1080p Multi", seeds = 100)
+        assertEquals(listOf(eng, multi, plain, hindi), SourceRanker.rank(listOf(hindi, plain, eng, multi)))
+    }
+
+    @Test fun hindiPlusEnglishCountsAsEnglish(): Unit {
+        assertEquals(30.0, SourceRanker.languageScore(t("Movie Hindi + English 1080p"), "English"))
+        assertEquals(0.0, SourceRanker.languageScore(t("Movie Hindi"), null))
+    }
+}

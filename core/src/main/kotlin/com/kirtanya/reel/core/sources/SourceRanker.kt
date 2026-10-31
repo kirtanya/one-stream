@@ -15,6 +15,8 @@ data class RankPrefs(
     val pinned: Set<String> = emptySet(),
     /** Provider labels the user never wants: left out. */
     val blocked: Set<String> = emptySet(),
+    /** Spoken language to put first (SourceFacts.languages names, e.g. "English"). Null = no preference. */
+    val language: String? = "English",
 )
 
 /**
@@ -38,6 +40,22 @@ object SourceRanker {
     fun fits(source: Source, prefs: RankPrefs): Boolean =
         source.kind != SourceKind.TORRENT || prefs.maxBytes == null || (source.sizeBytes ?: 0) <= prefs.maxBytes
 
+    /**
+     * The user hears the wrong language too often (dubbed releases ranked first). A release that names
+     * the wanted language wins among equals; "Multi" / "Dual audio" usually carry it too; one that names
+     * only other languages drops below the rest. Unnamed (most English releases) stays neutral.
+     */
+    fun languageScore(s: Source, language: String?): Double {
+        if (language == null) return 0.0
+        val langs = SourceFacts.languages(s)
+        return when {
+            langs.isEmpty() -> 0.0
+            language in langs -> 30.0
+            langs.all { it == "Multi" || it == "Dual audio" } -> 10.0
+            else -> -80.0
+        }
+    }
+
     fun score(s: Source, prefs: RankPrefs): Double {
         // Trailers and other extras go last: below everything, services included.
         if (s.isExtra) return -2000.0
@@ -56,6 +74,7 @@ object SourceRanker {
         val r = s.quality.resolution
         if (prefs.maxResolution != null && r != null && r > prefs.maxResolution) score -= 400
         if (prefs.pinned.isNotEmpty() && SourceFacts.providerLabel(s.provider) in prefs.pinned) score += 120
+        score += languageScore(s, prefs.language)
 
         // Resolution: exact match best, one step either side next, unknown in the middle.
         score += when {
