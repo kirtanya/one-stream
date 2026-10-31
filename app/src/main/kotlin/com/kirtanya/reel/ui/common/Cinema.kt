@@ -258,6 +258,7 @@ fun VideoRow(videos: List<Video>, sidePadding: Dp, thumbWidth: Dp, modifier: Mod
                     Box(
                         Modifier
                             .then(if (firstFocus != null && v == videos.first()) Modifier.focusRequester(firstFocus) else Modifier)
+                            .rowStart(v == videos.first())
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
                             .focusCard(shape = shape, onClick = { openVideo(context, v) })
@@ -323,6 +324,6 @@ fun GenreChips(genres: List<com.kirtanya.reel.core.tmdb.Genre>, sidePadding: Dp,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(genres, key = { it.id }) { g -> ReelButton(g.name, { onOpen(g) }, kind = ButtonKind.Ghost) }
+        items(genres, key = { it.id }) { g -> ReelButton(g.name, { onOpen(g) }, Modifier.rowStart(g == genres.first()), kind = ButtonKind.Ghost) }
     }
 }

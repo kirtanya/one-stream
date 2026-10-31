@@ -1,5 +1,6 @@
 package com.kirtanya.reel.ui.title
 
+import com.kirtanya.reel.ui.common.rowStart
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -107,8 +108,8 @@ fun ReviewsRow(reviews: Reviews, sidePadding: Dp, cardWidth: Dp, modifier: Modif
             contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {
-            itemsIndexed(reviews.items, key = { i, r -> "$i:${r.author}" }) { _, r ->
-                ReviewCard(r, Modifier.width(cardWidth)) { open = r }
+            itemsIndexed(reviews.items, key = { i, r -> "$i:${r.author}" }) { i, r ->
+                ReviewCard(r, Modifier.rowStart(i == 0).width(cardWidth)) { open = r }
             }
         }
     }

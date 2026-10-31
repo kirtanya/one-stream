@@ -1,6 +1,10 @@
 package com.kirtanya.reel.ui.common
 
 import androidx.compose.foundation.border
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -97,4 +101,49 @@ fun RequestFocusOnce(requester: androidx.compose.ui.focus.FocusRequester, key: A
             if (runCatching { requester.requestFocus(androidx.compose.ui.focus.FocusDirection.Enter) }.getOrDefault(false)) return@LaunchedEffect
         }
     }
+}
+
+/** The first item of an [EnterRowAtStart] row: [rowStart] attaches it, and says while it's composed. */
+class RowStart {
+    val requester = androidx.compose.ui.focus.FocusRequester()
+    internal var composed = 0
+}
+
+val LocalRowStart = androidx.compose.runtime.staticCompositionLocalOf<RowStart?> { null }
+
+/** Marks the first item of a row: ↓ into the row lands here (see [EnterRowAtStart]). No-op outside one. */
+@Composable
+fun Modifier.rowStart(first: Boolean = true): Modifier {
+    val start = LocalRowStart.current
+    if (!first || start == null) return this
+    androidx.compose.runtime.DisposableEffect(start) {
+        start.composed++
+        onDispose { start.composed-- }
+    }
+    return this.focusRequester(start.requester)
+}
+
+/**
+ * TV: a row of a page (episodes, cast, reviews…) that ↓ enters at its first item ([rowStart]), not at
+ * whatever sits right below the focused item. If that item isn't laid out (the row is scrolled along),
+ * ↓ moves the usual way.
+ */
+@Composable
+fun EnterRowAtStart(content: @Composable () -> Unit) {
+    val start = remember { RowStart() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    androidx.compose.foundation.layout.Box(
+        Modifier
+            .focusProperties {
+                onEnter = {
+                    // Only when the first item is composed (a row scrolled along may have let it go): then ↓ moves as usual.
+                    // The move itself goes ahead (cancelling it leaves the key unhandled, and the system then moves ↓ again
+                    // from wherever focus is); the first item takes focus on the next frame.
+                    if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Down && start.composed > 0) {
+                        scope.launch { start.requester.requestFocus() }
+                    }
+                }
+            }
+            .focusGroup(),
+    ) { androidx.compose.runtime.CompositionLocalProvider(LocalRowStart provides start) { content() } }
 }

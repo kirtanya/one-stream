@@ -106,7 +106,7 @@ fun PosterRow(
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {
             itemsIndexed(items, key = { _, it -> it.ref.toString() }) { i, item ->
-                val m = if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier
+                val m = (if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier).rowStart(i == 0)
                 PosterCard(item, posterWidth, onClick = { onOpen(item) }, modifier = m, showText = showText, onFocus = onFocus?.let { { it(item) } })
             }
         }

@@ -42,6 +42,12 @@ class WatchedStore(context: Context, private val history: WatchHistoryStore) {
         MediaType.TV -> mark(d, Watched.allEpisodes(d.seasons, d.lastAired), watched)
     }
 
+    /** A film that's watched, or a show with every aired episode watched. */
+    fun isTitleWatched(d: TitleDetails): Boolean = when (d.summary.ref.type) {
+        MediaType.MOVIE -> isWatched(Playback.keyFor(d.summary.ref.type.path, d.summary.ref.id, null))
+        MediaType.TV -> count(d).all
+    }
+
     fun markEpisode(d: TitleDetails, ep: EpisodeNumber, watched: Boolean) = mark(d, listOf(ep), watched)
 
     fun markSeason(d: TitleDetails, season: Int, watched: Boolean) = mark(d, Watched.season(d.seasons, season, d.lastAired), watched)

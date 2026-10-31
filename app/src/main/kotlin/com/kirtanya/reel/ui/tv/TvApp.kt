@@ -1,5 +1,6 @@
 package com.kirtanya.reel.ui.tv
 
+import com.kirtanya.reel.ui.common.rowStart
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -163,11 +164,11 @@ internal fun TvTopBar(nav: Navigator) {
  * short underline, the rest grey; focus = the ring.
  */
 @Composable
-internal fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, selected: Boolean, onClick: () -> Unit) {
+internal fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
     val fg = if (selected) Tokens.Colors.text else Tokens.Colors.textSecondary
     Box(
-        Modifier.focusCard(shape = shape, onClick = onClick).height(36.dp).padding(horizontal = Tokens.Space.m),
+        modifier.focusCard(shape = shape, onClick = onClick).height(36.dp).padding(horizontal = Tokens.Space.m),
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {

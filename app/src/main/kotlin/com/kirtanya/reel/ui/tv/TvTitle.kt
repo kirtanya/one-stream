@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,6 +53,8 @@ import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.EmptyState
+import com.kirtanya.reel.ui.common.EnterRowAtStart
+import com.kirtanya.reel.ui.common.rowStart
 import com.kirtanya.reel.ui.common.GenreChips
 import com.kirtanya.reel.ui.common.GradientProgress
 import com.kirtanya.reel.ui.common.HeroImage
@@ -113,6 +116,7 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
     val openProvider = rememberProviderOpener(d.providers.link)
     val (saved, toggleSaved) = rememberWatchlistToggle(d.summary)
+    val (watchedAll, toggleWatched) = com.kirtanya.reel.ui.title.rememberTitleWatched(d)
     val playFocus = remember { FocusRequester() }
     RequestFocusOnce(playFocus)
     val openSources: (EpisodeNumber?) -> Unit = { ep -> onPlay(ep?.season, ep?.episode) }
@@ -170,6 +174,8 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
                         ReelButton(if (saved) "In My list" else "My list", toggleSaved, kind = ButtonKind.Glass, icon = watchlistIcon(saved), large = true)
                         val ep = (action as? PlayAction.Resume)?.entry?.playback?.episode ?: (action as? PlayAction.Choose)?.episode
                         ReelButton("All sources", { openSources(ep) }, kind = ButtonKind.Glass, icon = Icons.Rounded.Hub, large = true)
+                        // The whole film or show (every aired episode); the seasons have no watched line of their own on TV.
+                        ReelButton(if (watchedAll) "Watched" else "Mark watched", toggleWatched, kind = ButtonKind.Glass, icon = if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility, large = true)
                     }
                     if (action is PlayAction.Resume) GradientProgress(action.entry.progress, Modifier.width(320.dp), height = 3.dp)
                 }
@@ -177,27 +183,26 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
             // Films: reviews straight under the buttons (the approved TV layout); ↓ from the buttons lands here.
             // Series: seasons and episodes come first, reviews after them.
             if (d.seasons.isEmpty() && reviews.items.isNotEmpty()) {
-                item(key = "reviews") { com.kirtanya.reel.ui.title.ReviewsRow(reviews, side, 260.dp) }
+                item(key = "reviews") { EnterRowAtStart { com.kirtanya.reel.ui.title.ReviewsRow(reviews, side, 260.dp) } }
             }
             if (d.seasons.isNotEmpty()) {
-                item(key = "seasons") {
+                item(key = "seasons") { EnterRowAtStart {
                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         SectionHeader("Episodes", Modifier.padding(horizontal = side))
                         // Seasons as text tabs (like the top bar), not a row of grey chips; the tab inset lines the text up with the header.
                         LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side - Tokens.Space.m, vertical = Tokens.Space.xs), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                             items(d.seasons, key = { it.number }) { s ->
-                                TvTab(s.name, null, selected = s.number == season) { season = s.number }
+                                TvTab(s.name, null, selected = s.number == season, Modifier.rowStart(s == d.seasons.first())) { season = s.number }
                             }
                         }
-                        com.kirtanya.reel.ui.title.SeasonWatched(d, season, side)
                     }
-                }
-                item(key = "episodes") {
+                } }
+                item(key = "episodes") { EnterRowAtStart {
                     when (episodes) {
                         Load.Loading -> LoadingBox(Modifier.height(160.dp))
                         is Load.Failed -> ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = side), kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh)
                         is Load.Ready -> LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.m), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
-                            itemsIndexed(episodes.value, key = { _, e -> "${e.season}x${e.number}" }) { _, e ->
+                            itemsIndexed(episodes.value, key = { _, e -> "${e.season}x${e.number}" }) { i, e ->
                                 val watched = progress[EpisodeNumber(e.season, e.number)]
                                 val shape = RoundedCornerShape(Tokens.Radius.media)
                                 // Focus lands on the still; scroll the whole card (rating, date, story under it) into view.
@@ -205,7 +210,7 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
                                 val scope = androidx.compose.runtime.rememberCoroutineScope()
                                 Column(Modifier.width(240.dp).bringIntoViewRequester(card), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                                     // Gap under the still, so the focus ring never sits against the episode's name.
-                                    Box(Modifier.padding(bottom = Tokens.Space.s).fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, onFocus = { scope.launch { card.bringIntoView() } }, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
+                                    Box(Modifier.rowStart(i == 0).padding(bottom = Tokens.Space.s).fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, onFocus = { scope.launch { card.bringIntoView() } }, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
                                         RemoteImage(TmdbImages.still(e.stillPath, "w780"), Modifier.fillMaxSize())
                                         when {
                                             watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), icon = Icons.Rounded.Check, accent = true)
@@ -226,54 +231,54 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
                             }
                         }
                     }
-                }
+                } }
             }
             if (d.seasons.isNotEmpty() && reviews.items.isNotEmpty()) {
-                item(key = "reviews") { com.kirtanya.reel.ui.title.ReviewsRow(reviews, side, 260.dp) }
+                item(key = "reviews") { EnterRowAtStart { com.kirtanya.reel.ui.title.ReviewsRow(reviews, side, 260.dp) } }
             }
             val providers = d.providers.groups.flatMap { (label, list) -> list.map { label to it } }.distinctBy { it.second.id }
             if (providers.isNotEmpty()) {
-                item(key = "where") {
+                item(key = "where") { EnterRowAtStart {
                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         SectionHeader("Where to watch in India", Modifier.padding(horizontal = side))
                         LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                             items(providers, key = { it.second.id }) { (label, p) ->
-                                RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 60.dp, onClick = { openProvider(p) }, sublabel = label)
+                                RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 60.dp, onClick = { openProvider(p) }, modifier = Modifier.rowStart(p == providers.first().second), sublabel = label)
                             }
                         }
                     }
-                }
+                } }
             }
             val extras = d.videos.filter { it != d.trailer }
-            if (extras.isNotEmpty()) item(key = "extras") { VideoRow(extras, side, Tokens.Cinema.thumbWidthTv) }
+            if (extras.isNotEmpty()) item(key = "extras") { EnterRowAtStart { VideoRow(extras, side, Tokens.Cinema.thumbWidthTv) } }
             if (d.cast.isNotEmpty()) {
-                item(key = "cast") {
+                item(key = "cast") { EnterRowAtStart {
                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         SectionHeader("Cast", Modifier.padding(horizontal = side))
                         LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                             items(d.cast) { c ->
                                 RingAvatar(
-                                    TmdbImages.profile(c.profilePath), c.name, 60.dp, sublabel = c.character, placeholder = c.name.take(1),
+                                    TmdbImages.profile(c.profilePath), c.name, 60.dp, modifier = Modifier.rowStart(c == d.cast.first()), sublabel = c.character, placeholder = c.name.take(1),
                                     onClick = { c.id?.let { onOpenDest(Dest.Person(it, c.name)) } },
                                 )
                             }
                         }
                     }
-                }
+                } }
             }
             if (d.collection != null) {
-                item(key = "franchise") { com.kirtanya.reel.ui.title.FranchiseRow(d, side, Tokens.Cinema.posterTv, onOpen, onOpenDest, showText = false) }
+                item(key = "franchise") { EnterRowAtStart { com.kirtanya.reel.ui.title.FranchiseRow(d, side, Tokens.Cinema.posterTv, onOpen, onOpenDest, showText = false) } }
             }
             if (d.recommendations.isNotEmpty()) {
-                item(key = "more") { PosterRow("More like this", d.recommendations, posterWidth = 112.dp, sidePadding = side, onOpen = onOpen) }
+                item(key = "more") { EnterRowAtStart { PosterRow("More like this", d.recommendations, posterWidth = 112.dp, sidePadding = side, onOpen = onOpen) } }
             }
             if (d.genreList.isNotEmpty()) {
-                item(key = "genres") {
+                item(key = "genres") { EnterRowAtStart {
                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         SectionHeader("Browse by genre", Modifier.padding(horizontal = side))
                         GenreChips(d.genreList, side, onOpen = { g -> onOpenDest(Dest.Collection(g.name, genre = g, genreType = d.summary.ref.type)) })
                     }
-                }
+                } }
             }
         }
         }

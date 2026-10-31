@@ -28,6 +28,15 @@ import com.kirtanya.reel.ui.common.rememberLoad
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.theme.Tokens
 
+/** Whether the whole title (a film, or every aired episode of a show) is watched, and a toggle. Follows marks made anywhere. */
+@Composable
+fun rememberTitleWatched(d: TitleDetails): Pair<Boolean, () -> Unit> {
+    val watched = ReelApp.get(LocalContext.current).watched
+    val lookup by watched.state.collectAsState(initial = null)
+    val all = remember(lookup, d) { watched.isTitleWatched(d) }
+    return all to { watched.markTitle(d, !all) }
+}
+
 /** Under the season chips: "3 of 10 watched" and Mark season watched / unwatched. */
 @Composable
 fun SeasonWatched(d: TitleDetails, season: Int?, sidePadding: Dp) {

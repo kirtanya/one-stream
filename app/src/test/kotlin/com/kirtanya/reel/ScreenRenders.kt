@@ -521,6 +521,10 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvTitleReviews() = render("title-reviews", tv = true, focusDown = 1, content = tvApp { open(Dest.Title(Fake.film)) })
     /** Down to the episodes and back up: the header shows whole again (not scrolled to just the buttons). */
     @Test @Config(qualifiers = TV) fun tvTitleShowBackUp() = render("title-show-back-up", tv = true, focusDown = 3, focusUp = 3, content = tvApp { open(Dest.Title(Fake.show)) })
+    /** ↓ from the last button (All sources) enters the seasons at Season 1, not the season right below it. */
+    @Test @Config(qualifiers = TV) fun tvTitleRowDown() = behaviour().let { render("title-row-down", tv = true, focusRight = 3, keyDown = 1, content = tvApp { open(Dest.Title(Fake.show)) }) }
+    /** Then ↓ once more: the episodes start at episode 1. */
+    @Test @Config(qualifiers = TV) fun tvTitleRowDownEpisodes() = behaviour().let { render("title-row-down-episodes", tv = true, focusRight = 3, keyDown = 2, content = tvApp { open(Dest.Title(Fake.show)) }) }
     @Test @Config(qualifiers = TV) fun tvTitleShowEpisodes() = render("title-show-episodes", tv = true, focusDown = 2, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvReviewOpen() = render("review-open", tv = true, windows = true) { TvScene { com.kirtanya.reel.ui.title.ReviewSheet(Fake.reviews.items[0], onDismiss = {}) } }
     @Test @Config(qualifiers = TV) fun tvTitleShow() = render("title-show", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.show)) })
