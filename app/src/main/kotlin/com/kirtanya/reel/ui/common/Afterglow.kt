@@ -171,15 +171,16 @@ fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifie
     }
 }
 
-/** The One Stream app mark (same artwork as the launcher icon), as a rounded tile. */
+/** The One Stream app mark (same artwork as the launcher icon: "Glass O, centred", source ~/one-logos), as a rounded tile. */
 @Composable
 fun BrandMark(size: Dp, modifier: Modifier = Modifier) {
-    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.28f))) {
+    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.24f))) {
         androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.kirtanya.reel.R.drawable.ic_launcher_bg), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-        // The foreground is drawn on a 108 dp canvas with the mark in the middle 66 dp: scale it to fill the tile.
+        // The foreground is drawn on a 108 dp canvas with the ring's edge on the 66 dp safe zone (r 33); the
+        // tile artwork has it at r 36.75, so scale by 36.75 / 33.
         androidx.compose.foundation.Image(
             androidx.compose.ui.res.painterResource(com.kirtanya.reel.R.drawable.ic_launcher_fg), null,
-            Modifier.fillMaxSize().graphicsLayer { scaleX = 1.45f; scaleY = 1.45f },
+            Modifier.fillMaxSize().graphicsLayer { scaleX = 1.1136f; scaleY = 1.1136f },
         )
     }
 }

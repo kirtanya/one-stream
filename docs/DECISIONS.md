@@ -5,6 +5,14 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-31 · New app icon family "Glass O, centred" (shared with One Launcher, One Watch, One Canvas)**
+Decision (user picked it on the comparison page): One Stream's icon is a blue tile with a thin near-white glass ring and the
+play triangle in it. Source of truth is `~/one-logos` (`generate.py` writes the SVGs, `make.sh` renders PNGs with WebKit).
+- Adaptive icon layers are now bitmaps (`drawable-nodpi/ic_launcher_bg/fg/mono.png`, 432 px): vectors can't blur the glow.
+  The foreground keeps the ring inside the 66 dp safe zone; `BrandMark` scales it back up to the tile.
+- TV banner (`drawable-xhdpi/banner.png`, 640 × 360) and `docs/logo.png` come from the same folder. The `brandBanner` /
+  `brandLogo` renders in `ScreenRenders.kt` are not used for the files any more.
+
 **2026-10-31 · TV engine stops itself when idle; One Launcher warms it before Play**
 Decision (user goal: a faster TV). The TV's engine ends after 10 min with nothing in use (`StopEngine.idleCheck`,
 `EngineIdle.watch`); One Launcher's TV title page sends `warm_engine`. `stop_engine` now also keeps downloads waiting
