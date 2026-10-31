@@ -17,7 +17,7 @@ import com.kirtanya.reel.ui.theme.Tokens
 
 /**
  * Settings → Playback: auto-play the next episode and its countdown, and how far one skip goes (the
- * remote's ←/→, the ± buttons, a double-tap). Night mode, voice boost, delays and the sleep timer are
+ * remote's ←/→, the ± buttons, a double-tap). Volume boost, dialogue boost, delays and the sleep timer are
  * in the player's own panel, where their effect can be heard.
  */
 internal fun LazyListScope.playbackItems(@Suppress("UNUSED_PARAMETER") isTv: Boolean) {

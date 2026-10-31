@@ -114,7 +114,6 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
     val episodeImdb = if (d.summary.ref.type == MediaType.TV) com.kirtanya.reel.ui.title.rememberEpisodeImdb(d, season) else emptyMap()
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
-    val openProvider = rememberProviderOpener(d.providers.link)
     val (saved, toggleSaved) = rememberWatchlistToggle(d.summary)
     val (watchedAll, toggleWatched) = com.kirtanya.reel.ui.title.rememberTitleWatched(d)
     val playFocus = remember { FocusRequester() }
@@ -235,19 +234,6 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
             }
             if (d.seasons.isNotEmpty() && reviews.items.isNotEmpty()) {
                 item(key = "reviews") { EnterRowAtStart { com.kirtanya.reel.ui.title.ReviewsRow(reviews, side, 260.dp) } }
-            }
-            val providers = d.providers.groups.flatMap { (label, list) -> list.map { label to it } }.distinctBy { it.second.id }
-            if (providers.isNotEmpty()) {
-                item(key = "where") { EnterRowAtStart {
-                    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                        SectionHeader("Where to watch in India", Modifier.padding(horizontal = side))
-                        LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                            items(providers, key = { it.second.id }) { (label, p) ->
-                                RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 60.dp, onClick = { openProvider(p) }, modifier = Modifier.rowStart(p == providers.first().second), sublabel = label)
-                            }
-                        }
-                    }
-                } }
             }
             val extras = d.videos.filter { it != d.trailer }
             if (extras.isNotEmpty()) item(key = "extras") { EnterRowAtStart { VideoRow(extras, side, Tokens.Cinema.thumbWidthTv) } }

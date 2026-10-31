@@ -59,8 +59,8 @@ internal object PlayerScenes {
         )
         val audio = listOf<PanelRow>(
             PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Audio delay", com.kirtanya.reel.core.player.Delay.AUDIO, { 150 }) {},
-            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_night, "Night mode", onOff, { 1 }) {},
-            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_voice, "Voice boost", onOff, { 0 }) {},
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_volume, "Volume boost", com.kirtanya.reel.core.player.VolumeBoost.entries.map { it.label }, { 2 }, asList = true) {},
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_voice, "Dialogue boost", onOff, { 1 }) {},
         )
         val sleeps = com.kirtanya.reel.core.player.SleepChoice.entries
         val playback = listOf<PanelRow>(
@@ -255,6 +255,10 @@ internal object PlayerScenes {
         picture: IntArray, panel: Boolean = false, file: Boolean = false, panelEnd: Boolean = false, overlay: Overlay? = null, slider: String? = null, strip: Boolean = false,
         cropPercent: Float = 0f, crop: Boolean = false, video: ((FrameLayout, PlayerView) -> Unit)? = null,
         audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false,
+        /** Which page the panel opens on ("sub" = the Subtitles button). */
+        section: String? = null,
+        /** "Press OK to exit" showing (after Back). */
+        exitChip: Boolean = false,
     ): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
@@ -279,7 +283,8 @@ internal object PlayerScenes {
         // [strip]: the design rules need other controls on screen to move the focus to.
         if (overlay == null || overlay == Overlay.SLEEP) c.show() else if (strip) c.show(focus = null)
         showOverlay(o, overlay, tv = true)
-        if (panel) c.openPanel()
+        if (panel) c.openPanel(section)
+        if (exitChip) { c.hide(); o.exitChip.visibility = android.view.View.VISIBLE }
         ShadowLooper.idleMainLooper()
         if (panel && panelEnd) scrollPanelToEnd(root)
         if (panel && audioPanel) { root.findViewWithTag<android.view.View>("audio")?.performClick(); ShadowLooper.idleMainLooper() }

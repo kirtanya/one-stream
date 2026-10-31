@@ -29,15 +29,16 @@ class PlaybackDelays {
  *  - audio: the audio sink's position is the clock the video follows, so reporting it [PlaybackDelays.audioUs]
  *    ahead shows each frame that much earlier against the sound = the sound plays later;
  *  - subtitles: the text renderer is asked for cues at position − [PlaybackDelays.subtitlesUs].
- * [pcmOnly] (night mode / voice boost on at start): decode Dolby / DTS here instead of passing it to the
- * TV's receiver, because sound effects only work on audio the app itself plays.
+ * [pcmOnly] (volume / dialogue boost on at start): decode Dolby / DTS here instead of passing it to the
+ * TV's receiver, because the boosts ([BoostAudioProcessor]) only work on audio the app itself plays.
  */
 @OptIn(UnstableApi::class)
-internal class DelayRenderersFactory(context: Context, private val delays: PlaybackDelays, private val pcmOnly: Boolean) : DefaultRenderersFactory(context) {
+internal class DelayRenderersFactory(context: Context, private val delays: PlaybackDelays, private val pcmOnly: Boolean, private val boost: BoostSettings) : DefaultRenderersFactory(context) {
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
         val builder = DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+            .setAudioProcessors(arrayOf(BoostAudioProcessor(boost)))
         @Suppress("DEPRECATION")
         if (pcmOnly) builder.setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
         return DelayedAudioSink(builder.build(), delays)

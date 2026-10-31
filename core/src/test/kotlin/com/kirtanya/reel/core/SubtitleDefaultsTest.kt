@@ -152,16 +152,26 @@ class SubtitleDefaultsTest {
         assertEquals("no answer in 300 ms", sl.error)
         assertNull(tv.requestUrl)
         assertEquals("doesn't cover this movie", tv.error)
-        assertEquals(3, search.tracks.size)
+        // Indonesian was answered but isn't kept: English only.
+        assertEquals(listOf("en", "en"), search.tracks.map { it.language })
         val lines = Subtitles.describe(search)
         assertEquals(6, lines.size)
         assertEquals("addon \"OpenSubtitles v3\" url=https://opensubtitles-v3.strem.io/subtitles/movie/tt1254207.json status=200 tracks=3 langs=en:2,id:1", lines[0])
         assertTrue(lines.none { it.contains("secret-key") })
-        assertEquals("total addons=5 tracks=3 langs=en:2,id:1", lines.last())
+        assertEquals("total addons=5 tracks=2 langs=en:2", lines.last())
         // A title without an IMDb id: OpenSubtitles (tt ids only) can't be asked, and says why.
         val noImdb = Subtitles.searchDetailed(movie.copy(imdbId = null), listOf(BuiltInAddons.OPENSUBTITLES_URL to openSubs), http)
         assertEquals("needs an IMDb id this title doesn't have", noImdb.answers.single().error)
         assertTrue(noImdb.tracks.isEmpty())
+    }
+
+    @Test fun onlyEnglishSubtitlesAreListed() {
+        val t = { lang: String -> com.kirtanya.reel.core.sources.SubtitleTrack(url = "https://s/$lang", language = lang, name = "x") }
+        assertEquals(listOf("eng", "en", "en-US"), Subtitles.onlyWanted(listOf(t("eng"), t("fre"), t("en"), t("hi"), t("en-US"))).map { it.language })
+        // Inside the file: English ones; unlabelled only when there's no English.
+        assertEquals(listOf(1, 3), Subtitles.embeddedToList(listOf("fre", "eng", null, "en")))
+        assertEquals(listOf(1, 2), Subtitles.embeddedToList(listOf("fre", null, "und", "hin")))
+        assertEquals(emptyList(), Subtitles.embeddedToList(listOf("fre", "hin")))
     }
 
     @Test fun changeSourceCarriesOnWhereYouWere() {

@@ -14,6 +14,24 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /** Subtitle addons (Stremio `subtitles` resource), e.g. the official OpenSubtitles v3 addon. */
 object Subtitles {
+    /** The only subtitle language One Stream shows (the user reads English subtitles only). */
+    const val ONLY_LANGUAGE = "en"
+    /** With one language, more of its tracks: another cut or release often needs a different file. */
+    const val PER_LANGUAGE = 6
+
+    /** Keeps [ONLY_LANGUAGE] tracks; the rest are never listed. */
+    fun onlyWanted(tracks: List<SubtitleTrack>): List<SubtitleTrack> = tracks.filter { normalizeLanguage(it.language) == ONLY_LANGUAGE }
+
+    /**
+     * Subtitle tracks inside the video file, by language code (null / "und" = unlabelled): which to list.
+     * [ONLY_LANGUAGE] ones; unlabelled ones only when there's none (an unlabelled track is usually English).
+     */
+    fun embeddedToList(languages: List<String?>): List<Int> {
+        val wanted = languages.indices.filter { i -> languages[i]?.let(::normalizeLanguage) == ONLY_LANGUAGE }
+        if (wanted.isNotEmpty()) return wanted
+        return languages.indices.filter { i -> languages[i].let { it == null || normalizeLanguage(it) == "und" } }
+    }
+
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** `/subtitles/{type}/{id}[/{extra}].json`, extra = filename / videoSize when we know them. */
@@ -48,12 +66,13 @@ object Subtitles {
         filename: String? = null,
         videoSize: Long? = null,
         timeoutMs: Long = 6_000,
-        perLanguage: Int = 3,
+        perLanguage: Int = PER_LANGUAGE,
     ): List<SubtitleTrack> = searchDetailed(req, addons, http, filename, videoSize, timeoutMs, perLanguage).tracks
 
     /**
      * [search], keeping what each addon answered (request URL without secrets, HTTP status, tracks per
      * language, error): the player logs it per playback and the SourcesProbe `subsTest` prints it.
+     * Only [ONLY_LANGUAGE] tracks are kept.
      */
     suspend fun searchDetailed(
         req: SourceRequest,
@@ -62,12 +81,13 @@ object Subtitles {
         filename: String? = null,
         videoSize: Long? = null,
         timeoutMs: Long = 6_000,
-        perLanguage: Int = 3,
+        perLanguage: Int = PER_LANGUAGE,
     ): SubtitleSearch = coroutineScope {
         val answers = addons.filter { it.second.hasSubtitles }.map { (url, manifest) ->
             async { ask(req, url, manifest, http, filename, videoSize, timeoutMs) }
         }.awaitAll()
-        val tracks = answers.flatMap { it.tracks }.distinctBy { it.url }.groupBy { it.language }.flatMap { it.value.take(perLanguage) }
+        // Addons (OpenSubtitles v3) answer every language at once and can't be asked for one: keep English here.
+        val tracks = onlyWanted(answers.flatMap { it.tracks }.distinctBy { it.url }).groupBy { it.language }.flatMap { it.value.take(perLanguage) }
         SubtitleSearch(answers, tracks)
     }
 

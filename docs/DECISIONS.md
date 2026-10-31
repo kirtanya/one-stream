@@ -5,6 +5,29 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-10-31 · English-only subtitles; ±20 s subtitle delay; Subtitles button = every subtitle setting; volume & dialogue boost; no "Where to watch"**
+Decisions (user):
+- Subtitles: only English is listed or attached. Addons (OpenSubtitles v3) answer every language and can't be asked
+  for one, so `Subtitles.searchDetailed` keeps English (up to 6 tracks, `PER_LANGUAGE`); the source's own files too;
+  tracks inside the file: English, or unlabelled ones when there's no English (`Subtitles.embeddedToList`).
+- Subtitle delay ±20 s (was ±5 s), 0.25 s steps; holding ←/→ moves 1 s at a time after ~½ s.
+- TV Subtitles button: one page with the tracks (focus on the one showing), then style, delay, search again.
+- Night mode / voice boost removed: Android's DynamicsProcessing was refused on the TV. Replaced by the player's own
+  processing in the audio sink (`core/player/AudioBoost`, `BoostAudioProcessor`): Volume boost Off / Low +3 / Medium +6 /
+  High +9 dB with a soft limiter, and Dialogue boost (centre / mid lifted with a 2.5 kHz presence lift, the rest −3 dB).
+  Applies at once to decoded audio; Dolby / DTS passed through to the TV only when a boost was on at the start.
+- Title pages: "Where to watch (in India)" removed, TV and phone.
+
+---
+
+**2026-10-31 · TV player: Back asks "Press OK to exit" instead of leaving**
+Decision (user: Back was easy to hit by accident mid-film). With the controls hidden, Back shows a "Press OK to exit"
+chip at the bottom for 3 s, however often it's pressed; OK while it shows leaves. Open controls / panels still close on
+Back first; an error screen still leaves on Back. Phone unchanged. Logic: `core/input/PlayerExitGuard` (+ tests),
+chip: `PlayerOverlays.exitChip`.
+
+---
+
 **2026-10-31 · Black & white, pure black canvas (TV always, phone default); Netflix-style TV top bar and title page**
 Decision (user): the TV felt grey and blue, with the logo sitting oddly next to the tabs. Now:
 - `AccentPreset.Mono` = a hand-made black/white scheme (`AccentState.mono`): #000 canvas, neutral greys, white accent.

@@ -122,13 +122,14 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private var stoppedSinceHandoff = false
 
     // ---- roadmap A: skip intro / credits, auto-play next, sleep timer, per-title memory, audio
-    /** Night mode / voice boost, countdown, seek step, delays and learned skips (player/PlayerStore). */
+    /** Volume / dialogue boost, countdown, seek step, delays and learned skips (player/PlayerStore). */
     private val store get() = PlayerStore.get(this)
     private val options get() = store.options.value
     /** This title's remembered tracks / picture / speed (the shared per-title store), read once at the start. */
     private val saved by lazy { app.titlePrefs.get(playback.titleKey) }
     private val delays = PlaybackDelays()
-    private val effects = AudioEffects { e, f -> stat(e, f) }
+    /** Volume / dialogue boost, read by the audio sink ([BoostAudioProcessor]). */
+    private val boost = BoostSettings()
     /** A key press or touch during this episode (Still watching? counts untouched episodes). */
     private var interacted = false
     /** Episodes before this one that played to the end untouched (carried from player to player). */
@@ -274,9 +275,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                     preparedStream?.let { app.engine.suspendStream(it.infoHash, it) }
                     lifecycle.withStarted { }
                 }
-                // Every track is attached (the Subtitles menu lists them all); the setting only picks
-                // which one shows by itself (applySubtitlePrefs).
-                val tracks = Subtitles.merge(source.subtitles, found?.tracks.orEmpty())
+                // Every English track is attached (the Subtitles menu lists them all); the setting only picks
+                // which one shows by itself (applySubtitlePrefs). The source's own files: English only too.
+                val tracks = Subtitles.merge(Subtitles.onlyWanted(source.subtitles), found?.tracks.orEmpty())
                 play(url, tracks, resumeAt)
                 subsStat("subsAttached", mapOf("attached" to tracks.size, "when" to "start", "addonsAnswered" to (found != null)))
                 if (found == null) {
@@ -497,8 +498,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             DefaultDataSource.Factory(this, http)
         }
         val sources = ReelDataSourceFactory(TorrentDataSource.Factory(app.engine), other)
-        // Our renderers: audio / subtitle delay; Dolby decoded here while night mode / voice boost is on.
-        val exo = ExoPlayer.Builder(this, DelayRenderersFactory(this, delays, pcmOnly = options.nightMode || options.voiceBoost))
+        // Our renderers: audio / subtitle delay, volume / dialogue boost; Dolby decoded here while a boost is on.
+        val exo = ExoPlayer.Builder(this, DelayRenderersFactory(this, delays, pcmOnly = options.boosting, boost = boost))
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(sources).setLoadErrorHandlingPolicy(ReelLoadErrorPolicy()))
             .build()
@@ -512,7 +513,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         ambient.attach(exo)
         applySubtitlePrefs(exo)
         applyTitlePrefs(exo)
-        applyEffects()
+        applyBoost()
         exo.addListener(listener)
         val item = MediaItem.Builder()
             .setUri(url)
@@ -598,10 +599,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             readChapters(tracks)
             applySavedSubtitleLabel(tracks)
             applyLanguagePicks(tracks)
-        }
-
-        override fun onAudioSessionIdChanged(audioSessionId: Int) {
-            applyEffects()
+            // The panel's ticks and "Subtitle track" value follow what's really playing.
+            tvControls?.refreshPanel()
+            phoneControls?.refreshPanel()
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -958,6 +958,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) interacted = true
+        if (exitGuard(event)) return true
         val exo = player
         val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER
         if (ok && skipChip.visibility == View.VISIBLE && tvControls?.visible == false && nextCard.visibility != View.VISIBLE &&
@@ -1007,6 +1008,47 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             hideResumeChip()
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private val tvDevice by lazy { isTelevision() }
+    private val exitChip get() = overlays.exitChip
+    private var exitChipJob: Job? = null
+    private val exitGuard = com.kirtanya.reel.core.input.PlayerExitGuard()
+
+    /** TV: Back shows "Press OK to exit" instead of leaving; OK while it shows leaves ([PlayerExitGuard]). */
+    private fun exitGuard(event: KeyEvent): Boolean {
+        if (!tvDevice) return false
+        val key = when (event.keyCode) {
+            KeyEvent.KEYCODE_BACK -> com.kirtanya.reel.core.input.PlayerExitGuard.Key.Back
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> com.kirtanya.reel.core.input.PlayerExitGuard.Key.Ok
+            else -> return false
+        }
+        val verdict = when (event.action) {
+            KeyEvent.ACTION_DOWN -> exitGuard.onDown(
+                key, event.repeatCount, controlsOpen = tvControls?.visible == true,
+                errorShown = errorPanel.visibility == View.VISIBLE, chipShown = exitChip.visibility == View.VISIBLE,
+            )
+            KeyEvent.ACTION_UP -> exitGuard.onUp(key)
+            else -> return false
+        }
+        return when (verdict) {
+            com.kirtanya.reel.core.input.PlayerExitGuard.Verdict.Pass -> false
+            com.kirtanya.reel.core.input.PlayerExitGuard.Verdict.Swallow -> true
+            com.kirtanya.reel.core.input.PlayerExitGuard.Verdict.ShowChip -> {
+                exitChip.visibility = View.VISIBLE
+                exitChipJob?.cancel()
+                exitChipJob = lifecycleScope.launch {
+                    delay(3_000)
+                    exitChip.visibility = View.GONE
+                }
+                true
+            }
+            // The same way out as Back used to take (the back callback, then the activity's own).
+            com.kirtanya.reel.core.input.PlayerExitGuard.Verdict.Exit -> {
+                onBackPressedDispatcher.onBackPressed()
+                true
+            }
+        }
     }
 
     // ---------------------------------------------------------------- status + errors
@@ -1371,7 +1413,6 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     override fun onDestroy() {
         if (::ambient.isInitialized) ambient.release()
-        effects.release()
         stillJob?.cancel()
         tickJob?.cancel()
         statsJob?.cancel()
@@ -1581,7 +1622,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     private val onOff = listOf("Off", "On")
 
-    /** The panel's group rows (after each group's track / speed row); set again when something they show changes (effects refused). */
+    /** The panel's group rows (after each group's track / speed row); set again when something they show changes. */
     private fun setPanelRows() {
         val captionPresets = com.kirtanya.reel.core.playback.CaptionStyle.Preset.entries
         val subtitle = listOf<PanelRow>(
@@ -1598,25 +1639,23 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             if (playback.tmdbId != null) PanelExtra(SEARCH_SUBS_ROW, icon = com.kirtanya.reel.R.drawable.ic_pl_search) { searchSubtitlesAgain() }
             else PanelExtra(SEARCH_SUBS_ROW, note = "Needs a film or show from search", icon = com.kirtanya.reel.R.drawable.ic_pl_search, action = null),
         )
-        val fxRows = if (effects.available) listOf<PanelRow>(
-            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_night, "Night mode", onOff, { if (options.nightMode) 1 else 0 }) { i ->
-                store.updateOptions { it.copy(nightMode = i == 1) }
-                applyEffects()
+        val volumes = com.kirtanya.reel.core.player.VolumeBoost.entries
+        val boostRows = listOf<PanelRow>(
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_volume, "Volume boost", volumes.map { it.label }, { options.volumeBoost }, asList = true) { i ->
+                store.updateOptions { it.copy(volumeBoost = i) }
+                applyBoost()
             },
-            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_voice, "Voice boost", onOff, { if (options.voiceBoost) 1 else 0 }) { i ->
-                store.updateOptions { it.copy(voiceBoost = i == 1) }
-                applyEffects()
+            PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_voice, "Dialogue boost", onOff, { if (options.dialogueBoost) 1 else 0 }) { i ->
+                store.updateOptions { it.copy(dialogueBoost = i == 1) }
+                applyBoost()
             },
-        ) else listOf<PanelRow>(
-            PanelExtra("Night mode", note = FX_UNAVAILABLE, icon = com.kirtanya.reel.R.drawable.ic_pl_night, action = null),
-            PanelExtra("Voice boost", note = FX_UNAVAILABLE, icon = com.kirtanya.reel.R.drawable.ic_pl_voice, action = null),
         )
         val audio = listOf<PanelRow>(
             PanelSlider(com.kirtanya.reel.R.drawable.ic_pl_sync, "Audio delay", com.kirtanya.reel.core.player.Delay.AUDIO, { (delays.audioUs / 1000).toInt() }) { ms ->
                 delays.audioUs = ms * 1_000L
                 store.updateDelays(playback.titleKey) { it.copy(audioDelayMs = ms) }
             },
-        ) + fxRows
+        ) + boostRows
         val sleeps = com.kirtanya.reel.core.player.SleepChoice.entries
         val playbackRows = listOfNotNull<PanelRow>(
             // The same switch as Settings → Playback; only for episodes (a film has no next).
@@ -1629,16 +1668,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         phoneControls?.setRows(subtitle, audio, playbackRows, ::onPanelChoice)
     }
 
-    /** Night mode / voice boost on this player's audio session; a refusal turns the rows into notes. */
-    private fun applyEffects() {
-        val exo = player ?: return
-        val wasAvailable = effects.available
-        effects.apply(exo.audioSessionId, options.nightMode, options.voiceBoost)
-        if (wasAvailable && !effects.available) {
-            setPanelRows()
-            tvControls?.refreshPanel()
-            phoneControls?.refreshPanel()
-        }
+    /** Volume / dialogue boost from the options: the audio sink picks them up on its next buffer. */
+    private fun applyBoost() {
+        boost.volume = com.kirtanya.reel.core.player.VolumeBoost.of(options.volumeBoost)
+        boost.dialogue = options.dialogueBoost
     }
 
     /** "Search subtitles again": asks every subtitle addon afresh and adds what's new (one short re-buffer). */
@@ -2194,7 +2227,6 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     companion object {
         private const val TAG = "ReelPlayer"
         private const val SEARCH_SUBS_ROW = "Search subtitles again"
-        private const val FX_UNAVAILABLE = "Not available on this device"
         /** Buffering this long while wanting to play saves a "stall" report. */
         private const val STALL_REPORT_MS = 15_000L
         private const val EXTRA_PLAYBACK = "playback"

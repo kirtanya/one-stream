@@ -124,7 +124,6 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
     val episodeImdb = if (d.summary.ref.type == MediaType.TV) com.kirtanya.reel.ui.title.rememberEpisodeImdb(d, season) else emptyMap()
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
-    val openProvider = rememberProviderOpener(d.providers.link)
     val (saved, toggleSaved) = rememberWatchlistToggle(d.summary)
     val (watchedAll, toggleWatched) = com.kirtanya.reel.ui.title.rememberTitleWatched(d)
     var overviewOpen by rememberSaveable { mutableStateOf(false) }
@@ -193,22 +192,6 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
             if (d.genreList.isNotEmpty()) {
                 item(key = "genres") {
                     GenreChips(d.genreList, gutter, onOpen = { g -> onOpenDest(Dest.Collection(g.name, genre = g, genreType = d.summary.ref.type)) })
-                }
-            }
-            item(key = "where") {
-                Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    SectionHeader("Where to watch", Modifier.padding(horizontal = gutter))
-                    val all = d.providers.groups.flatMap { (label, list) -> list.map { label to it } }.distinctBy { it.second.id }
-                    if (all.isEmpty()) {
-                        Text("Not on any streaming service in India right now.", style = Tokens.Type.body, color = Tokens.Colors.textTertiary, modifier = Modifier.padding(horizontal = gutter))
-                    } else {
-                        LazyRow(contentPadding = PaddingValues(horizontal = gutter), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                            items(all, key = { it.second.id }) { (label, p) ->
-                                RingAvatar(TmdbImages.logo(p.logoPath, "w154"), p.name, 52.dp, onClick = { openProvider(p) }, sublabel = label)
-                            }
-                        }
-                        Text("Availability in India · data by JustWatch", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(horizontal = gutter))
-                    }
                 }
             }
             if (d.seasons.isNotEmpty()) {

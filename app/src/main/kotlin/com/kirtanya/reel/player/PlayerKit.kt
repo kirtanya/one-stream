@@ -491,8 +491,10 @@ internal class SettingsPanel(
     fun refresh() {
         if (!open || submenu != null) return
         val focused = list.findFocus()?.tag as? String
-        buildMain()
-        (focused?.let { list.findViewWithTag<View>(it) } ?: return).requestFocus()
+        val hadFocus = list.findFocus() != null
+        buildHome()
+        // A track row has no name to find it by: the ticked one takes focus (the remote must never lose it).
+        (focused?.let { list.findViewWithTag<View>(it) })?.requestFocus() ?: if (hadFocus) focusSelected() else Unit
     }
 
     fun show(section: String? = null) {
@@ -500,12 +502,40 @@ internal class SettingsPanel(
         panel.alpha = 0f
         panel.translationY = context.dpf(12f)
         panel.animate().alpha(1f).translationY(0f).setDuration(160).start()
+        home = if (section == "sub") "sub" else null
         when (section) {
-            "sub" -> showTracks(C.TRACK_TYPE_TEXT)
+            "sub" -> showSubtitlePage()
             "audio" -> showTracks(C.TRACK_TYPE_AUDIO)
             else -> { submenu = null; buildMain() }
         }
         focusSelected()
+    }
+
+    /**
+     * The page the panel was opened on: "sub" (the Subtitles button) = [showSubtitlePage], null = the main list.
+     * Back from a choice list returns there, and so does a toggled row.
+     */
+    private var home: String? = null
+
+    private fun buildHome() = if (home == "sub") buildSubtitlePage() else buildMain()
+
+    /**
+     * The Subtitles button: every subtitle setting on one page. The tracks first (focus on the one showing),
+     * then style, delay and search again. Picking a track stays here.
+     */
+    private fun showSubtitlePage() {
+        submenu = null
+        buildSubtitlePage()
+        focusSelected()
+    }
+
+    private fun buildSubtitlePage() {
+        val p = player() ?: return
+        list.removeAllViews()
+        list.addView(header("Subtitles"))
+        addTrackChoices(p, C.TRACK_TYPE_TEXT) { showSubtitlePage() }
+        list.addView(header("Subtitle settings"))
+        addRows(subtitleRows)
     }
 
     fun hide() { panel.visibility = View.GONE }
@@ -514,7 +544,7 @@ internal class SettingsPanel(
     fun back(): Boolean {
         val from = submenu ?: return false
         submenu = null
-        buildMain()
+        buildHome()
         list.findViewWithTag<View>(from)?.requestFocus() ?: focusSelected()
         return true
     }
@@ -556,7 +586,7 @@ internal class SettingsPanel(
                     showList(r)
                 } else {
                     r.set((r.current() + 1) % r.values.size)
-                    buildMain()
+                    buildHome()
                     list.findViewWithTag<View>(r.label)?.requestFocus()
                 }
             })
@@ -671,29 +701,34 @@ internal class SettingsPanel(
         submenu = if (type == C.TRACK_TYPE_TEXT) "sub" else "audio"
         list.removeAllViews()
         list.addView(header(if (type == C.TRACK_TYPE_TEXT) "Subtitle track" else "Audio track"))
+        addTrackChoices(p, type) { back() }
+        focusSelected()
+    }
+
+    /** Off (subtitles) and each track, ticked when it's the one in use; [after] runs once one is picked. */
+    private fun addTrackChoices(p: Player, type: Int, after: () -> Unit) {
         val options = trackOptions(p, type)
         if (type == C.TRACK_TYPE_TEXT) {
             val off = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT) || options.none { it.selected }
             list.addView(choice("Off", off) {
                 p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
                 onChoice?.invoke("sub")
-                back()
+                after()
             })
         }
         for (o in options) {
             list.addView(choice(o.label, o.selected) {
                 val group = o.group
-                if (group == null) { back(); return@choice }
+                if (group == null) { after(); return@choice }
                 p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(type, false)
                     .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, o.index))
                     .build()
                 onChoice?.invoke(if (type == C.TRACK_TYPE_TEXT) "sub" else "audio")
-                back()
+                after()
             })
         }
-        if (options.isEmpty() && type == C.TRACK_TYPE_TEXT) list.addView(note("No subtitles for this video"))
-        focusSelected()
+        if (options.isEmpty() && type == C.TRACK_TYPE_TEXT) list.addView(note("No English subtitles for this video"))
     }
 
     private fun showSpeeds() {
@@ -729,14 +764,18 @@ internal class SettingsPanel(
 
     private fun trackOptions(p: Player, type: Int): List<TrackOption> {
         previewTracks[type]?.let { fake -> return fake.mapIndexed { i, (label, on) -> TrackOption(null, i, label, on) } }
-        val out = mutableListOf<TrackOption>()
+        var out = mutableListOf<TrackOption>()
+        val languages = mutableListOf<String?>()
         for (g in p.currentTracks.groups) {
             if (g.type != type) continue
             for (i in 0 until g.length) {
                 if (!g.isTrackSupported(i)) continue
                 out += TrackOption(g, i, trackLabel(g.getTrackFormat(i), out.size + 1), g.isTrackSelected(i))
+                languages += g.getTrackFormat(i).language
             }
         }
+        // Subtitles: English only (unlabelled ones when there's no English), see Subtitles.embeddedToList.
+        if (type == C.TRACK_TYPE_TEXT) out = com.kirtanya.reel.core.sources.Subtitles.embeddedToList(languages).map { out[it] }.toMutableList()
         // Same label twice (two English tracks): number them so they can be told apart.
         val dupes = out.groupBy { it.label }.filter { it.value.size > 1 }.keys
         return out.mapIndexed { n, o -> if (o.label in dupes) TrackOption(o.group, o.index, "${o.label} (${n + 1})", o.selected) else o }
@@ -917,8 +956,9 @@ internal class DelaySlider(
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> { set(delay.step(value, -1)); return true }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { set(delay.step(value, 1)); return true }
+            // Held: four steps at a time after ~½ s (subtitles go to ±20 s, 80 steps of 0.25 s).
+            KeyEvent.KEYCODE_DPAD_LEFT -> { set(delay.step(value, -(if (event.repeatCount >= 10) 4 else 1))); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { set(delay.step(value, if (event.repeatCount >= 10) 4 else 1)); return true }
         }
         return super.onKeyDown(keyCode, event)
     }

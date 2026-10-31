@@ -12,13 +12,16 @@ data class PlayerOptions(
     val countdownS: Int = AutoNext.DEFAULT_COUNTDOWN_S,
     /** One skip on the remote / the ± buttons / a double-tap (SeekStep.STEPS). */
     val seekStepS: Int = SeekStep.DEFAULT_S,
-    /** Night mode: loud scenes quieter, quiet speech louder (dynamic range compression). */
-    val nightMode: Boolean = false,
-    /** Voice boost: dialogue frequencies (about 1–4 kHz) lifted. */
-    val voiceBoost: Boolean = false,
+    /** Volume boost ([VolumeBoost] ordinal), done by the player itself ([AudioBoost]). */
+    val volumeBoost: Int = 0,
+    /** Dialogue boost: the centre (speech) lifted, the rest turned down a little ([AudioBoost]). */
+    val dialogueBoost: Boolean = false,
 ) {
     /** Values from an older / newer version that aren't offered fall back to the defaults. */
-    fun valid() = copy(countdownS = AutoNext.countdown(countdownS), seekStepS = SeekStep.of(seekStepS))
+    fun valid() = copy(countdownS = AutoNext.countdown(countdownS), seekStepS = SeekStep.of(seekStepS), volumeBoost = VolumeBoost.of(volumeBoost).ordinal)
+
+    /** Either boost on: the player decodes Dolby / DTS itself so they can apply. */
+    val boosting: Boolean get() = volumeBoost != 0 || dialogueBoost
 }
 
 /** Auto-play next: the countdown, and "Still watching?" after a run of untouched episodes. */
@@ -74,7 +77,8 @@ enum class Delay(val minMs: Int, val maxMs: Int, val stepMs: Int) {
     /** + = sound later than the picture. */
     AUDIO(-500, 500, 50),
     /** + = subtitles later than the speech. */
-    SUBTITLES(-5_000, 5_000, 250),
+    /** Up to 20 s either way (a subtitle file for another cut can be that far off). */
+    SUBTITLES(-20_000, 20_000, 250),
     ;
 
     fun clamp(ms: Int): Int = ((ms.coerceIn(minMs, maxMs).toFloat() / stepMs).roundToInt() * stepMs).coerceIn(minMs, maxMs)

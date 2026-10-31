@@ -33,6 +33,18 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
     /** "Skip intro" / "Skip recap" / "Skip credits": primary, so it reads at a glance. */
     val skipChip: Button = smallButton("Skip intro", primary = true) {}.apply { visibility = View.GONE }
 
+    /** TV: "Press OK to exit", bottom centre, after Back (Back alone never leaves the player there). */
+    val exitChip: TextView = TextView(context).apply {
+        text = "Press OK to exit"
+        setTextColor(PlayerColors.FOREGROUND)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        typeface = font(true)
+        gravity = Gravity.CENTER
+        setPadding(dp(16), dp(8), dp(16), dp(8))
+        background = glass(999)
+        visibility = View.GONE
+    }
+
     lateinit var stillText: TextView; private set
     lateinit var stillContinue: Button; private set
     lateinit var stillStop: Button; private set
@@ -196,6 +208,8 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
         // Under the chip row (whose pills are up to 48 dp tall on the phone).
         root.addView(noticeChip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(topMarginDp + if (tv) 44 else 56), dp(24), 0) })
         root.addView(notReady, FrameLayout.LayoutParams(-1, -1))
+        // Over everything (the loading screen included): it answers the remote's Back wherever you are.
+        if (tv) root.addView(exitChip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(40) })
     }
 
     /** Phone: keep the Skip chip just above the control band ([coveredPx] = what the band covers, 0 when hidden). */

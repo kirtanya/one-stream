@@ -38,16 +38,16 @@ class PlayerStore private constructor(private val context: Context) {
         prefs.edit {
             putInt("countdownS", next.countdownS)
             putInt("seekStepS", next.seekStepS)
-            putBoolean("nightMode", next.nightMode)
-            putBoolean("voiceBoost", next.voiceBoost)
+            putInt("volumeBoost", next.volumeBoost)
+            putBoolean("dialogueBoost", next.dialogueBoost)
         }
     }
 
     private fun readOptions() = PlayerOptions(
         countdownS = prefs.getInt("countdownS", PlayerOptions().countdownS),
         seekStepS = prefs.getInt("seekStepS", PlayerOptions().seekStepS),
-        nightMode = prefs.getBoolean("nightMode", false),
-        voiceBoost = prefs.getBoolean("voiceBoost", false),
+        volumeBoost = prefs.getInt("volumeBoost", 0),
+        dialogueBoost = prefs.getBoolean("dialogueBoost", false),
     ).valid()
 
     private val titlePrefs get() = com.kirtanya.reel.ReelApp.get(context).titlePrefs
