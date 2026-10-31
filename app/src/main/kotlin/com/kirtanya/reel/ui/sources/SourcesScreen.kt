@@ -202,7 +202,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
         // TV: the picture fills the room behind the list; phone: it's the top of the page.
         if (isTv) {
             Box(Modifier.fillMaxSize()) {
-                HeroImage(art, Modifier.fillMaxSize(), kenBurns = false)
+                HeroImage(art, Modifier.fillMaxSize())
                 HeroScrims(top = false, start = true)
             }
         }
@@ -344,7 +344,7 @@ private fun Header(
         Box(Modifier.padding(start = side, end = side, top = Tokens.Space.xxl)) { heading() }
     } else {
         Box(Modifier.fillMaxWidth().height(Tokens.Cinema.sourcesHeader)) {
-            HeroImage(art, Modifier.fillMaxSize(), kenBurns = false)
+            HeroImage(art, Modifier.fillMaxSize())
             HeroScrims(top = true)
             Box(Modifier.align(Alignment.BottomStart).padding(horizontal = side)) { heading() }
         }

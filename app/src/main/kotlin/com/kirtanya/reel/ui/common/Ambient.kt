@@ -33,7 +33,6 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
-import com.kirtanya.reel.ui.theme.MediaAccent
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,8 +43,9 @@ private val ambientCache = LruCache<String, Int>(200)
 /**
  * The colour a title "lights the room" with: the poster's most vivid colour, lifted so it reads
  * as light on the night canvas. The app accent until (or unless) an image gives one.
- * Animated, so the light drifts from one title to the next. While composed it also sets the
- * app's accent to this colour ([MediaAccent]), so buttons, rings and progress match the title.
+ * Animated, so the light drifts from one title to the next: pass the State to [AmbientGlow] unread,
+ * so each animation frame redraws the glow only (reading it in composition recomposed the whole screen).
+ * Only the glow takes this colour; the app's own colours never follow the poster.
  */
 @Composable
 fun rememberAmbientColor(imageUrl: String?): State<Color> {
@@ -71,8 +71,6 @@ fun rememberAmbientColor(imageUrl: String?): State<Color> {
         ambientCache.put(imageUrl, color?.toArgb() ?: NO_COLOUR)
         media = color
     }
-    // The whole app takes this title's colour while the screen is showing (Settings → Appearance).
-    MediaAccent(media)
     return animateColorAsState(media ?: Tokens.Colors.accent, tween(Tokens.Motion.ambientMs), label = "ambient")
 }
 
@@ -95,16 +93,22 @@ private fun lightFrom(bitmap: Bitmap): Color? {
  * the left), coloured by [color], fading into the canvas.
  */
 @Composable
-fun AmbientGlow(color: Color, modifier: Modifier = Modifier, height: Dp = 520.dp, strength: Float = 0.42f) {
+fun AmbientGlow(color: Color, modifier: Modifier = Modifier, height: Dp = 520.dp, strength: Float = 0.42f) =
+    AmbientGlow({ color }, modifier, height, strength)
+
+/** [color] is read while drawing, so an animated colour never recomposes the caller. */
+@Composable
+fun AmbientGlow(color: () -> Color, modifier: Modifier = Modifier, height: Dp = 520.dp, strength: Float = 0.42f) {
     Box(
         modifier
             .fillMaxWidth()
             .height(height)
             .drawBehind {
+                val c = color()
                 drawRect(
                     Brush.radialGradient(
-                        0f to color.copy(alpha = strength),
-                        0.45f to color.copy(alpha = strength * 0.35f),
+                        0f to c.copy(alpha = strength),
+                        0.45f to c.copy(alpha = strength * 0.35f),
                         1f to Color.Transparent,
                         center = Offset(size.width * 0.2f, -size.height * 0.05f),
                         radius = size.maxDimension * 0.85f,

@@ -169,7 +169,9 @@ fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
             stack.lastOrNull(),
             transitionSpec = {
                 val dir = if (forward) 1 else -1
-                (slideInHorizontally(tween(Tokens.Motion.stateMs)) { it / 6 * dir } + fadeIn(tween(Tokens.Motion.stateMs))) togetherWith
+                // TV: no slide + fade of a full page (the weak chip shows it as lag).
+                if (isTv) (androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None).using(null)
+                else (slideInHorizontally(tween(Tokens.Motion.stateMs)) { it / 6 * dir } + fadeIn(tween(Tokens.Motion.stateMs))) togetherWith
                     (slideOutHorizontally(tween(Tokens.Motion.stateMs)) { -it / 6 * dir } + fadeOut(tween(Tokens.Motion.stateMs / 2)))
             },
             label = "settingsPage",
@@ -205,7 +207,6 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
         SettingsPage.Appearance -> listOfNotNull(
             if (isTv) null else "${AccentState.themeMode.label} theme",
             AccentState.preset.label + " colour",
-            if (AccentState.adaptive) "matches what's on screen" else null,
         ).joinToString(" · ")
         SettingsPage.Playback -> if (playback.autoplayNext) "Next episode plays by itself" else "Next episode: ask first"
         SettingsPage.Subtitles -> listOf(
@@ -264,7 +265,7 @@ internal fun GroupLabel(text: String) {
 @Composable
 private fun NavRow(icon: ImageVector, title: String, summary: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        modifier.fillMaxWidth().focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1.02f, onClick = onClick).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),
+        modifier.fillMaxWidth().focusCard(shape = RoundedCornerShape(Tokens.Radius.m), onClick = onClick).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
     ) {
@@ -372,7 +373,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
     if (isTv) RequestFocusOnce(first)
 
     val subtitle = when (page) {
-        SettingsPage.Appearance -> "Light or dark, the app's colour, and whether it follows what you're watching."
+        SettingsPage.Appearance -> "Light or dark, and the app's colour."
         SettingsPage.Addons -> "Stremio addons answer “where can I play this?”."
         SettingsPage.Plugins -> "Plugin repositories (Nuvio format) run small scripts on this device to find sources."
         SettingsPage.PhoneTv -> if (isTv) "Get addons and plugins from your phone, so you never type on the TV." else "Set sources up once on the phone; your TV gets them too."
@@ -406,15 +407,6 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                                 Swatch(preset, selected = AccentState.preset == preset) { AccentState.choose(preset) }
                             }
                         }
-                    }
-                }
-                item {
-                    Section(note = "Off: One Stream always uses the colour above.") {
-                        ToggleRow(
-                            "Match what's on screen",
-                            "The whole screen takes the colours of the film or show you're looking at.",
-                            AccentState.adaptive,
-                        ) { AccentState.matchScreen(!AccentState.adaptive) }
                     }
                 }
                 item { Section("Preview") { AccentPreview() } }
@@ -532,7 +524,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
             }
             SettingsPage.About -> item {
                 Section {
-                    Text("One Stream ${BuildConfig.VERSION_NAME}", style = Tokens.Type.heading, color = Tokens.Colors.text, modifier = Modifier.focusCard(scale = 1f) {})
+                    Text("One Stream ${BuildConfig.VERSION_NAME}", style = Tokens.Type.heading, color = Tokens.Colors.text, modifier = Modifier.focusCard {})
                     Text(
                         "One Stream ships only legal sources (open movies and public-domain films). Addons and plugins you add are your choice — " +
                             "streaming or downloading content you don't have rights to is illegal in most countries.",
@@ -551,8 +543,8 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
 @Composable
 private fun Swatch(preset: AccentPreset, selected: Boolean, onClick: () -> Unit) {
     val dark = AccentState.scheme.surface.luminance() < 0.5f
-    val primary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark, media = false).primary }
-    val onPrimary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark, media = false).onPrimary }
+    val primary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark).primary }
+    val onPrimary = remember(preset, dark) { AccentState.build(AccentState.seedOf(preset), dark).onPrimary }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
         Box(
             Modifier.size(44.dp)
@@ -583,7 +575,7 @@ private fun AccentPreview() {
 internal fun ToggleRow(title: String, subtitle: String, checked: Boolean, onRemove: (() -> Unit)? = null, onToggle: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         Row(
-            Modifier.weight(1f).focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1.02f, onClick = onToggle).padding(vertical = Tokens.Space.s, horizontal = Tokens.Space.xs),
+            Modifier.weight(1f).focusCard(shape = RoundedCornerShape(Tokens.Radius.m), onClick = onToggle).padding(vertical = Tokens.Space.s, horizontal = Tokens.Space.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {

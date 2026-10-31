@@ -178,12 +178,12 @@ private fun TvHomeContent(
         }
     }
 
-    val glow by rememberAmbientColor(TmdbImages.poster(settled.posterPath, "w185"))
+    val glow = rememberAmbientColor(TmdbImages.poster(settled.posterPath, "w185"))
     Box(Modifier.fillMaxSize()) {
         // The focused title fills the room: its backdrop, light in its colour, the canvas behind the text.
-        HeroImage(listOfNotNull(TmdbImages.backdrop(settled.backdropPath)), Modifier.fillMaxSize(), kenBurns = false)
+        HeroImage(listOfNotNull(TmdbImages.backdrop(settled.backdropPath)), Modifier.fillMaxSize(), fadeMs = 200)
         HeroScrims(top = true, start = true, topHeight = TvTopBarHeight + Tokens.Space.xxxl)
-        AmbientGlow(glow, height = 620.dp, strength = 0.3f)
+        AmbientGlow({ glow.value }, height = 620.dp, strength = 0.3f)
 
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(TvTopBarHeight))

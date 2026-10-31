@@ -119,7 +119,7 @@ fun PhoneApp(
         AnimatedContent(nav.top ?: nav.tab, transitionSpec = { pageTransition() }, label = "screen") { screen ->
             when (screen) {
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
-                    PhoneTitle(screen.ref, onBack = back, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
+                    PhoneTitle(screen.ref, screen.season, onBack = back, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
                 }
                 is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs)
                 is Dest.Collection -> saveable.SaveableStateProvider(collectionKey(screen)) { CollectionScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }

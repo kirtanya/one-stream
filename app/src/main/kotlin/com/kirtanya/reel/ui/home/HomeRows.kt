@@ -26,7 +26,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -114,7 +113,7 @@ fun TitleRow(
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
                             .focusCard(
-                                shape = shape, scale = Tokens.Motion.posterFocusScale, origin = TransformOrigin(0.5f, 1f),
+                                shape = shape,
                                 onFocus = onFocus?.let { { it(item) } }, onLongClick = { toggleSaved(item) }, onClick = { onOpen(item) },
                             )
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
@@ -178,7 +177,7 @@ fun NewEpisodesRow(
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
                             .focusCard(
-                                shape = shape, scale = Tokens.Motion.posterFocusScale, origin = TransformOrigin(0.5f, 1f),
+                                shape = shape,
                                 onFocus = onFocus?.let { { it(e.show) } }, onClick = { onOpen(e.show) },
                             )
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),

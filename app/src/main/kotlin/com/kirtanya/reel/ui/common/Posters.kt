@@ -60,8 +60,7 @@ fun PosterCard(
             .fillMaxWidth()
             .aspectRatio(2f / 3f)
             .focusCard(
-                shape = shape, scale = Tokens.Motion.posterFocusScale, onFocus = onFocus, onLongClick = { options = true },
-                origin = if (showText) androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) else androidx.compose.ui.graphics.TransformOrigin.Center,
+                shape = shape, onFocus = onFocus, onLongClick = { options = true },
                 onClick = onClick,
             )
             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)

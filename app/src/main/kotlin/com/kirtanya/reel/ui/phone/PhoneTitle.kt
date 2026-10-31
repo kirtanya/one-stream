@@ -75,7 +75,6 @@ import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.VideoRow
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.common.openVideo
-import com.kirtanya.reel.ui.common.rememberAmbientColor
 import com.kirtanya.reel.ui.common.rememberWatchlistToggle
 import com.kirtanya.reel.ui.common.watchlistIcon
 import com.kirtanya.reel.ui.nav.Dest
@@ -94,6 +93,7 @@ import com.kirtanya.reel.ui.title.shareTitle
 @Composable
 fun PhoneTitle(
     ref: TitleRef,
+    initialSeason: Int? = null,
     onBack: () -> Unit,
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onOpen: (TitleSummary) -> Unit = {},
@@ -106,22 +106,20 @@ fun PhoneTitle(
             is Load.Failed -> EmptyState(
                 Icons.Rounded.Refresh, "Couldn't load this title", load.message, Modifier.align(Alignment.Center),
             ) { ReelButton("Try again", { retry() }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh) }
-            is Load.Ready -> TitleBody(load.value, onPlay, onOpen, onOpenDest)
+            is Load.Ready -> TitleBody(load.value, initialSeason, onPlay, onOpen, onOpenDest)
         }
         GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.s))
     }
 }
 
 @Composable
-private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
+private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?) -> Unit, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
     val context = LocalContext.current
     val gutter = Tokens.Space.phoneGutter
-    // The whole app takes the colour of this title's poster (Settings → Appearance).
-    rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
     val action = rememberPlayAction(d)
     val ratings = com.kirtanya.reel.ui.common.rememberTitleRatings(d)
     val reviews = com.kirtanya.reel.ui.title.rememberReviews(d.summary.ref)
-    var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number) }
+    var season by rememberSaveable { mutableStateOf(initialSeason?.takeIf { s -> d.seasons.any { it.number == s } } ?: d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number) }
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
     val episodeImdb = if (d.summary.ref.type == MediaType.TV) com.kirtanya.reel.ui.title.rememberEpisodeImdb(d, season) else emptyMap()
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
@@ -163,7 +161,7 @@ private fun TitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (Ti
                                 color = Tokens.Colors.textSecondary,
                                 maxLines = if (overviewOpen) Int.MAX_VALUE else 3,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.s), scale = 1f, onClick = { overviewOpen = !overviewOpen }),
+                                modifier = Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.s), onClick = { overviewOpen = !overviewOpen }),
                             )
                         }
                     }
@@ -272,7 +270,7 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val stillShape = RoundedCornerShape(Tokens.Radius.m)
     Row(
-        modifier.fillMaxWidth().focusCard(shape = shape, scale = 1f, onLongClick = onLongClick, onClick = onClick).padding(Tokens.Space.xs),
+        modifier.fillMaxWidth().focusCard(shape = shape, onLongClick = onLongClick, onClick = onClick).padding(Tokens.Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {

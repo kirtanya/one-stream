@@ -76,7 +76,6 @@ fun CollectionScreen(dest: Dest.Collection, isTv: Boolean, onBack: () -> Unit, o
         TitleGrid(
             isTv = isTv, onBack = onBack, onOpen = onOpen, items = paging.items,
             backdrop = paging.items.firstOrNull { it.backdropPath != null }?.backdropPath,
-            poster = paging.items.firstOrNull()?.posterPath,
             header = { GridHeading(dest.title, subtitle, isTv) },
             onNearEnd = paging::loadMore,
             filterState = filterState,
@@ -96,7 +95,6 @@ fun CollectionScreen(dest: Dest.Collection, isTv: Boolean, onBack: () -> Unit, o
     TitleGrid(
         isTv = isTv, onBack = onBack, onOpen = onOpen, items = items,
         backdrop = items.firstOrNull { it.backdropPath != null }?.backdropPath,
-        poster = items.firstOrNull()?.posterPath,
         header = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                 dest.provider?.let { RingAvatar(TmdbImages.logo(it.logoPath, "w154"), null, if (isTv) 56.dp else 48.dp) }
@@ -133,7 +131,6 @@ fun PersonScreen(dest: Dest.Person, isTv: Boolean, onBack: () -> Unit, onOpen: (
     TitleGrid(
         isTv = isTv, onBack = onBack, onOpen = onOpen, items = credits,
         backdrop = credits.firstOrNull { it.backdropPath != null }?.backdropPath,
-        poster = credits.firstOrNull()?.posterPath,
         header = {
             Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
@@ -147,7 +144,7 @@ fun PersonScreen(dest: Dest.Person, isTv: Boolean, onBack: () -> Unit, onOpen: (
                         color = Tokens.Colors.textSecondary,
                         maxLines = if (bioOpen) Int.MAX_VALUE else if (isTv) 3 else 4,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 720.dp).focusCard(shape = RoundedCornerShape(Tokens.Radius.s), scale = 1f, onClick = { bioOpen = !bioOpen }),
+                        modifier = Modifier.widthIn(max = 720.dp).focusCard(shape = RoundedCornerShape(Tokens.Radius.s), onClick = { bioOpen = !bioOpen }),
                     )
                 }
                 if (credits.isNotEmpty()) SectionHeader("Films and shows")
@@ -181,8 +178,7 @@ private fun GridHeading(title: String, subtitle: String?, isTv: Boolean, modifie
 }
 
 /**
- * The page every grid shares: a backdrop behind the top (scrolling content slides over it), the
- * poster's colour as the app's, a heading, posters (3 across on the phone, 7 on TV) and a footer
+ * The page every grid shares: a backdrop behind the top (scrolling content slides over it), a heading, posters (3 across on the phone, 7 on TV) and a footer
  * for loading / errors / "nothing here".
  */
 @Composable
@@ -192,13 +188,11 @@ private fun TitleGrid(
     onOpen: (TitleSummary) -> Unit,
     items: List<TitleSummary>,
     backdrop: String?,
-    poster: String?,
     header: @Composable () -> Unit,
     footer: @Composable () -> Unit,
     onNearEnd: (() -> Unit)? = null,
     filterState: androidx.compose.runtime.MutableState<TitleFilter> = rememberTitleFilter(),
 ) {
-    rememberAmbientColor(TmdbImages.poster(poster, "w185"))
     val filter = filterState.value
     fun set(f: TitleFilter) { filterState.value = f }
     val allItems = items
@@ -218,7 +212,7 @@ private fun TitleGrid(
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         Box(Modifier.fillMaxWidth().height(if (isTv) 360.dp else 280.dp)) {
-            HeroImage(listOfNotNull(TmdbImages.backdrop(backdrop, "w1280")), Modifier.fillMaxSize(), kenBurns = false)
+            HeroImage(listOfNotNull(TmdbImages.backdrop(backdrop, "w1280")), Modifier.fillMaxSize())
             // The heading sits on the picture: a dim wash, then the usual fades.
             Box(Modifier.matchParentSize().background(Tokens.Gradients.backdropDim))
             HeroScrims(top = !isTv, start = isTv)
@@ -233,7 +227,7 @@ private fun TitleGrid(
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(
-                    // TV: room under the heading for the first poster's focus lift.
+                    // TV: room under the heading for the first poster's focus ring.
                     Modifier.then(if (isTv) Modifier.padding(top = Tokens.Space.xxxl, bottom = Tokens.Space.m) else Modifier.statusBarsPadding().padding(top = 96.dp)),
                     verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
                 ) {

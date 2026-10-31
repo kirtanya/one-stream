@@ -8,11 +8,8 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -63,7 +60,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -127,11 +123,11 @@ fun TitleLogo(
 }
 
 /**
- * Full-bleed picture for a hero: cycles through [urls] with a slow cross-fade and (phone) a slow
- * zoom. A tonal wash when there's no picture at all. Scrims are the caller's ([HeroScrims]).
+ * Full-bleed picture for a hero: cycles through [urls] with a slow cross-fade. No zoom drift: a full-screen
+ * layer animating while idle costs the TV chip ~half its frame rate. A tonal wash when there's no picture at all. Scrims are the caller's ([HeroScrims]).
  */
 @Composable
-fun HeroImage(urls: List<String>, modifier: Modifier = Modifier, kenBurns: Boolean = true, alignment: Alignment = Alignment.Center) {
+fun HeroImage(urls: List<String>, modifier: Modifier = Modifier, alignment: Alignment = Alignment.Center, fadeMs: Int = Tokens.Motion.slideFadeMs) {
     if (urls.isEmpty()) {
         Box(modifier.background(Brush.verticalGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.canvas))))
         return
@@ -145,18 +141,9 @@ fun HeroImage(urls: List<String>, modifier: Modifier = Modifier, kenBurns: Boole
             }
         }
     }
-    val zoom = if (kenBurns) {
-        val t = rememberInfiniteTransition(label = "kenBurns")
-        t.animateFloat(1f, Tokens.Motion.kenBurnsScale, infiniteRepeatable(tween(Tokens.Motion.slideMs * 2, easing = LinearEasing), RepeatMode.Reverse), label = "zoom")
-    } else null
-    // Clipped, so the slow zoom never spills past the hero onto the page.
     Box(modifier.clipToBounds()) {
-        Crossfade(urls[index.coerceIn(0, urls.lastIndex)], Modifier.fillMaxSize(), animationSpec = tween(Tokens.Motion.slideFadeMs), label = "hero") { url ->
-            RemoteImage(
-                url,
-                Modifier.fillMaxSize().graphicsLayer { val s = zoom?.value ?: 1f; scaleX = s; scaleY = s },
-                alignment = alignment,
-            )
+        Crossfade(urls[index.coerceIn(0, urls.lastIndex)], Modifier.fillMaxSize(), animationSpec = tween(fadeMs), label = "hero") { url ->
+            RemoteImage(url, Modifier.fillMaxSize(), alignment = alignment)
         }
     }
 }
@@ -273,7 +260,7 @@ fun VideoRow(videos: List<Video>, sidePadding: Dp, thumbWidth: Dp, modifier: Mod
                             .then(if (firstFocus != null && v == videos.first()) Modifier.focusRequester(firstFocus) else Modifier)
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
-                            .focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, onClick = { openVideo(context, v) })
+                            .focusCard(shape = shape, onClick = { openVideo(context, v) })
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
                     ) {
                         RemoteImage(v.thumbnailUrl, Modifier.fillMaxSize())
@@ -302,7 +289,7 @@ fun ActionTile(icon: ImageVector, label: String, onClick: () -> Unit, modifier: 
             .minimumInteractiveComponentSize()
             .heightIn(min = Tokens.Cinema.actionTileHeight)
             .alpha(if (enabled) 1f else 0.38f)
-            .focusCard(shape = RoundedCornerShape(Tokens.Radius.m), scale = 1f, onClick = { if (enabled) onClick() })
+            .focusCard(shape = RoundedCornerShape(Tokens.Radius.m), onClick = { if (enabled) onClick() })
             .padding(vertical = Tokens.Space.s, horizontal = Tokens.Space.xxs),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs, Alignment.CenterVertically),
@@ -318,6 +305,13 @@ fun ActionTile(icon: ImageVector, label: String, onClick: () -> Unit, modifier: 
 fun <S> AnimatedContentTransitionScope<S>.pageTransition(): ContentTransform =
     (fadeIn(tween(Tokens.Motion.pageMs)) + scaleIn(tween(Tokens.Motion.pageMs), initialScale = Tokens.Motion.pageZoom)) togetherWith
         fadeOut(tween(Tokens.Motion.pageMs / 2))
+
+/**
+ * TV: no transition. Fading + zooming a full 1080p screen in over 320 ms drops the TV chip to a slideshow
+ * (the new page also loads its data during it), so the new screen simply appears.
+ */
+fun <S> AnimatedContentTransitionScope<S>.tvPageTransition(): ContentTransform =
+    (EnterTransition.None togetherWith ExitTransition.None).using(null)
 
 /** Row of the title's genres as chips: each opens the genre. */
 @Composable

@@ -86,7 +86,7 @@ import com.kirtanya.reel.ui.title.rememberTitle
 import com.kirtanya.reel.ui.title.runPlayAction
 
 @Composable
-fun TvTitle(ref: TitleRef, onPlay: (season: Int?, episode: Int?) -> Unit, onOpen: (TitleSummary) -> Unit = {}, onOpenDest: (Dest) -> Unit = {}) {
+fun TvTitle(ref: TitleRef, initialSeason: Int? = null, onPlay: (season: Int?, episode: Int?) -> Unit, onOpen: (TitleSummary) -> Unit = {}, onOpenDest: (Dest) -> Unit = {}) {
     val (load, retry) = rememberTitle(ref)
     when (load) {
         Load.Loading -> LoadingBox()
@@ -99,18 +99,18 @@ fun TvTitle(ref: TitleRef, onPlay: (season: Int?, episode: Int?) -> Unit, onOpen
                 }
             }
         }
-        is Load.Ready -> TvTitleBody(load.value, onPlay, onOpen, onOpenDest)
+        is Load.Ready -> TvTitleBody(load.value, initialSeason, onPlay, onOpen, onOpenDest)
     }
 }
 
 @Composable
-private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
+private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?) -> Unit, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
     val context = LocalContext.current
-    val glow by rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
+    val glow = rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
     val action = rememberPlayAction(d)
     val ratings = com.kirtanya.reel.ui.common.rememberTitleRatings(d)
     val reviews = com.kirtanya.reel.ui.title.rememberReviews(d.summary.ref)
-    var season by rememberSaveable { mutableStateOf(d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number) }
+    var season by rememberSaveable { mutableStateOf(initialSeason?.takeIf { s -> d.seasons.any { it.number == s } } ?: d.seasons.firstOrNull { it.number > 0 }?.number ?: d.seasons.firstOrNull()?.number) }
     val (episodes, retryEpisodes) = rememberSeason(d.summary.ref.id, season)
     val episodeImdb = if (d.summary.ref.type == MediaType.TV) com.kirtanya.reel.ui.title.rememberEpisodeImdb(d, season) else emptyMap()
     val progress = if (d.summary.ref.type == MediaType.TV) rememberEpisodeProgress(d.summary.ref.id) else emptyMap()
@@ -130,11 +130,13 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
 
     Box(Modifier.fillMaxSize()) {
         // The backdrops fill the screen and change slowly (no zoom: the TV is a small 32-bit box).
-        HeroImage(heroBackdrops(d), Modifier.fillMaxSize(), kenBurns = false)
+        // One still: the 8 s backdrop cross-fade is an animation while idle, which the TV chip pays for.
+        HeroImage(heroBackdrops(d).take(1), Modifier.fillMaxSize())
         HeroScrims(top = false, start = true)
-        AmbientGlow(glow, height = 700.dp, strength = 0.3f)
+        AmbientGlow({ glow.value }, height = 700.dp, strength = 0.3f)
         // Once focus leaves the hero (reviews, episodes, cast…), the backdrop dims so rows below read on any picture.
-        val dim by androidx.compose.animation.core.animateFloatAsState(if (heroFocused) 0f else 0.86f, androidx.compose.animation.core.tween(Tokens.Motion.stateMs), label = "dim")
+        // Switches at once: fading a full-screen layer on every focus move is what the TV chip chokes on.
+        val dim = if (heroFocused) 0f else 0.86f
         if (dim > 0f) Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas.copy(alpha = dim)))
 
         @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -195,9 +197,8 @@ private fun TvTitleBody(d: TitleDetails, onPlay: (Int?, Int?) -> Unit, onOpen: (
                                 val card = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
                                 val scope = androidx.compose.runtime.rememberCoroutineScope()
                                 Column(Modifier.width(240.dp).bringIntoViewRequester(card), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                                    // Lifts from the bottom edge (like posters with a label) and keeps a gap, so the focus
-                                    // glow never sits behind the episode's name.
-                                    Box(Modifier.padding(bottom = Tokens.Space.s).fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, scale = Tokens.Motion.posterFocusScale, origin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f), onFocus = { scope.launch { card.bringIntoView() } }, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
+                                    // Gap under the still, so the focus ring never sits against the episode's name.
+                                    Box(Modifier.padding(bottom = Tokens.Space.s).fillMaxWidth().aspectRatio(16f / 9f).focusCard(shape = shape, onFocus = { scope.launch { card.bringIntoView() } }, onLongClick = { episodeOptions = e }, onClick = { onPlay(e.season, e.number) }).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)) {
                                         RemoteImage(TmdbImages.still(e.stillPath, "w780"), Modifier.fillMaxSize())
                                         when {
                                             watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), icon = Icons.Rounded.Check, accent = true)

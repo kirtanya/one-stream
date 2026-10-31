@@ -11,7 +11,8 @@ import com.kirtanya.reel.core.tmdb.TitleRef
 enum class Tab(val label: String) { Home("Home"), Search("Search"), Downloads("Downloads"), Settings("Settings") }
 
 sealed interface Dest {
-    data class Title(val ref: TitleRef) : Dest
+    /** [season] preselects that season of a show (Continue watching lands on the episode's season). */
+    data class Title(val ref: TitleRef, val season: Int? = null) : Dest
 
     /**
      * Where to play a film, or one episode of a show. [download] opens it for downloading;
