@@ -2170,7 +2170,13 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 onChangeSource = { changeSource() },
                 canChangeSource = { PlayerSourceChange.available(playback) },
             ).also {
-                it.setToggles(listOf(picture, crop, cinema))
+                // Title: the logo artwork or plain text (the user's choice; a logo can distract).
+                val titleStyle = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_title, "Title", listOf("Logo", "Text"), { if (prefs.titleLogo) 0 else 1 }) { i ->
+                    app.playbackSettings.update { p -> p.copy(titleLogo = i == 0) }
+                    it.logoShown = i == 0
+                }
+                it.logoShown = prefs.titleLogo
+                it.setToggles(listOf(picture, crop, cinema, titleStyle))
                 it.seekStepMs = options.seekStepS * 1_000L
                 root.addView(it.view, FrameLayout.LayoutParams(-1, -1))
                 loadTitleLogo(it)

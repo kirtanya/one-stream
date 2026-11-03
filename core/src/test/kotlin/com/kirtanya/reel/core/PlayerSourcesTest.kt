@@ -40,12 +40,13 @@ class PlayerSourcesTest {
         assertNull(page.empty)
     }
 
-    @Test fun rowTextHasQualitySizeProviderAndSeedHealth() {
+    @Test fun rowTextHasQualitySizeProviderAndSeederCount() {
         val row = PlayerSources.row(torrent(1, res = 2160, size = 12_000_000_000L, seeders = 412), current = false)
         assertEquals("4K · 11.2 GB", row.title)
-        assertEquals("Torrentio · Strong", row.detail)
+        assertEquals("Torrentio · 412 seeders", row.detail)
         assertEquals("1080p · 4.2 GB", PlayerSources.row(torrent(2), false).title)
-        assertEquals("Torrentio · Weak", PlayerSources.row(torrent(3, seeders = 3), false).detail)
+        assertEquals("Torrentio · 3 seeders", PlayerSources.row(torrent(3, seeders = 3), false).detail)
+        assertEquals("Torrentio · 1 seeder", PlayerSources.row(torrent(6, seeders = 1), false).detail)
         assertEquals("Torrentio · No seeds", PlayerSources.row(torrent(4, seeders = 0), false).detail)
         assertEquals("Torrentio · Seeds unknown", PlayerSources.row(torrent(5, seeders = null), false).detail)
     }
@@ -62,9 +63,14 @@ class PlayerSourcesTest {
         assertEquals("Internet Archive · Not cached", PlayerSources.row(uncached, false).detail)
     }
 
-    @Test fun aLanguageEndsTheDetailLine() {
-        val hindi = torrent(7, title = "Film.2024.1080p.Hindi.WEB-DL")
-        assertEquals("Torrentio · Strong · Hindi", PlayerSources.row(hindi, false).detail)
+    @Test fun languagesEndTheDetailLineAndTagsTheTitle() {
+        val hindi = torrent(7, title = "Film.2024.1080p.Hindi.English.HDR.WEB-DL", seeders = 50)
+        val row = PlayerSources.row(hindi, false)
+        assertEquals("Torrentio · 50 seeders · Hindi, English", row.detail)
+        assertEquals("1080p · 4.2 GB · HDR · WEB-DL", row.title)
+        // "4K HDR" already says HDR: not twice.
+        val uhd = torrent(8, res = 2160, title = "Film.2024.2160p.HDR.HEVC")
+        assertEquals(1, Regex("HDR").findAll(PlayerSources.row(uhd, false).title).count())
     }
 
     @Test fun servicesAndTrailersNeverListed() {

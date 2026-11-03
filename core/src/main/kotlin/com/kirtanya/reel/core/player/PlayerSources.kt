@@ -9,7 +9,7 @@ import com.kirtanya.reel.core.sources.SourceFacts
 import com.kirtanya.reel.core.sources.SourceKind
 import com.kirtanya.reel.core.sources.SourceSearch
 
-/** One line of the player's Change source page: [title] "1080p · 4.2 GB", [detail] "Torrentio · Strong · Hindi". */
+/** One line of the player's Change source page: [title] "1080p · 4.2 GB", [detail] "Torrentio · 142 seeders · Hindi, English". */
 data class PlayerSourceRow(val source: Source, val title: String, val detail: String, val current: Boolean) {
     val key: String get() = source.key
 }
@@ -49,12 +49,15 @@ object PlayerSources {
     }
 
     fun row(s: Source, current: Boolean): PlayerSourceRow {
-        val title = listOfNotNull(s.quality.label, s.sizeBytes?.let(ByteSize::format)).joinToString(" · ")
+        // Quality, size and the two tags that matter most (HDR / Dolby Vision / Atmos…).
+        val title = (listOfNotNull(s.quality.label, s.sizeBytes?.let(ByteSize::format)) + SourceFacts.tags(s).filterNot { s.quality.label.contains(it) }.take(2)).joinToString(" · ")
         val peers = when (s.kind) {
             SourceKind.DIRECT -> if (DebridCache.of(s) == CacheState.UNCACHED) DebridCache.NOT_CACHED_TAG else "Direct"
-            else -> SeedHealth.of(s)?.label
+            // The real count when the addon gives it (easier to compare than Strong / OK), else the health word.
+            else -> s.seeders?.takeIf { it > 0 }?.let { if (it == 1) "1 seeder" else "$it seeders" } ?: SeedHealth.of(s)?.label
         }
-        val detail = listOfNotNull(SourceFacts.providerLabel(s.provider), peers, SourceFacts.languages(s).firstOrNull()).joinToString(" · ")
+        val languages = SourceFacts.languages(s).take(3).joinToString(", ").ifEmpty { null }
+        val detail = listOfNotNull(SourceFacts.providerLabel(s.provider), peers, languages).joinToString(" · ")
         return PlayerSourceRow(s, title, detail, current)
     }
 }

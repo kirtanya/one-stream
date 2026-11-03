@@ -23,6 +23,8 @@ data class PlaybackPrefs(
     val picture: com.kirtanya.reel.core.playback.PictureMode = com.kirtanya.reel.core.playback.PictureMode.FIT,
     /** Phone player layout (Classic bottom band, or Edge around the camera hole); Classic until the user picks. */
     val phoneLayout: com.kirtanya.reel.core.player.PhoneLayout = com.kirtanya.reel.core.player.PhoneLayout.CLASSIC,
+    /** TV player: the title's logo artwork (true) or its name as plain text (false) in the control strip. */
+    val titleLogo: Boolean = true,
 ) {
     /** Older callers (the player before caption styles) only knew the size. */
     val subtitleSize: CaptionStyle.Size get() = caption.size
@@ -44,6 +46,7 @@ class PlaybackSettings(context: Context) {
             putString("cinemaGlow", next.cinemaGlow.name)
             putString("picture", next.picture.name)
             putString("phoneLayout", next.phoneLayout.name)
+            putBoolean("titleLogo", next.titleLogo)
         }
     }
 
@@ -54,6 +57,7 @@ class PlaybackSettings(context: Context) {
         cinemaGlow = com.kirtanya.reel.core.playback.Ambient.Level.of(prefs.getString("cinemaGlow", null)),
         picture = com.kirtanya.reel.core.playback.PictureMode.of(prefs.getString("picture", null)),
         phoneLayout = com.kirtanya.reel.core.player.PhoneLayout.of(prefs.getString("phoneLayout", null)),
+        titleLogo = prefs.getBoolean("titleLogo", true),
     )
 
     companion object {

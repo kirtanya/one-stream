@@ -187,9 +187,21 @@ internal class TvControls(
             logoView.setImageDrawable(d)
             // A dark logo (black wordmark) would vanish over a dark picture: draw it in the strip's white.
             if (isDark(d)) logoView.setColorFilter(PlayerColors.FOREGROUND, android.graphics.PorterDuff.Mode.SRC_IN)
-            logoView.visibility = View.VISIBLE
-            titleView.visibility = View.INVISIBLE
+            logoLoaded = true
+            showTitle()
         }
+    }
+
+    private var logoLoaded = false
+
+    /** Settings → Title: Logo (when one loaded) or the name as text. */
+    var logoShown = true
+        set(v) { field = v; showTitle() }
+
+    private fun showTitle() {
+        val logo = logoShown && logoLoaded
+        logoView.visibility = if (logo) View.VISIBLE else View.GONE
+        titleView.visibility = if (logo) View.INVISIBLE else View.VISIBLE
     }
 
     /** Mean luminance of the logo's visible pixels (sampled on a small grid) below 0.35. */

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One Stream player icon set: rounded, filled, 24 dp. The "Title" setting (logo or text). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M5,5.5C5,4.67 5.67,4 6.5,4h11c0.83,0 1.5,0.67 1.5,1.5S18.33,7 17.5,7H13.5v11.5c0,0.83 -0.67,1.5 -1.5,1.5s-1.5,-0.67 -1.5,-1.5V7H6.5C5.67,7 5,6.33 5,5.5z"/>
+</vector>
