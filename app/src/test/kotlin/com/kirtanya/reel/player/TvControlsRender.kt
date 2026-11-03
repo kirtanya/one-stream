@@ -49,12 +49,18 @@ class TvControlsRender {
     /** Back with the controls hidden: "Press Back again to exit". */
     @Test fun renderExitChip() = render("tv_exit_chip", PlayerScenes.BRIGHT, exitChip = true)
 
+    /** Change source inside the player: the button's page (list, still searching, nothing found) and the Settings row's page. */
+    @Test fun renderSources() = render("tv_sources", PlayerScenes.MID, panel = true, sources = PlayerScenes.Sources.LIST)
+    @Test fun renderSourcesSearching() = render("tv_sources_searching", PlayerScenes.MID, panel = true, sources = PlayerScenes.Sources.SEARCHING)
+    @Test fun renderSourcesEmpty() = render("tv_sources_empty", PlayerScenes.MID, panel = true, sources = PlayerScenes.Sources.EMPTY)
+    @Test fun renderSourcesViaSettings() = render("tv_sources_via_settings", PlayerScenes.MID, panel = true, sources = PlayerScenes.Sources.LIST, sourcesViaRow = true)
+
     private fun render(
         name: String, picture: IntArray, panel: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
         overlay: PlayerScenes.Overlay? = null, slider: String? = null, audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false,
-        section: String? = null, exitChip: Boolean = false,
+        section: String? = null, exitChip: Boolean = false, sources: PlayerScenes.Sources? = null, sourcesViaRow: Boolean = false,
     ) {
-        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider, audio = audio, next = next, audioPanel = audioPanel, section = section, exitChip = exitChip)
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider, audio = audio, next = next, audioPanel = audioPanel, section = section, exitChip = exitChip, sources = sources, sourcesViaRow = sourcesViaRow)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

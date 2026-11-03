@@ -77,6 +77,9 @@ internal class TvControls(
 
     fun refreshPanel() = settingsPanel.refresh()
 
+    /** The Change source page of the panel (the source button and the Settings row open it). */
+    internal fun setSources(host: SourcePanelHost) { settingsPanel.sources = host }
+
     /** One skip (Settings → Playback → Skip by): the ± buttons, their numbers and the remote's FF / REW keys. */
     var seekStepMs = 10_000L
         set(v) {
@@ -143,7 +146,7 @@ internal class TvControls(
         ffwd.setOnClickListener { seekBy(seekStepMs); touch() }
         play.setOnClickListener { togglePlay(); touch() }
         nextChip.setOnClickListener { hide(); onNext() }
-        source.setOnClickListener { hide(); onChangeSource?.invoke() }
+        source.setOnClickListener { if (settingsPanel.sources != null) openPanel("source") else { hide(); onChangeSource?.invoke() } }
         audioBtn.setOnClickListener { openPanel("audio") }
         subs.setOnClickListener { openPanel("sub") }
         settings.setOnClickListener { openPanel(null) }
@@ -325,7 +328,7 @@ internal class TvControls(
     private var opener: View = settings
 
     internal fun openPanel(section: String? = null) {
-        opener = when (section) { "audio" -> audioBtn; "sub" -> subs; else -> settings }
+        opener = when (section) { "audio" -> audioBtn; "sub" -> subs; "source" -> source; else -> settings }
         settingsPanel.show(section)
         main.removeCallbacks(hideRunnable)
     }

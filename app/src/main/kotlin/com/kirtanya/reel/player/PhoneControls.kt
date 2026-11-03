@@ -135,6 +135,9 @@ internal class PhoneControls(
 
     fun refreshPanel() = settingsPanel.refresh()
 
+    /** The Change source page of the panel (the source button and the Settings row open it). */
+    internal fun setSources(host: SourcePanelHost) { settingsPanel.sources = host }
+
     /** One skip (Settings → Playback → Skip by): the ± buttons, their numbers and a double-tap. */
     var seekStepMs = 10_000L
         set(v) {
@@ -248,7 +251,7 @@ internal class PhoneControls(
         lock.setOnClickListener { setLocked(true) }
         unlock.setOnClickListener { setLocked(false) }
         nextChip.setOnClickListener { onNext() }
-        source.setOnClickListener { onChangeSource?.invoke() }
+        source.setOnClickListener { if (settingsPanel.sources != null) openPanel("source") else onChangeSource?.invoke() }
         audioBtn.setOnClickListener { openPanel("audio") }
         toTv.setOnClickListener { onSendToTv?.invoke() }
         seek.onScrubStart = { touch() }
@@ -435,7 +438,7 @@ internal class PhoneControls(
         return false
     }
 
-    internal fun openPanelForPreview() = openPanel(null)
+    internal fun openPanelForPreview(section: String? = null) = openPanel(section)
 
     private fun openPanel(section: String?) {
         settingsPanel.show(section)

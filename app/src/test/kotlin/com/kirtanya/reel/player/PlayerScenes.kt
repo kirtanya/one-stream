@@ -39,6 +39,38 @@ internal object PlayerScenes {
         PanelExtra(REPORT_ROW) {},
     )
 
+    /** The Change source page's states (the real page's data comes from PlayerActivity's source search). */
+    enum class Sources { LIST, SEARCHING, EMPTY }
+
+    private fun source(n: Int, res: Int?, size: Long?, seeders: Int?, provider: String, title: String, kind: com.kirtanya.reel.core.sources.SourceKind = com.kirtanya.reel.core.sources.SourceKind.TORRENT) =
+        com.kirtanya.reel.core.sources.Source(
+            kind = kind, title = title, provider = provider, quality = com.kirtanya.reel.core.sources.Quality(resolution = res, hdr = title.contains("HDR")),
+            infoHash = if (kind == com.kirtanya.reel.core.sources.SourceKind.TORRENT) "%040x".format(n) else null,
+            url = if (kind == com.kirtanya.reel.core.sources.SourceKind.DIRECT) "https://example.org/$n.mp4" else null,
+            seeders = seeders, sizeBytes = size,
+        )
+
+    /** A realistic ranked list; the third one is playing. */
+    private val FAKE_SOURCES = listOf(
+        source(1, 2160, 18_400_000_000L, 412, "Torrentio | Real-Debrid", "Spider-Man.Into.the.Spider-Verse.2018.2160p.UHD.BluRay.HDR.x265"),
+        source(2, 1080, 4_600_000_000L, 230, "Comet | Real-Debrid", "Spider-Man.Into.the.Spider-Verse.2018.1080p.BluRay.x264"),
+        source(3, 1080, 2_900_000_000L, 38, "MediaFusion", "Spider-Man.Into.the.Spider-Verse.2018.1080p.WEB-DL.Hindi"),
+        source(4, 720, 1_400_000_000L, 6, "Torrentio | Real-Debrid", "Spider-Man.Into.the.Spider-Verse.2018.720p.WEBRip"),
+        source(5, 720, 1_100_000_000L, null, "Built-in: Internet Archive", "Spider-Man Into the Spider-Verse", com.kirtanya.reel.core.sources.SourceKind.DIRECT),
+        source(6, null, 900_000_000L, 0, "Torrentio | Real-Debrid", "Spider-Man.Into.the.Spider-Verse.2018.WEBRip"),
+    )
+
+    /** The page's host for a render: no search, the data of [which]. */
+    internal fun sourceHost(which: Sources): SourcePanelHost {
+        val playing = FAKE_SOURCES[2]
+        val search = when (which) {
+            Sources.LIST -> com.kirtanya.reel.core.sources.SourceSearch(FAKE_SOURCES, emptyList(), emptyMap(), 6)
+            Sources.SEARCHING -> com.kirtanya.reel.core.sources.SourceSearch(FAKE_SOURCES.take(4), listOf("Comet", "MediaFusion", "Orion"), emptyMap(), 6)
+            Sources.EMPTY -> com.kirtanya.reel.core.sources.SourceSearch(emptyList(), emptyList(), emptyMap(), 6)
+        }
+        return SourcePanelHost(page = { com.kirtanya.reel.core.player.PlayerSources.page(search, playing) }, open = {}, pick = {}, all = {})
+    }
+
     /** A film with two audio tracks and subtitles in two forms, as the panel lists them (renders only). */
     val AUDIO_TRACKS = listOf("English 5.1" to true, "Hindi 5.1" to false, "Japanese" to false)
     val SUBTITLE_TRACKS = listOf("English" to true, "English · SDH" to false, "Hindi" to false)
@@ -171,6 +203,8 @@ internal object PlayerScenes {
         layout: com.kirtanya.reel.core.player.PhoneLayout = com.kirtanya.reel.core.player.PhoneLayout.CLASSIC,
         cutout: com.kirtanya.reel.core.player.PhoneLayout.Side? = null,
         audio: Boolean = true, audioPanel: Boolean = false, tracks: Boolean = false,
+        /** The Change source page: [sources] data, opened by its button (default) or through the Settings row ([sourcesViaRow]). */
+        sources: Sources? = null, sourcesViaRow: Boolean = false,
     ): Phone {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
@@ -198,6 +232,7 @@ internal object PlayerScenes {
             c.previewCutout(cutout, px, hole)
             root.addView(cameraHole(activity, hole))
         }
+        if (sources != null) c.setSources(sourceHost(sources))
         c.layoutMode = layout
         root.addView(c, FrameLayout.LayoutParams(-1, -1))
         val o = PlayerOverlays(activity, { null }, tv = false)
@@ -209,7 +244,8 @@ internal object PlayerScenes {
         showOverlay(o, overlay, tv = false)
         ShadowLooper.idleMainLooper()
         scene.midFilm()
-        if (panel) c.openPanelForPreview()
+        if (panel) c.openPanelForPreview(if (sources != null && !sourcesViaRow) "source" else null)
+        if (panel && sources != null && sourcesViaRow) openSlider(root, CHANGE_SOURCE_ROW)
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
         if (panel && panelEnd) scrollPanelToEnd(root)
         if (panel && audioPanel) { root.findViewWithTag<android.view.View>("audio")?.performClick(); ShadowLooper.idleMainLooper() }
@@ -259,6 +295,8 @@ internal object PlayerScenes {
         section: String? = null,
         /** "Press Back again to exit" showing (after the first Back). */
         exitChip: Boolean = false,
+        /** The Change source page: [sources] data, opened by its button (default) or through the Settings row ([sourcesViaRow]). */
+        sources: Sources? = null, sourcesViaRow: Boolean = false,
     ): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
@@ -273,6 +311,7 @@ internal object PlayerScenes {
         c.setToggles(pictureRows(cropPercent))
         val (subRows, audioRows, playRows) = rows()
         c.setRows(subRows, audioRows, playRows) {}
+        if (sources != null) c.setSources(sourceHost(sources))
         root.addView(c.view, FrameLayout.LayoutParams(-1, -1))
         val o = PlayerOverlays(activity, { null }, tv = true)
         o.addTo(root)
@@ -283,7 +322,8 @@ internal object PlayerScenes {
         // [strip]: the design rules need other controls on screen to move the focus to.
         if (overlay == null || overlay == Overlay.SLEEP) c.show() else if (strip) c.show(focus = null)
         showOverlay(o, overlay, tv = true)
-        if (panel) c.openPanel(section)
+        if (panel) c.openPanel(if (sources != null && !sourcesViaRow) "source" else section)
+        if (panel && sources != null && sourcesViaRow) openSlider(root, CHANGE_SOURCE_ROW)
         if (exitChip) { c.hide(); o.exitChip.visibility = android.view.View.VISIBLE }
         ShadowLooper.idleMainLooper()
         if (panel && panelEnd) scrollPanelToEnd(root)
