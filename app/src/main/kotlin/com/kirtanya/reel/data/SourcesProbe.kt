@@ -72,6 +72,11 @@ class SourcesProbe : BroadcastReceiver() {
             "freeze" -> android.os.Handler(android.os.Looper.getMainLooper()).post { Log.i(TAG, "blocking the main thread for 8 s"); Thread.sleep(8_000) }
         }
         if (intent.hasExtra("reportTest")) return
+        intent.getStringExtra("uiFlags")?.let {
+            com.kirtanya.reel.ui.common.UiFlags.write(context, it)
+            Log.i(TAG, "uiFlags ${com.kirtanya.reel.ui.common.UiFlags.summary()}")
+            return
+        }
         if (intent.getBooleanExtra("warmEngine", false)) {
             // What One Launcher's warm_engine does; logcat ReelEngineIdle has the time.
             com.kirtanya.reel.engine.EngineIdle.warm(app, "probe")

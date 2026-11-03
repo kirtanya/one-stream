@@ -1,0 +1,8 @@
+# Compile all of One Stream's own code and Compose ahead of time on install (via androidx.profileinstaller):
+# a sideloaded APK gets no cloud profile, and the TV's 32-bit CPU is slow at JIT warm-up.
+HSPLcom/kirtanya/reel/**->**(**)**
+Lcom/kirtanya/reel/**;
+HSPLandroidx/compose/**->**(**)**
+Landroidx/compose/**;
+HSPLcoil3/**->**(**)**
+Lcoil3/**;

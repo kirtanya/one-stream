@@ -161,7 +161,8 @@ fun ContinueRow(
                             )
                             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
                     ) {
-                        val art = TmdbImages.still(p.stillPath, "w780") ?: TmdbImages.backdrop(p.backdropPath, "w780")
+                        // w500 covers a 240 dp card at the TV's 2x density; w780 only cost decode time and texture memory.
+                        val art = TmdbImages.still(p.stillPath, "w500") ?: TmdbImages.backdrop(p.backdropPath, "w500")
                         if (art != null) {
                             RemoteImage(art, Modifier.fillMaxSize())
                         } else {

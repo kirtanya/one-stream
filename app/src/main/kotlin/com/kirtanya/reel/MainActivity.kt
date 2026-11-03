@@ -40,6 +40,12 @@ class MainActivity : ComponentActivity() {
     /** A search handed in by One Launcher (onestream://search?q=…). */
     private var openSearch by mutableStateOf<String?>(null)
 
+    override fun onResume() {
+        super.onResume()
+        // Compose re-reads the service list when accessibility state changes (e.g. while we were in the player).
+        if (ReelApp.get(this).isTv) window.decorView.post { com.kirtanya.reel.ui.common.ComposeA11y.stopSemanticsWork(window.decorView) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Launcher icon (or the notification) while the app is already open, e.g. with the player on
@@ -68,6 +74,12 @@ class MainActivity : ComponentActivity() {
         // Only a fresh launch: not when Android recreates the activity or it's reopened from Recents
         // (the same link would ask again).
         if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) handleIntent(intent)
+        // TvApp paints its own black canvas: the window background under it is one more full-screen fill per
+        // frame for the TV's GPU. Dropped after the first frame so the launch still opens on black.
+        if (isTv) window.decorView.post {
+            window.setBackgroundDrawable(null)
+            com.kirtanya.reel.ui.common.ComposeA11y.stopSemanticsWork(window.decorView)
+        }
         setContent {
             // Status / nav bar icons follow light or dark (the bars themselves stay transparent).
             val dark = com.kirtanya.reel.ui.theme.AccentState.isDark(androidx.compose.foundation.isSystemInDarkTheme())

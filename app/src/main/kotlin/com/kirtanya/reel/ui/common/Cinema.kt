@@ -58,6 +58,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -148,13 +150,43 @@ fun HeroImage(urls: List<String>, modifier: Modifier = Modifier, alignment: Alig
     }
 }
 
-/** The canvas fades over a hero: bottom (where the text sits), top (status bar), left on TV. */
+/**
+ * The canvas fades over a hero: bottom (where the text sits), top (status bar), left on TV.
+ * Baked once per size into one small bitmap and stretched: three full-screen gradient shaders cost the TV's
+ * Mali-G31 ~25 ms a frame (37 → 11 ms GPU with them off, tool/tv_jank.sh), a stretched texture almost nothing.
+ * Gradients are smooth, so 1/[SCRIM_SCALE] resolution looks the same.
+ */
 @Composable
 fun BoxScope.HeroScrims(top: Boolean = true, start: Boolean = false, topHeight: Dp = 140.dp) {
-    if (start) Box(Modifier.matchParentSize().background(Tokens.Gradients.heroStart))
-    Box(Modifier.matchParentSize().background(Tokens.Gradients.heroBottom))
-    if (top) Box(Modifier.fillMaxWidth().height(topHeight).background(Tokens.Gradients.heroTop))
+    // Remembered per canvas colour: a new Brush each recomposition would re-bake on every focus move.
+    val canvas = Tokens.Colors.canvas
+    val startBrush = remember(canvas) { Tokens.Gradients.heroStart }
+    val bottomBrush = remember(canvas) { Tokens.Gradients.heroBottom }
+    val topBrush = remember(canvas) { Tokens.Gradients.heroTop }
+    Box(
+        Modifier.matchParentSize().drawWithCache {
+            val w = (size.width / SCRIM_SCALE).toInt().coerceAtLeast(1)
+            val h = (size.height / SCRIM_SCALE).toInt().coerceAtLeast(1)
+            val small = androidx.compose.ui.geometry.Size(w.toFloat(), h.toFloat())
+            val bitmap = androidx.compose.ui.graphics.ImageBitmap(w, h)
+            val topShare = (topHeight.toPx() / size.height).coerceAtMost(1f)
+            androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(this, layoutDirection, androidx.compose.ui.graphics.Canvas(bitmap), small) {
+                if (start) drawRect(startBrush)
+                drawRect(bottomBrush)
+                // The brush spans whatever it fills, so fill everything and squash it to the top band.
+                if (top) scale(1f, topShare, pivot = androidx.compose.ui.geometry.Offset.Zero) { drawRect(topBrush) }
+            }
+            onDrawBehind {
+                drawImage(
+                    bitmap, dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
+                    filterQuality = androidx.compose.ui.graphics.FilterQuality.Low,
+                )
+            }
+        },
+    )
 }
+
+private const val SCRIM_SCALE = 6f
 
 /**
  * "★ 8.2 · 2024 · 2h 46m · UA": the rating in the accent colour, then the facts. Breaks only

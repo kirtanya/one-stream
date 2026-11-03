@@ -90,6 +90,7 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         })
         // First, so a crash anywhere below is reported too.
         reports.install()
+        com.kirtanya.reel.ui.common.UiFlags.load(this)
         appScope.launch { sources.ensureReady() }
         // The ratings cache off the main thread, so Home's first posters show their IMDb pill at once.
         appScope.launch { ratings.warm() }

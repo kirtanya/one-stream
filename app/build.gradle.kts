@@ -97,6 +97,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.9.4")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.tv:tv-material:1.1.0")
+    // Installs app/src/main/baseline-prof.txt on sideloads (tool/install_tv.sh then compiles it at once).
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")

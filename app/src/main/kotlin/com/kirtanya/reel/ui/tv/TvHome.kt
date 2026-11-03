@@ -19,6 +19,9 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -137,16 +140,18 @@ private fun TvHomeContent(
     onOpen: (TitleSummary) -> Unit,
     onOpenDest: (Dest) -> Unit,
 ) {
-    val catalog = rememberCatalog()
     val initial = continueItems.firstOrNull()?.info() ?: rows.first().second.first().info()
-    var focused by remember { mutableStateOf(initial) }
+    // Read only inside HomeBackdrop / HomeInfoBlock: a read here would recompose every row on each move.
+    val focusedState = remember { mutableStateOf(initial) }
+    var focused by focusedState
     // The backdrop and logo follow the remote once it settles (not every card it skips over).
-    var settled by remember { mutableStateOf(focused) }
-    LaunchedEffect(focused) {
-        delay(260)
-        settled = focused
+    val settledState = remember { mutableStateOf(initial) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { focusedState.value }.collectLatest {
+            delay(260)
+            settledState.value = it
+        }
     }
-    val (logo, _) = rememberLoad(settled.ref) { settled.ref?.let { catalog.logo(it) } }
     val firstCard = remember { FocusRequester() }
     val columnState = rememberLazyListState()
     val continueState = rememberLazyListState()
@@ -178,25 +183,11 @@ private fun TvHomeContent(
 
     Box(Modifier.fillMaxSize()) {
         // The focused title fills the room: its backdrop over pure black, black behind the text.
-        HeroImage(listOfNotNull(TmdbImages.backdrop(settled.backdropPath)), Modifier.fillMaxSize(), fadeMs = 200)
-        HeroScrims(top = true, start = true, topHeight = TvTopBarHeight + Tokens.Space.xxxl)
+        HomeBackdrop(settledState)
 
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(TvTopBarHeight))
-            Column(
-                Modifier.fillMaxWidth(0.55f).height(Tokens.Cinema.tvInfoHeight).padding(horizontal = Tokens.Space.tvSafeH),
-                verticalArrangement = Arrangement.spacedBy(Tokens.Space.s, Alignment.Bottom),
-            ) {
-                focused.badge?.let { Pill(it, accent = true) }
-                Box(Modifier.heightIn(min = 40.dp), contentAlignment = Alignment.BottomStart) {
-                    val path = (logo as? Load.Ready)?.value.takeIf { settled.key == focused.key }
-                    TitleLogo(path, focused.title, Tokens.Type.hero, Tokens.Cinema.logoMaxWidthTv, 80.dp, textMaxLines = 1)
-                }
-                MetaLine(focused.rating, focused.parts, maxLines = 1)
-                if (focused.overview.isNotBlank()) {
-                    Text(focused.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-            }
+            HomeInfoBlock(focusedState, settledState)
             LazyColumn(
                 Modifier.weight(1f).focusRequester(columnFocus).focusRestorer(),
                 state = columnState,
@@ -246,6 +237,39 @@ private fun TvHomeContent(
                     }
                 }
             }
+        }
+    }
+}
+
+/** The settled title's backdrop over black; recomposes only when the remote settles on another title. */
+@Composable
+private fun HomeBackdrop(settled: State<HomeInfo>) {
+    val path = settled.value.backdropPath
+    Box(Modifier.fillMaxSize()) {
+        HeroImage(listOfNotNull(TmdbImages.backdrop(path)), Modifier.fillMaxSize(), fadeMs = 200)
+        HeroScrims(top = true, start = true, topHeight = TvTopBarHeight + Tokens.Space.xxxl)
+    }
+}
+
+/** Badge, logo, meta and overview of the focused card: the only part that changes on every move. */
+@Composable
+private fun HomeInfoBlock(focusedState: State<HomeInfo>, settledState: State<HomeInfo>) {
+    val catalog = rememberCatalog()
+    val focused = focusedState.value
+    val settled = settledState.value
+    val (logo, _) = rememberLoad(settled.ref) { settled.ref?.let { catalog.logo(it) } }
+    Column(
+        Modifier.fillMaxWidth(0.55f).height(Tokens.Cinema.tvInfoHeight).padding(horizontal = Tokens.Space.tvSafeH),
+        verticalArrangement = Arrangement.spacedBy(Tokens.Space.s, Alignment.Bottom),
+    ) {
+        focused.badge?.let { Pill(it, accent = true) }
+        Box(Modifier.heightIn(min = 40.dp), contentAlignment = Alignment.BottomStart) {
+            val path = (logo as? Load.Ready)?.value.takeIf { settled.key == focused.key }
+            TitleLogo(path, focused.title, Tokens.Type.hero, Tokens.Cinema.logoMaxWidthTv, 80.dp, textMaxLines = 1)
+        }
+        MetaLine(focused.rating, focused.parts, maxLines = 1)
+        if (focused.overview.isNotBlank()) {
+            Text(focused.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
