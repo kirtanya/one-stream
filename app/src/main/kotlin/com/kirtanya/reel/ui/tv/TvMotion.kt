@@ -1,7 +1,6 @@
 package com.kirtanya.reel.ui.tv
 
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
@@ -12,20 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 
-/**
- * The TV motion numbers (docs/SMOOTH_UI_PLAN.md §3). Mirrors `Tokens.Motion` (owned by the Home agent):
- * same names and values, so the merge is a rename.
- */
-// TODO(merge): move to Tokens.Motion
-internal object TvMotion {
-    /** "Emphasised decelerate": fast start, long soft landing. */
-    val easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-    const val focusFadeMs = 120
-    const val rowSlideMs = 260
-    const val columnGlideMs = 300
-    const val heroFadeMs = 350
-    const val pageEnterMs = 180
-}
+/** The TV motion numbers (docs/SMOOTH_UI_PLAN.md §3) live in [Tokens.Motion]; this short name reads better here. */
+internal typealias TvMotion = com.kirtanya.reel.ui.theme.Tokens.Motion
 
 /**
  * A page's vertical glide: scroll only as far as needed to show the focused item plus [revealPx] under it

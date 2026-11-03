@@ -126,7 +126,7 @@ object AccentState {
         tertiaryContainer = Color(0xFF2A2A2A), onTertiaryContainer = Color(0xFFFFFFFF),
         background = Color(0xFF000000), onBackground = Color(0xFFFFFFFF),
         surface = Color(0xFF000000), onSurface = Color(0xFFFFFFFF),
-        surfaceVariant = Color(0xFF1C1C1C), onSurfaceVariant = Color(0xFFB3B3B3),
+        surfaceVariant = Color(0xFF1C1C1C), onSurfaceVariant = Color(0xFFBDBDBD),
         surfaceTint = Color(0xFFFFFFFF),
         inverseSurface = Color(0xFFFFFFFF), inverseOnSurface = Color(0xFF000000), inversePrimary = Color(0xFF000000),
         outline = Color(0xFF8C8C8C), outlineVariant = Color(0xFF333333), scrim = Color(0xFF000000),

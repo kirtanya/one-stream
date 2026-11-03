@@ -45,10 +45,10 @@ import kotlinx.coroutines.launch
 // Phone-only motion helpers (docs/SMOOTH_UI_PLAN.md §2–3): everything animates in the draw / layout phase
 // (graphicsLayer, drawWithContent, Canvas lambdas), never by recomposing.
 
-// TODO(merge): move to Tokens.Motion (mirrors the shared emphasised-decelerate curve and the 120 ms press / 260 ms slide times).
-internal val EmphasisedDecelerate = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-internal const val PRESS_MS = 120
-internal const val SLIDE_MS = 260
+// The shared motion numbers (Tokens.Motion), under the names the phone code uses.
+internal val EmphasisedDecelerate = com.kirtanya.reel.ui.theme.Tokens.Motion.easing
+internal const val PRESS_MS = com.kirtanya.reel.ui.theme.Tokens.Motion.focusFadeMs
+internal const val SLIDE_MS = com.kirtanya.reel.ui.theme.Tokens.Motion.rowSlideMs
 
 /**
  * Press feedback: the element shrinks a touch while a finger is down, and springs back on release or once

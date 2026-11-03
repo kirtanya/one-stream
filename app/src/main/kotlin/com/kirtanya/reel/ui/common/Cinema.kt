@@ -8,8 +8,6 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -405,13 +403,6 @@ fun ActionTile(icon: ImageVector, label: String, onClick: () -> Unit, modifier: 
 fun <S> AnimatedContentTransitionScope<S>.pageTransition(): ContentTransform =
     (fadeIn(tween(Tokens.Motion.pageMs)) + scaleIn(tween(Tokens.Motion.pageMs), initialScale = Tokens.Motion.pageZoom)) togetherWith
         fadeOut(tween(Tokens.Motion.pageMs / 2))
-
-/**
- * TV: no transition. Fading + zooming a full 1080p screen in over 320 ms drops the TV chip to a slideshow
- * (the new page also loads its data during it), so the new screen simply appears.
- */
-fun <S> AnimatedContentTransitionScope<S>.tvPageTransition(): ContentTransform =
-    (EnterTransition.None togetherWith ExitTransition.None).using(null)
 
 /** Row of the title's genres as chips: each opens the genre. */
 @Composable

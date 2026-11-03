@@ -354,7 +354,8 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -
             t.error != null -> Text(t.error, style = Tokens.Type.caption, color = Tokens.Colors.danger, maxLines = 3, overflow = TextOverflow.Ellipsis)
             t.stalledForSec >= 120 -> Text("No one is sharing this right now. It'll continue when someone does.", style = Tokens.Type.caption, color = Tokens.Colors.warn)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalAlignment = Alignment.CenterVertically) {
+        // Space.m between the 40 dp icons: Compose grows each touch area to 48 dp only while the neighbours leave room.
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
             ReelButton(if (done) "Play" else "Play now", { com.kirtanya.reel.ui.homedisk.gatedPlay(context, null, t.name) { context.startActivity(PlayerActivity.forTorrent(context, t.infoHash, t.name)) } }, kind = ButtonKind.Secondary, icon = Icons.Rounded.PlayArrow)
             Spacer(Modifier.weight(1f))
             // Icons, not labels, so Play + up to three actions fit a 360 dp phone; the rest are under More.
