@@ -5,19 +5,17 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,9 +26,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Home
@@ -43,6 +38,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,12 +50,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ReelApp
@@ -68,7 +61,6 @@ import com.kirtanya.reel.ui.common.AddLinkSheet
 import com.kirtanya.reel.ui.common.CollectionScreen
 import com.kirtanya.reel.ui.common.PersonScreen
 import com.kirtanya.reel.ui.common.pageTransition
-import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.nav.Tab
 import com.kirtanya.reel.ui.nav.rememberNavigator
@@ -116,7 +108,11 @@ fun PhoneApp(
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         // Screen to screen: a cross-fade with a slight zoom. Each screen keeps its state (scroll,
         // season, search) while something is on top of it.
-        AnimatedContent(nav.top ?: nav.tab, transitionSpec = { pageTransition() }, label = "screen") { screen ->
+        AnimatedContent(nav.top ?: nav.tab, transitionSpec = {
+            // Tab to tab (Netflix): a quick cross-fade, no zoom; pages stacking on top zoom in as before.
+            if (initialState is Tab && targetState is Tab) fadeIn(tween(180)) togetherWith fadeOut(tween(90))
+            else pageTransition()
+        }, label = "screen") { screen ->
             when (screen) {
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
                     PhoneTitle(screen.ref, screen.season, onBack = back, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
@@ -178,10 +174,10 @@ fun PhoneApp(
 internal fun collectionKey(d: Dest.Collection) = "collection:${d.title}:${d.provider?.id}:${d.genre?.id}:${d.genreType}"
 
 /**
- * Floating tab bar (iOS-style): a capsule of four icon-only tabs, centred above the gesture bar. No
- * labels; each icon carries its name for TalkBack. The selected tab's filled icon takes the accent,
- * on a soft accent pill that slides between tabs. Glass (more opaque than over images: no blur) with
- * a hairline and a soft shadow, so it reads over whatever scrolls under it.
+ * Docked tab bar (Netflix / Hotstar): full width, four tabs with an icon and a label each, on a solid raised
+ * surface with a hairline on top. The selected tab is filled and in the text colour, the rest outlined and
+ * quiet; a short bar on the bar's top edge slides to the selected tab (drawn, not recomposed). Solid: no blur,
+ * no shadow, so it costs nothing to scroll under. The icon + label are the tab's accessible name.
  */
 @Composable
 internal fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
@@ -195,48 +191,48 @@ internal fun BottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
         Triple(Tab.Settings, Icons.Rounded.Settings, Icons.Outlined.Settings),
     )
     val index = tabs.indexOfFirst { it.first == selected }.coerceAtLeast(0)
-    val indicatorX by animateDpAsState(
-        Tokens.Size.barTabWidth * index,
-        tween(Tokens.Motion.stateMs, easing = FastOutSlowInEasing),
-        label = "tab indicator",
-    )
-    // Full width only to centre the capsule; it takes no touches itself, so rows beside the bar stay pressable.
-    Box(
-        Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = Tokens.Space.barGap),
-        contentAlignment = Alignment.Center,
+    val position = remember { Animatable(index.toFloat()) }
+    LaunchedEffect(index) { position.animateTo(index.toFloat(), tween(SLIDE_MS, easing = EmphasisedDecelerate)) }
+    val line = Tokens.Colors.hairline
+    val marker = Tokens.Colors.accent
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Tokens.Colors.surface1)
+            .drawBehind {
+                drawRect(line, size = androidx.compose.ui.geometry.Size(size.width, Tokens.Size.hairline.toPx()))
+                // Selected-tab marker: slides with the animation value, read here in the draw phase.
+                val slot = size.width / tabs.size
+                val w = 28.dp.toPx()
+                val h = 3.dp.toPx()
+                drawRoundRect(
+                    marker, Offset(position.value * slot + (slot - w) / 2f, 0f), androidx.compose.ui.geometry.Size(w, h),
+                    androidx.compose.ui.geometry.CornerRadius(h / 2f),
+                )
+            }
+            .navigationBarsPadding()
+            .selectableGroup(),
     ) {
-        Box(
-            Modifier
-                .shadow(Tokens.Size.barElevation, CircleShape, ambientColor = Tokens.Colors.barShadow, spotColor = Tokens.Colors.barShadow)
-                .background(Tokens.Colors.barGlass, CircleShape)
-                .border(Tokens.Size.hairline, Tokens.Colors.hairline, CircleShape)
-                .padding(Tokens.Size.barPadding),
-        ) {
-            Box(
-                Modifier
-                    .offset(x = indicatorX)
-                    .size(Tokens.Size.barTabWidth, Tokens.Size.barTabHeight)
-                    .background(Tokens.Colors.barIndicator, CircleShape),
-            )
-            Row(Modifier.selectableGroup()) {
-                tabs.forEach { (tab, filled, outlined) ->
-                    val on = tab == selected
-                    val tint by animateColorAsState(
-                        if (on) Tokens.Colors.accent else Tokens.Colors.textSecondary,
-                        tween(Tokens.Motion.stateMs),
-                        label = "tab tint",
-                    )
-                    Box(
-                        Modifier
-                            .size(Tokens.Size.barTabWidth, Tokens.Size.barTabHeight)
-                            .clip(CircleShape)
-                            .selectable(selected = on, role = Role.Tab, onClick = { onSelect(tab) }),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        BadgedBox(badge = { if (tab == Tab.Downloads && downloading) Badge(containerColor = Tokens.Colors.accent) }) {
-                            Icon(if (on) filled else outlined, contentDescription = tab.label, tint = tint, modifier = Modifier.size(Tokens.Size.barIcon))
-                        }
+        Row(Modifier.fillMaxWidth().height(56.dp)) {
+            tabs.forEach { (tab, filled, outlined) ->
+                val on = tab == selected
+                val tint by animateColorAsState(
+                    if (on) Tokens.Colors.text else Tokens.Colors.textSecondary,
+                    tween(PRESS_MS),
+                    label = "tab tint",
+                )
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .selectable(selected = on, role = Role.Tab, onClick = { onSelect(tab) }),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    BadgedBox(badge = { if (tab == Tab.Downloads && downloading) Badge(containerColor = Tokens.Colors.accent) }) {
+                        Icon(if (on) filled else outlined, contentDescription = null, tint = tint, modifier = Modifier.size(Tokens.Size.barIcon))
                     }
+                    Text(tab.label, style = Tokens.Type.caption, color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
