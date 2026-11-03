@@ -27,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -44,6 +43,7 @@ import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.focusCard
+import com.kirtanya.reel.ui.phone.pressScale
 import com.kirtanya.reel.ui.formatBytes
 import com.kirtanya.reel.ui.theme.Tokens
 
@@ -78,6 +78,7 @@ fun SourceRow(
     Row(
         modifier
             .fillMaxWidth()
+            .then(if (com.kirtanya.reel.ui.common.LocalIsTv.current) Modifier else Modifier.pressScale(0.98f))
             .focusCard(shape = shape, onLongClick = onLongClick, onClick = onClick)
             .background(Tokens.Colors.surface1)
             .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
@@ -117,7 +118,6 @@ fun RecommendedCard(
     v: SourceView,
     fits: Boolean,
     action: SourceAction,
-    glow: Color,
     isTv: Boolean,
     focus: FocusRequester,
     onClick: () -> Unit,
@@ -130,10 +130,11 @@ fun RecommendedCard(
     Column(
         modifier
             .fillMaxWidth()
-            .shadow(28.dp, shape, ambientColor = glow, spotColor = glow)
+            // No glow: a 28 dp blurred shadow re-rasterised on every scroll frame (and the TV chip can't afford it).
+            // The pick stands out by its ring instead: bright on TV, a quiet hairline on the phone.
             .clip(shape)
             .background(Tokens.Colors.surface1)
-            .border(Tokens.Size.ring, Tokens.Gradients.ring, shape)
+            .border(if (isTv) Tokens.Size.ring else Tokens.Size.hairline, if (isTv) Tokens.Colors.accentBright else Tokens.Colors.hairlineStrong, shape)
             .padding(Tokens.Space.l),
         verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
     ) {

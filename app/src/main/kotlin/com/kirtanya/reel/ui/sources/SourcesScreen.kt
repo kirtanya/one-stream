@@ -69,12 +69,16 @@ import com.kirtanya.reel.ui.common.GradientProgress
 import com.kirtanya.reel.ui.common.HeroImage
 import com.kirtanya.reel.ui.common.HeroScrims
 import com.kirtanya.reel.ui.common.Load
-import com.kirtanya.reel.ui.common.LoadView
+import com.kirtanya.reel.ui.common.ErrorBox
+import com.kirtanya.reel.ui.common.LoadingBox
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.common.TitleLogo
-import com.kirtanya.reel.ui.common.rememberAmbientColor
 import com.kirtanya.reel.ui.formatBytes
+import com.kirtanya.reel.ui.phone.SkeletonBlock
+import com.kirtanya.reel.ui.phone.SkeletonHost
+import com.kirtanya.reel.ui.phone.skeleton
+import com.kirtanya.reel.ui.phone.skeletonHero
 import com.kirtanya.reel.ui.theme.Tokens
 import com.kirtanya.reel.ui.title.heroBackdrops
 import com.kirtanya.reel.ui.title.rememberSeason
@@ -100,7 +104,12 @@ fun SourcesScreen(
 ) {
     val (load, retry) = rememberTitle(ref)
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-        LoadView(load, retry) { d -> SourcesBody(d, season, episode, isTv, download || replacing != null, replacing, resumeAtMs, onBack) }
+        when (load) {
+            // Phone: the page's own shape (header, switch, pick, rows) shimmering; TV keeps the plain spinner (nothing animates there).
+            Load.Loading -> if (isTv) LoadingBox() else SourcesSkeleton()
+            is Load.Failed -> ErrorBox(load.message, { retry() })
+            is Load.Ready -> SourcesBody(load.value, season, episode, isTv, download || replacing != null, replacing, resumeAtMs, onBack)
+        }
         if (!isTv) com.kirtanya.reel.ui.common.TopFade()
         if (!isTv) GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.s))
     }
@@ -174,7 +183,6 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val shown = remember(rows, filters) { SourceBrowser.apply(rows, filters) }
     if (fixed?.confirmReplace == true && replacing != null) LaunchedEffect(best) { confirm = best }
 
-    val glow by rememberAmbientColor(TmdbImages.poster(d.summary.posterPath, "w185"))
     val mainFocus = remember { FocusRequester() }
     if (isTv && best != null) RequestFocusOnce(mainFocus, key = best.key)
     val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
@@ -230,11 +238,13 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                 Box(Modifier.padding(horizontal = side)) {
                     when {
                         bestView != null -> RecommendedCard(
-                            bestView, SourceRanker.fits(bestView.source, prefs), action, glow, isTv, mainFocus,
+                            bestView, SourceRanker.fits(bestView.source, prefs), action, isTv, mainFocus,
                             onClick = { choose(bestView.source) }, modifier = Modifier.widthIn(max = maxWidth),
                             onMore = { options = bestView },
                         )
                         search?.done == true -> NothingFound(search, rescan, Modifier.widthIn(max = maxWidth))
+                        // Providers are still answering and nothing has come back: the pick's shape, not a hole.
+                        !isTv -> PickSkeleton()
                     }
                 }
             }
@@ -456,4 +466,43 @@ private fun ReplaceDialog(oldHash: String, next: Source, label: String, origin: 
         },
         dismissButton = { ReelButton("Keep current", onDismiss, kind = ButtonKind.Ghost) },
     )
+}
+
+/** The Recommended card's shape while the first answers are on their way (phone). */
+@Composable
+private fun PickSkeleton() {
+    SkeletonHost {
+        Column(
+            Modifier.fillMaxWidth().widthIn(max = 720.dp).skeleton(Tokens.Radius.l, Tokens.Colors.surface1).padding(Tokens.Space.l),
+            verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                SkeletonBlock(110.dp, 24.dp, radius = Tokens.Radius.pill)
+                SkeletonBlock(40.dp, 24.dp, radius = Tokens.Radius.pill)
+            }
+            SkeletonBlock(120.dp, 20.dp)
+            SkeletonBlock(null, 14.dp, Modifier.fillMaxWidth())
+            SkeletonBlock(null, Tokens.Size.buttonLarge, Modifier.fillMaxWidth(), radius = Tokens.Radius.pill)
+        }
+    }
+}
+
+/** While the title loads on the Sources page (phone): header block, Play | Download switch, then the pick. */
+@Composable
+private fun SourcesSkeleton() {
+    SkeletonHost {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+            Box(Modifier.fillMaxWidth().height(Tokens.Cinema.sourcesHeader).skeletonHero()) {
+                Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    SkeletonBlock(150.dp, 14.dp)
+                    SkeletonBlock(220.dp, 32.dp)
+                }
+            }
+            Row(Modifier.padding(horizontal = Tokens.Space.phoneGutter), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                SkeletonBlock(104.dp, Tokens.Size.button, radius = Tokens.Radius.pill)
+                SkeletonBlock(132.dp, Tokens.Size.button, radius = Tokens.Radius.pill)
+            }
+            Box(Modifier.padding(horizontal = Tokens.Space.phoneGutter)) { PickSkeleton() }
+        }
+    }
 }
