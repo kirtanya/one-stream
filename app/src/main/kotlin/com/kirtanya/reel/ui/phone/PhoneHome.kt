@@ -136,7 +136,7 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd:
                             }
                             HomeHeader(onAdd, onSurprise = { surprise() })
                         }
-                        PagerDots(hero.size, pager.currentPage, Modifier.align(Alignment.CenterHorizontally))
+                        PagerDots(pager, Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
                 // Rows in the order chosen in Settings → Home screen; hidden ones left out.
@@ -227,7 +227,14 @@ private fun HeroPage(item: TitleSummary, pager: PagerState, page: Int, onOpen: (
         )
         HeroScrims(top = true, topHeight = 160.dp)
         Column(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = Tokens.Space.phoneGutter),
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = Tokens.Space.phoneGutter)
+                .graphicsLayer {
+                    // The text dissolves as its page slides away and the next one's arrives: a cross-fade of
+                    // the copy over the swipe's own motion (opacity + a small drift; draw phase only).
+                    val away = kotlin.math.abs((pager.currentPage - page) + pager.currentPageOffsetFraction).coerceIn(0f, 1f)
+                    alpha = 1f - away
+                    translationX = -away * size.width * 0.12f
+                },
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
         ) {
             Box(Modifier.heightIn(min = Tokens.Cinema.logoMaxHeightPhone), contentAlignment = Alignment.BottomStart) {
@@ -243,51 +250,44 @@ private fun HeroPage(item: TitleSummary, pager: PagerState, page: Int, onOpen: (
                 horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ReelButton("Play", { onPlay(item) }, Modifier.weight(1f), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
-                ReelButton("My list", toggle, Modifier.weight(1f), kind = ButtonKind.Glass, icon = watchlistIcon(saved), large = true)
-                GlassIconButton(Icons.Outlined.Info, "Details", { onOpen(item) })
+                ReelButton("Play", { onPlay(item) }, Modifier.weight(1f).pressScale(), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
+                ReelButton("My list", toggle, Modifier.weight(1f).pressScale(), kind = ButtonKind.Glass, icon = watchlistIcon(saved), large = true)
+                GlassIconButton(Icons.Outlined.Info, "Details", { onOpen(item) }, Modifier.pressScale())
             }
         }
     }
 }
 
-@Composable
-private fun PagerDots(count: Int, current: Int, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        repeat(count) { i ->
-            val w by animateDpAsState(if (i == current) 16.dp else 6.dp, label = "dot")
-            Box(
-                Modifier.height(6.dp).width(w).clip(RoundedCornerShape(Tokens.Radius.pill))
-                    .background(if (i == current) Tokens.Gradients.brand else Brush.linearGradient(listOf(Tokens.Colors.surface3, Tokens.Colors.surface3))),
-            )
-        }
-    }
-}
-
-/** While Home loads: the header and the shapes of what's coming (no spinner on an empty page). */
+/**
+ * While Home loads: the header and the shapes of what's coming (no spinner on an empty page), with one soft
+ * shimmer sweeping across them (drawn, so it costs no recomposition). The hero's own shape: a tall tonal
+ * block fading into the canvas, the title bar, the facts bar and the two buttons.
+ */
 @Composable
 private fun HomeSkeleton(heroHeight: Dp, onAdd: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Tokens.Colors.canvas), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
-        Box(Modifier.fillMaxWidth().height(heroHeight).background(Brush.verticalGradient(listOf(Tokens.Colors.surface2, Tokens.Colors.canvas)))) {
-            HomeHeader(onAdd)
-            Column(Modifier.align(Alignment.BottomStart).padding(Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                Bar(220.dp, 40.dp)
-                Bar(140.dp, 16.dp)
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) { Bar(140.dp, Tokens.Size.buttonLarge, pill = true); Bar(140.dp, Tokens.Size.buttonLarge, pill = true) }
+    SkeletonHost {
+        Column(Modifier.fillMaxSize().background(Tokens.Colors.canvas), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
+            Box(Modifier.fillMaxWidth().height(heroHeight).skeletonHero()) {
+                HomeHeader(onAdd)
+                Column(Modifier.align(Alignment.BottomStart).padding(Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    SkeletonBlock(220.dp, 40.dp, radius = Tokens.Radius.s)
+                    SkeletonBlock(140.dp, 16.dp, radius = Tokens.Radius.s)
+                    Row(Modifier.padding(top = Tokens.Space.xs), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        SkeletonBlock(150.dp, Tokens.Size.buttonLarge, radius = Tokens.Radius.pill)
+                        SkeletonBlock(150.dp, Tokens.Size.buttonLarge, radius = Tokens.Radius.pill)
+                    }
+                }
             }
-        }
-        repeat(2) {
-            Column(Modifier.padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                Bar(160.dp, 20.dp)
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) { repeat(4) { Box(Modifier.width(104.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(Tokens.Radius.m)).background(Tokens.Colors.surface2)) } }
+            repeat(2) {
+                Column(Modifier.padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    SkeletonBlock(160.dp, 20.dp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+                        repeat(4) { Box(Modifier.width(104.dp).aspectRatio(2f / 3f).skeleton(Tokens.Radius.m)) }
+                    }
+                }
             }
         }
     }
-}
-
-@Composable
-private fun Bar(width: Dp, height: Dp, pill: Boolean = false) {
-    Box(Modifier.width(width).height(height).clip(RoundedCornerShape(if (pill) Tokens.Radius.pill else Tokens.Radius.s)).background(Tokens.Colors.surface3))
 }
 
 /** Failed or empty Home: the header stays, with what happened and Try again. */
