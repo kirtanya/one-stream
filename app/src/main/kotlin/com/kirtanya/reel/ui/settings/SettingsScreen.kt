@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.kirtanya.reel.BuildConfig
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.data.PlaybackSettings
@@ -163,24 +164,29 @@ fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
         }
     }
 
+    val pageContent: @Composable (SettingsPage?) -> Unit = { page ->
+        when (page) {
+            null -> SettingsHome(isTv, focusOn = cameFrom?.let { SettingsPage.valueOf(it) }, onOpen = ::open)
+            SettingsPage.Store -> AddonStorePage(isTv, onBack = ::back)
+            else -> SettingsDetail(page, isTv, onOpen = ::open, onBack = ::back)
+        }
+    }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-        AmbientGlow(Tokens.Colors.accent, strength = 0.25f)
-        AnimatedContent(
-            stack.lastOrNull(),
-            transitionSpec = {
-                val dir = if (forward) 1 else -1
-                // TV: no slide + fade of a full page (the weak chip shows it as lag).
-                if (isTv) (androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None).using(null)
-                else (slideInHorizontally(tween(Tokens.Motion.stateMs)) { it / 6 * dir } + fadeIn(tween(Tokens.Motion.stateMs))) togetherWith
-                    (slideOutHorizontally(tween(Tokens.Motion.stateMs)) { -it / 6 * dir } + fadeOut(tween(Tokens.Motion.stateMs / 2)))
-            },
-            label = "settingsPage",
-        ) { page ->
-            when (page) {
-                null -> SettingsHome(isTv, focusOn = cameFrom?.let { SettingsPage.valueOf(it) }, onOpen = ::open)
-                SettingsPage.Store -> AddonStorePage(isTv, onBack = ::back)
-                else -> SettingsDetail(page, isTv, onOpen = ::open, onBack = ::back)
-            }
+        if (isTv) {
+            // TV: pages swap at once (a slide + fade of a full page is lag on the weak chip, and AnimatedContent would
+            // keep the old page composed for a frame); the whole screen's own fade-in is TvApp's.
+            androidx.compose.runtime.key(stack.lastOrNull()) { pageContent(stack.lastOrNull()) }
+        } else {
+            AmbientGlow(Tokens.Colors.accent, strength = 0.25f)
+            AnimatedContent(
+                stack.lastOrNull(),
+                transitionSpec = {
+                    val dir = if (forward) 1 else -1
+                    (slideInHorizontally(tween(Tokens.Motion.stateMs)) { it / 6 * dir } + fadeIn(tween(Tokens.Motion.stateMs))) togetherWith
+                        (slideOutHorizontally(tween(Tokens.Motion.stateMs)) { -it / 6 * dir } + fadeOut(tween(Tokens.Motion.stateMs / 2)))
+                },
+                label = "settingsPage",
+            ) { page -> pageContent(page) }
         }
     }
 }
@@ -259,21 +265,32 @@ internal fun installedSources(app: ReelApp): com.kirtanya.reel.data.SourcesState
 /** Material list-group label: sentence case, primary colour. */
 @Composable
 internal fun GroupLabel(text: String) {
-    Text(text, style = Tokens.Type.label, color = Tokens.Colors.accent, modifier = Modifier.padding(start = Tokens.Space.l, top = Tokens.Space.s))
+    if (com.kirtanya.reel.ui.common.LocalIsTv.current) {
+        // TV: a quiet small-caps header (Netflix / Hotstar settings), so the rows under it carry the weight.
+        Text(text.uppercase(), style = TvGroupLabel, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(start = Tokens.Space.s, top = Tokens.Space.m))
+    } else {
+        Text(text, style = Tokens.Type.label, color = Tokens.Colors.accent, modifier = Modifier.padding(start = Tokens.Space.l, top = Tokens.Space.s))
+    }
 }
+
+private val TvGroupLabel = Tokens.Type.caption.copy(letterSpacing = 1.4.sp)
+private val TvSummary = Tokens.Type.label.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal)
 
 /** One row of the root list: icon tile, name, where it stands, chevron. The whole row opens the page. */
 @Composable
 private fun NavRow(icon: ImageVector, title: String, summary: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val tv = com.kirtanya.reel.ui.common.LocalIsTv.current
     Row(
-        modifier.fillMaxWidth().focusCard(shape = RoundedCornerShape(Tokens.Radius.m), onClick = onClick).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),
+        modifier.fillMaxWidth().focusCard(shape = RoundedCornerShape(Tokens.Radius.m), onClick = onClick)
+            .padding(horizontal = Tokens.Space.m, vertical = if (tv) Tokens.Space.m + Tokens.Space.xxs else Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
     ) {
         IconTile(icon)
         Column(Modifier.weight(1f)) {
-            Text(title, style = Tokens.Type.label, color = Tokens.Colors.text)
-            Text(summary, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // TV: a size up, readable from the sofa.
+            Text(title, style = if (tv) Tokens.Type.heading else Tokens.Type.label, color = Tokens.Colors.text)
+            Text(summary, style = if (tv) TvSummary else Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Tokens.Colors.textTertiary)
     }
@@ -293,16 +310,20 @@ private fun IconTile(icon: ImageVector) {
 @Composable
 internal fun PageList(isTv: Boolean, modifier: Modifier = Modifier, content: LazyListScope.() -> Unit) {
     val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
-    LazyColumn(
-        modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = side, end = side,
-            top = if (isTv) Tokens.Space.l else 0.dp,
-            bottom = if (isTv) Tokens.Space.tvSafeV else Tokens.Space.bottomBarClearance + Tokens.Space.xl,
-        ),
-        verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-        content = content,
-    )
+    val list: @Composable () -> Unit = {
+        LazyColumn(
+            modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = side, end = side,
+                top = if (isTv) Tokens.Space.l else 0.dp,
+                bottom = if (isTv) Tokens.Space.tvSafeV else Tokens.Space.bottomBarClearance + Tokens.Space.xl,
+            ),
+            verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
+            content = content,
+        )
+    }
+    // TV: the page glides to the focused row over the shared glide time (a long page of rows, no spring).
+    if (isTv) com.kirtanya.reel.ui.tv.TvColumnGlide(reveal = Tokens.Space.l, content = list) else list()
 }
 
 /**
@@ -319,7 +340,8 @@ internal fun PageTitle(title: String, subtitle: String?, isTv: Boolean, onBack: 
         if (onBack != null && !isTv) GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
         Column(Modifier.weight(1f)) {
             if (onBack != null && isTv) Text("Settings  ›", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
-            Text(title, style = if (onBack == null) Tokens.Type.display else Tokens.Type.title, color = Tokens.Colors.text)
+            // TV: the page name is the hero line, like a Netflix / Hotstar settings page.
+            Text(title, style = if (isTv && onBack == null) Tokens.Type.hero else if (onBack == null) Tokens.Type.display else Tokens.Type.title, color = Tokens.Colors.text)
             if (subtitle != null) Text(subtitle, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
         }
     }

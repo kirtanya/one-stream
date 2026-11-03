@@ -44,7 +44,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.height
 import com.kirtanya.reel.ui.common.focusCard
-import com.kirtanya.reel.ui.common.tvPageTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import com.kirtanya.reel.ui.theme.Tokens
 
 /** Height reserved at the top of every TV tab for the tab bar (it sits inside the overscan-safe area). */
@@ -88,6 +92,8 @@ fun TvApp(
         }
     }
     val idle = remember { IdleWatch() }
+    // False until the first frame is composed: the screen the app opens on appears at once, later screens fade in.
+    val appeared = remember { booleanArrayOf(false) }
     val activity = LocalContext.current as? Activity
     BackHandler { if (!nav.back()) activity?.finish() }
     val openTitle: (com.kirtanya.reel.core.tmdb.TitleSummary) -> Unit = { nav.open(Dest.Title(it.ref)) }
@@ -103,8 +109,12 @@ fun TvApp(
     val back: () -> Unit = { nav.back() }
     val open: (Dest) -> Unit = { nav.open(it) }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas).idleWatch(idle)) {
-        // Screen to screen: a short cross-fade with a slight zoom; each screen keeps its state underneath.
-        androidx.compose.animation.AnimatedContent(nav.top ?: nav.tab, transitionSpec = { tvPageTransition() }, label = "screen") { screen ->
+        // Screen to screen: the old one goes at once, the new one fades in over [TvMotion.pageEnterMs]. A plain `when`
+        // keyed on the screen (not AnimatedContent): no second screen composed during the fade, no transition scope; each
+        // screen still saves its state (SaveableStateProvider) when it leaves, and gets it back on Back.
+        val screen = nav.top ?: nav.tab
+        androidx.compose.runtime.key(screen) {
+        PageEnter(animate = appeared[0]) {
             when (screen) {
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
                     TvTitle(screen.ref, screen.season, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
@@ -128,6 +138,8 @@ fun TvApp(
                 }
             }
         }
+        }
+        SideEffect { appeared[0] = true }
         // The tab bar stays put while tabs change under it.
         if (nav.top == null) TvTopBar(nav)
         com.kirtanya.reel.ui.common.UndoSnackbarHost(
@@ -173,8 +185,24 @@ internal fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.Imag
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
             if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
-            Text(label, style = if (selected) Tokens.Type.heading else Tokens.Type.heading.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = fg)
+            Text(label, style = if (selected) TabSelected else TabIdle, color = fg, maxLines = 1)
         }
-        if (selected) Box(Modifier.align(Alignment.BottomCenter).width(20.dp).height(Tokens.Size.focusBorder).clip(shape).background(Tokens.Colors.text))
+        // The underline sits inside the pill, above the ring, so focus + selected both read.
+        if (selected) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp).width(24.dp).height(3.dp).clip(shape).background(Tokens.Colors.text))
     }
+}
+
+// Built once: a `.copy()` per tab per recomposition is garbage on a 32-bit box.
+private val TabSelected = Tokens.Type.heading
+private val TabIdle = Tokens.Type.heading.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+
+/**
+ * The screen's fade-in: opacity only, on the content's own layer (no overlay, no zoom). `ModulateAlpha` scales each draw op's
+ * alpha instead of rendering the screen into an offscreen buffer first, which is what a plain `alpha` would cost on the TV's GPU.
+ */
+@Composable
+private fun PageEnter(animate: Boolean, content: @Composable () -> Unit) {
+    val alpha = remember { Animatable(if (animate) 0f else 1f) }
+    if (animate) LaunchedEffect(Unit) { alpha.animateTo(1f, tween(TvMotion.pageEnterMs, easing = TvMotion.easing)) }
+    Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha.value; compositingStrategy = CompositingStrategy.ModulateAlpha }) { content() }
 }
