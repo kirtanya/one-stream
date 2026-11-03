@@ -33,7 +33,6 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -156,31 +157,39 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                     Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         d.tagline?.let { Text("“$it”", style = Tokens.Type.label, color = Tokens.Colors.accentBright) }
                         if (d.summary.overview.isNotBlank()) {
-                            Text(
-                                d.summary.overview,
-                                style = Tokens.Type.body,
-                                color = Tokens.Colors.textSecondary,
-                                maxLines = if (overviewOpen) Int.MAX_VALUE else 3,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.s), onClick = { overviewOpen = !overviewOpen }),
-                            )
+                            // Three lines, then "More": the whole paragraph is the tap target, so there's no tiny link to hit.
+                            var clipped by remember(d.summary.overview) { mutableStateOf(false) }
+                            Column(
+                                Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.s), onClick = { overviewOpen = !overviewOpen }),
+                                verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
+                            ) {
+                                Text(
+                                    d.summary.overview,
+                                    style = Tokens.Type.body,
+                                    color = Tokens.Colors.textSecondary,
+                                    maxLines = if (overviewOpen) Int.MAX_VALUE else 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                    onTextLayout = { if (!overviewOpen) clipped = it.hasVisualOverflow },
+                                )
+                                if (clipped || overviewOpen) Text(if (overviewOpen) "Less" else "More", style = Tokens.Type.label, color = Tokens.Colors.text)
+                            }
                         }
                     }
                 }
             }
             item(key = "actions") {
                 Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    ReelButton(action.label, { runPlayAction(context, action, openSources) }, Modifier.fillMaxWidth(), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
+                    ReelButton(action.label, { runPlayAction(context, action, openSources) }, Modifier.fillMaxWidth().pressScale(0.98f), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
                     if (action is PlayAction.Resume) GradientProgress(action.entry.progress, height = 3.dp)
                     val ep = (action as? PlayAction.Resume)?.entry?.playback?.episode ?: (action as? PlayAction.Choose)?.episode
                     Row(Modifier.fillMaxWidth()) {
-                        ActionTile(watchlistIcon(saved), "My list", toggleSaved, Modifier.weight(1f), active = saved)
-                        d.trailer?.let { t -> ActionTile(Icons.Rounded.Movie, "Trailer", { openVideo(context, t) }, Modifier.weight(1f)) }
-                        ActionTile(Icons.Rounded.Hub, "Sources", { openSources(ep) }, Modifier.weight(1f))
+                        ActionTile(watchlistIcon(saved), "My list", toggleSaved, Modifier.weight(1f).pressScale(), active = saved)
+                        d.trailer?.let { t -> ActionTile(Icons.Rounded.Movie, "Trailer", { openVideo(context, t) }, Modifier.weight(1f).pressScale()) }
+                        ActionTile(Icons.Rounded.Hub, "Sources", { openSources(ep) }, Modifier.weight(1f).pressScale())
                         // Seen: the whole film or show (every aired episode); seasons have no watched line of their own. "Seen", not
                         // "Watched": five tiles share 360 dp, and "Watched" cuts off at large text.
-                        ActionTile(if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility, "Seen", toggleWatched, Modifier.weight(1f), active = watchedAll)
-                        ActionTile(Icons.Rounded.Share, "Share", { shareTitle(context, d) }, Modifier.weight(1f))
+                        ActionTile(if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility, "Seen", toggleWatched, Modifier.weight(1f).pressScale(), active = watchedAll)
+                        ActionTile(Icons.Rounded.Share, "Share", { shareTitle(context, d) }, Modifier.weight(1f).pressScale())
                     }
                 }
             }
@@ -206,7 +215,7 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                     }
                 }
                 when (episodes) {
-                    Load.Loading -> item(key = "episodes-loading") { LoadingBox(Modifier.height(120.dp)) }
+                    Load.Loading -> item(key = "episodes-loading") { EpisodesSkeleton(Modifier.padding(horizontal = gutter)) }
                     is Load.Failed -> item(key = "episodes-failed") { ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = gutter), kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh) }
                     is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
                         EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], episodeImdb[e.number], Modifier.padding(horizontal = gutter), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
@@ -243,10 +252,13 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                 item(key = "more") { PosterRow("More like this", d.recommendations, posterWidth = 104.dp, sidePadding = gutter, onOpen = onOpen) }
             }
         }
-        androidx.compose.animation.AnimatedVisibility(scrolled, enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
-            Box(Modifier.fillMaxWidth().background(Tokens.Colors.surface1).statusBarsPadding().height(56.dp).padding(start = 64.dp, end = Tokens.Space.l), contentAlignment = Alignment.CenterStart) {
-                Text(d.summary.title, style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+        // Fades with opacity only (a graphicsLayer lambda), so crossing the header's edge recomposes nothing.
+        val barAlpha by androidx.compose.animation.core.animateFloatAsState(if (scrolled) 1f else 0f, androidx.compose.animation.core.tween(180, easing = EmphasisedDecelerate), label = "bar")
+        Box(
+            Modifier.fillMaxWidth().graphicsLayer { alpha = barAlpha }.background(Tokens.Colors.surface1).statusBarsPadding().height(56.dp).padding(start = 64.dp, end = Tokens.Space.l),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(d.summary.title, style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -257,7 +269,7 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val stillShape = RoundedCornerShape(Tokens.Radius.m)
     Row(
-        modifier.fillMaxWidth().focusCard(shape = shape, onLongClick = onLongClick, onClick = onClick).padding(Tokens.Space.xs),
+        modifier.fillMaxWidth().pressScale(0.98f).focusCard(shape = shape, onLongClick = onLongClick, onClick = onClick).padding(Tokens.Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -284,18 +296,42 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier
     }
 }
 
-/** While the title loads: the header's shape and a Play-sized bar, so nothing jumps when it arrives. */
+/** While the title loads: the header's shape, a Play-sized bar and the action tiles, so nothing jumps when it arrives. */
 @Composable
 internal fun TitleSkeleton() {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
-        Box(Modifier.fillMaxWidth().height(Tokens.Cinema.titleHeader).background(Brush.verticalGradient(listOf(Tokens.Colors.surface2, Tokens.Colors.canvas)))) {
-            Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                Box(Modifier.width(220.dp).height(40.dp).clip(RoundedCornerShape(Tokens.Radius.s)).background(Tokens.Colors.surface3))
-                Box(Modifier.width(160.dp).height(16.dp).clip(RoundedCornerShape(Tokens.Radius.s)).background(Tokens.Colors.surface3))
+    SkeletonHost {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
+            Box(Modifier.fillMaxWidth().height(Tokens.Cinema.titleHeader).skeletonHero()) {
+                Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    SkeletonBlock(220.dp, 40.dp)
+                    SkeletonBlock(160.dp, 16.dp)
+                }
+            }
+            Column(Modifier.padding(horizontal = Tokens.Space.phoneGutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                SkeletonBlock(null, 14.dp, Modifier.fillMaxWidth())
+                SkeletonBlock(null, 14.dp, Modifier.fillMaxWidth(0.8f))
+            }
+            Box(Modifier.padding(horizontal = Tokens.Space.phoneGutter).fillMaxWidth().height(Tokens.Size.buttonLarge).skeleton(Tokens.Radius.pill))
+        }
+    }
+}
+
+/** Episode list while a season loads: three rows with the real row's shape. */
+@Composable
+private fun EpisodesSkeleton(modifier: Modifier = Modifier) {
+    SkeletonHost {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+            repeat(3) {
+                Row(Modifier.padding(Tokens.Space.xs), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.width(128.dp).aspectRatio(16f / 9f).skeleton(Tokens.Radius.m))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        SkeletonBlock(null, 14.dp, Modifier.fillMaxWidth(0.8f))
+                        SkeletonBlock(null, 12.dp, Modifier.fillMaxWidth(0.5f))
+                        SkeletonBlock(null, 12.dp, Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
-        Box(Modifier.padding(horizontal = Tokens.Space.phoneGutter).fillMaxWidth().height(Tokens.Size.buttonLarge).clip(RoundedCornerShape(Tokens.Radius.pill)).background(Tokens.Colors.surface2))
-        LoadingBox(Modifier.height(80.dp))
     }
 }
 
