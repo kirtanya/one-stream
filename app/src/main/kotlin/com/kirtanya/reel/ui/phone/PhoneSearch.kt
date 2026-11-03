@@ -249,6 +249,10 @@ fun SearchResults(
     browse: (@Composable () -> Unit)? = null,
     /** TV: cards per row. Down from any card lands on the first card of the next row (not the one below). */
     rowStartOnDown: Int? = null,
+    /** TV: posters without the name and meta line under them (the focused one is named elsewhere, see [onFocusItem]). */
+    showText: Boolean = true,
+    /** TV: the poster that just took focus. */
+    onFocusItem: ((TitleSummary) -> Unit)? = null,
 ) {
     val catalog = rememberCatalog()
     val (load, retry) = rememberLoad(query) {
@@ -267,6 +271,9 @@ fun SearchResults(
     val cardFocus = remember(results) { results.map { FocusRequester() } }
     // Grid items before the first card: the genre browser (no query) and the heading.
     val lead = (if (query.isEmpty() && browse != null) 1 else 0) + 1
+    // TV (rowStartOnDown is TV's): the grid glides to the focused row over the page glide time, not Compose's spring.
+    val tv = rowStartOnDown != null
+    val grid: @Composable () -> Unit = {
     LazyVerticalGrid(
         columns = columns,
         state = gridState,
@@ -274,8 +281,8 @@ fun SearchResults(
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
     ) {
-        if (query.isEmpty() && browse != null) item(span = { GridItemSpan(maxLineSpan) }, key = "browse") { browse() }
-        item(span = { GridItemSpan(maxLineSpan) }, key = "heading") {
+        if (query.isEmpty() && browse != null) item(span = { GridItemSpan(maxLineSpan) }, key = "browse", contentType = "browse") { browse() }
+        item(span = { GridItemSpan(maxLineSpan) }, key = "heading", contentType = "heading") {
             when (load) {
                 Load.Loading -> LoadingBox(Modifier.height(160.dp))
                 is Load.Failed -> ErrorBox(load.message, { retry() }, Modifier.height(200.dp))
@@ -287,7 +294,7 @@ fun SearchResults(
                 }
             }
         }
-        itemsIndexed(results, key = { _, it -> it.ref.toString() }) { i, item ->
+        itemsIndexed(results, key = { _, it -> it.ref.toString() }, contentType = { _, _ -> "poster" }) { i, item ->
             val first = if (i == 0 && focusFirst != null) Modifier.focusRequester(focusFirst) else Modifier
             val rowJump = rowStartOnDown?.let { cols ->
                 Modifier.focusRequester(cardFocus[i]).onPreviewKeyEvent { e ->
@@ -304,9 +311,11 @@ fun SearchResults(
                     true
                 }
             } ?: Modifier
-            PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = first.then(rowJump))
+            PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = first.then(rowJump), showText = showText, onFocus = onFocusItem?.let { f -> { f(item) } })
         }
     }
+    }
+    if (tv) com.kirtanya.reel.ui.tv.TvColumnGlide(reveal = Tokens.Space.s, content = grid) else grid()
 }
 
 /** Last 8 searches, newest first. */

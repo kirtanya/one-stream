@@ -39,11 +39,16 @@ fun rememberTitleWatched(d: TitleDetails): Pair<Boolean, () -> Unit> {
 
 /** "The Dune Collection": the series' other films, in release order. */
 @Composable
-fun FranchiseRow(d: TitleDetails, sidePadding: Dp, posterWidth: Dp, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, showText: Boolean = true) {
+fun FranchiseRow(d: TitleDetails, sidePadding: Dp, posterWidth: Dp, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, showText: Boolean = true, tv: Boolean = false) {
     val c = d.collection ?: return
     val catalog = rememberCatalog()
     val (load, _) = rememberLoad(c.id) { catalog.collection(c.id) }
     val parts = (load as? Load.Ready)?.value?.parts.orEmpty()
     if (parts.size < 2) return
+    // TV: text-less posters with the focused one named beside the heading.
+    if (tv) {
+        com.kirtanya.reel.ui.tv.TvPosterRow(c.name, parts, sidePadding, posterWidth, onOpen, onSeeAll = { onOpenDest(Dest.Collection(c.name, items = parts)) })
+        return
+    }
     PosterRow(c.name, parts, posterWidth = posterWidth, sidePadding = sidePadding, onOpen = onOpen, showText = showText, onSeeAll = { onOpenDest(Dest.Collection(c.name, items = parts)) })
 }

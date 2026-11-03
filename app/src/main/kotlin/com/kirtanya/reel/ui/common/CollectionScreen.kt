@@ -210,22 +210,28 @@ private fun TitleGrid(
     }
     val bottom: Dp = if (isTv) Tokens.Space.tvSafeV else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Tokens.Space.xxl
 
+    // TV: the focused title's name lives in a strip under the grid (posters carry no text), read only by that strip.
+    val focused = remember { mutableStateOf<TitleSummary?>(null) }
+    val gridBottom = if (isTv) bottom + com.kirtanya.reel.ui.tv.FocusedTitleLineHeight + Tokens.Space.s else bottom
+
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         Box(Modifier.fillMaxWidth().height(if (isTv) 360.dp else 280.dp)) {
             HeroImage(listOfNotNull(TmdbImages.backdrop(backdrop, "w1280")), Modifier.fillMaxSize())
-            // The heading sits on the picture: a dim wash, then the usual fades.
-            Box(Modifier.matchParentSize().background(Tokens.Gradients.backdropDim))
+            // The heading sits on the picture: a dim wash, then the usual fades. TV: a flat wash (a gradient brush over this
+            // much of the screen costs the TV's GPU every frame; the baked scrims below do the fading).
+            Box(Modifier.matchParentSize().then(if (isTv) Modifier.background(Tokens.Colors.canvas.copy(alpha = 0.6f)) else Modifier.background(Tokens.Gradients.backdropDim)))
             HeroScrims(top = !isTv, start = isTv)
         }
+        val gridContent: @Composable () -> Unit = {
         LazyVerticalGrid(
             columns = if (isTv) GridCells.Fixed(7) else GridCells.Fixed(3),
             state = grid,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.tvSafeV else 0.dp, bottom = bottom),
+            contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.tvSafeV else 0.dp, bottom = gridBottom),
             horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "header", contentType = "header") {
                 Column(
                     // TV: room under the heading for the first poster's focus ring.
                     Modifier.then(if (isTv) Modifier.padding(top = Tokens.Space.xxxl, bottom = Tokens.Space.m) else Modifier.statusBarsPadding().padding(top = 96.dp)),
@@ -243,8 +249,8 @@ private fun TitleGrid(
                     }
                 }
             }
-            posterCells(items, firstFocus, onOpen)
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            posterCells(items, firstFocus, onOpen, showText = !isTv, onFocusItem = if (isTv) { t -> focused.value = t } else null)
+            item(span = { GridItemSpan(maxLineSpan) }, key = "footer", contentType = "footer") {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     if (items.isEmpty() && allItems.isNotEmpty()) {
                         EmptyState(Icons.Rounded.Movie, "Nothing matches", "None of the ${allItems.size} titles loaded fit these choices.") {
@@ -254,6 +260,15 @@ private fun TitleGrid(
                     footer()
                 }
             }
+        }
+        }
+        if (isTv) com.kirtanya.reel.ui.tv.TvColumnGlide(reveal = Tokens.Space.s, content = gridContent) else gridContent()
+        if (isTv) {
+            // A solid strip (no gradient, no layer): posters scroll under it, the name stays put.
+            Box(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Tokens.Colors.canvas)
+                    .padding(start = side, end = side, top = Tokens.Space.s, bottom = Tokens.Space.tvSafeV),
+            ) { com.kirtanya.reel.ui.tv.FocusedTitleLine(focused) }
         }
         if (!isTv) {
             TopFade()
@@ -288,9 +303,18 @@ private fun FilterChips(
     }
 }
 
-private fun LazyGridScope.posterCells(items: List<TitleSummary>, firstFocus: FocusRequester, onOpen: (TitleSummary) -> Unit) {
-    itemsIndexed(items, key = { _, it -> it.ref.toString() }) { i, item ->
-        PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
+private fun LazyGridScope.posterCells(
+    items: List<TitleSummary>,
+    firstFocus: FocusRequester,
+    onOpen: (TitleSummary) -> Unit,
+    showText: Boolean,
+    onFocusItem: ((TitleSummary) -> Unit)?,
+) {
+    itemsIndexed(items, key = { _, it -> it.ref.toString() }, contentType = { _, _ -> "poster" }) { i, item ->
+        PosterCard(
+            item, width = null, onClick = { onOpen(item) }, modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier,
+            showText = showText, onFocus = onFocusItem?.let { f -> { f(item) } },
+        )
     }
 }
 

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 
 
 import androidx.compose.foundation.layout.padding
@@ -128,24 +129,26 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
     val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
-        AmbientGlow(Tokens.Colors.accent, strength = 0.28f)
+        if (!isTv) AmbientGlow(Tokens.Colors.accent, strength = 0.28f)
+        // TV: the page glides to the focused row over the shared glide time, not Compose's spring.
+        val list: @Composable () -> Unit = {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.l else 0.dp, bottom = if (isTv) Tokens.Space.tvSafeV else Tokens.Space.bottomBarClearance + Tokens.Space.xl),
-            verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
+            verticalArrangement = Arrangement.spacedBy(if (isTv) Tokens.Space.m else Tokens.Space.l),
         ) {
-            item {
+            item(key = "title", contentType = "title") {
                 Row(Modifier.then(if (isTv) Modifier else Modifier.statusBarsPadding()).padding(top = Tokens.Space.l), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Downloads", style = Tokens.Type.display, color = Tokens.Colors.text)
+                        Text("Downloads", style = if (isTv) Tokens.Type.hero else Tokens.Type.display, color = Tokens.Colors.text)
                         if (saveDir != null) Text("Saving to $saveDir", style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (!isTv) GlassIconButton(Icons.Rounded.Add, "Add a link", onAdd)
                 }
             }
-            item { StorageCard(torrents, cacheBytes, freeBytes) { engine.trimCache(0) } }
+            item(key = "storage", contentType = "storage") { StorageCard(torrents, cacheBytes, freeBytes, isTv) { engine.trimCache(0) } }
             if (needsFileAccess) {
-                item {
+                item(key = "access") {
                     ReelCard {
                         Text("Save to your Downloads folder", style = Tokens.Type.heading, color = Tokens.Colors.text)
                         Text("Allow file access so downloads land in Download/Reel, where other apps can open them.", style = Tokens.Type.body, color = Tokens.Colors.textSecondary)
@@ -156,8 +159,16 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                 }
             }
             if (!isTv && home.waiting != null && heldShown.isNotEmpty()) item(key = "held") { WaitingCard(home, heldShown.size) }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+            item(key = "filters", contentType = "filters") {
+                if (isTv) {
+                    // The same text tabs as the top bar (the tab's own inset is taken back so the text lines up with the title).
+                    Row(Modifier.offset(x = -Tokens.Space.m), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                        DownloadFilter.entries.filter { it != DownloadFilter.Home || showHome }.forEach { f ->
+                            val count = if (f == DownloadFilter.Home) home.jobs.size else torrents.count { it.matches(f) }
+                            com.kirtanya.reel.ui.tv.TvTab("${f.label} · $count", null, selected = filter == f) { filter = f }
+                        }
+                    }
+                } else LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                     items(DownloadFilter.entries.filter { it != DownloadFilter.Home || showHome }) { f ->
                         val count = if (f == DownloadFilter.Home) home.jobs.size else torrents.count { it.matches(f) }
                         ReelButton("${f.label} · $count", { filter = f }, kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost)
@@ -169,7 +180,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                 items(shownJobs, key = { "job:" + it.requestId }) { j -> AtHomeCard(j, home) }
             }
             if (shown.isEmpty() && shownJobs.isEmpty()) {
-                item {
+                item(key = "empty") {
                     EmptyState(
                         Icons.Rounded.Download,
                         if (filter == DownloadFilter.Streams) "Nothing cached" else "Nothing here yet",
@@ -179,9 +190,13 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                     )
                 }
             }
-            items(shownDownloads, key = { it.infoHash }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = { more = t }, home = home.takeIf { !isTv }) }
+            // TV: two sections side by side in one list get a heading each (the phone shows the cache's heading only).
+            if (isTv && shownDownloads.isNotEmpty() && shownCache.isNotEmpty()) item(key = "downloads-header", contentType = "header") {
+                Text("Downloads · ${shownDownloads.size}", style = Tokens.Type.heading, color = Tokens.Colors.text)
+            }
+            items(shownDownloads, key = { it.infoHash }, contentType = { "download" }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = { more = t }, home = home.takeIf { !isTv }, tv = isTv) }
             if (shownCache.isNotEmpty()) {
-                item(key = "cache-header") {
+                item(key = "cache-header", contentType = "header") {
                     Column(Modifier.widthIn(max = 980.dp).padding(top = if (shownDownloads.isEmpty()) 0.dp else Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
                         Text("Stream cache · ${shownCache.size}", style = Tokens.Type.heading, color = Tokens.Colors.text)
                         Text(
@@ -190,9 +205,11 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                         )
                     }
                 }
-                items(shownCache, key = { it.infoHash }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = null) }
+                items(shownCache, key = { it.infoHash }, contentType = { "cache" }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = null, tv = isTv) }
             }
         }
+        }
+        if (isTv) com.kirtanya.reel.ui.tv.TvColumnGlide(reveal = Tokens.Space.l, content = list) else list()
     }
 
     more?.let { t ->
@@ -264,10 +281,27 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
 }
 
 @Composable
-private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeBytes: Long, onClearCache: () -> Unit) {
+private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeBytes: Long, isTv: Boolean, onClearCache: () -> Unit) {
     val downloaded = torrents.filter { it.mode == TorrentMode.DOWNLOAD }.sumOf { it.doneBytes }
     val used = downloaded + cacheBytes
     val total = (used + freeBytes).coerceAtLeast(1)
+    if (isTv) {
+        // One slim row: the number that matters, the bar, what fills it, and the one action.
+        ReelCard(padding = Tokens.Space.l, spacing = 0.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xl)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        Text(formatBytes(freeBytes), style = Tokens.Type.title, color = Tokens.Colors.text)
+                        Text("free on this device", style = Tokens.Type.label, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(bottom = 1.dp))
+                    }
+                    GradientProgress(used.toFloat() / total, height = 4.dp)
+                    Text("${formatBytes(downloaded)} downloads  ·  ${formatBytes(cacheBytes)} stream cache", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
+                }
+                if (cacheBytes > 0) ReelButton("Clear stream cache", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
+            }
+        }
+        return
+    }
     ReelCard {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
             Text(formatBytes(freeBytes), style = Tokens.Type.title, color = Tokens.Colors.text)
@@ -283,10 +317,14 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
 }
 
 @Composable
-private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null) {
+private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null, tv: Boolean = false) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val done = t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING
+    if (tv) {
+        DownloadRowTv(t, done, onDelete, onMore)
+        return
+    }
     ReelCard(Modifier.widthIn(max = 980.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
             // Tile: initial on the accent gradient (torrents have no artwork).
@@ -335,6 +373,56 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -
             GlassIconButton(Icons.Rounded.Delete, "Delete", onDelete)
             if (onMore != null) GlassIconButton(Icons.Rounded.MoreVert, "More", onMore)
         }
+    }
+}
+
+/**
+ * TV: one slim row per download instead of the phone's stacked card: tile, name + status + a thin progress line, then the
+ * actions in a line at the right (each a focus stop with the usual ring). A notice ("Start now" after the night window,
+ * a stall, an error) hangs under the row only when there is one.
+ */
+@Composable
+private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Unit, onMore: (() -> Unit)?) {
+    val context = LocalContext.current
+    val engine = ReelApp.get(context).engine
+    val shape = RoundedCornerShape(Tokens.Radius.l)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(Tokens.Colors.surface1).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
+            .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),
+        verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
+            // Tile: the initial (torrents have no artwork), a screen for a cached stream.
+            Box(
+                Modifier.size(52.dp).clip(RoundedCornerShape(Tokens.Radius.m)).background(Tokens.Colors.surface3),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (t.mode == TorrentMode.STREAM) androidx.compose.material3.Icon(Icons.Rounded.Theaters, null, tint = Tokens.Colors.text)
+                else Text(t.name.trim().take(1).uppercase(), style = Tokens.Type.title, color = Tokens.Colors.text)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
+                Text(com.kirtanya.reel.ui.sources.releaseName(t.name), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    t.error ?: statusLine(t), style = Tokens.Type.caption,
+                    color = if (t.error != null) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                if (!done) GradientProgress(t.progress, Modifier.padding(top = Tokens.Space.xs), height = 3.dp)
+            }
+            ReelButton(if (done) "Play" else "Play now", { com.kirtanya.reel.ui.homedisk.gatedPlay(context, null, t.name) { context.startActivity(PlayerActivity.forTorrent(context, t.infoHash, t.name)) } }, kind = ButtonKind.Secondary, icon = Icons.Rounded.PlayArrow)
+            if (t.mode == TorrentMode.STREAM) {
+                GlassIconButton(Icons.Rounded.SaveAlt, "Save as download", {
+                    engine.keep(t.infoHash)
+                    android.widget.Toast.makeText(context, "Saving as a download", android.widget.Toast.LENGTH_SHORT).show()
+                })
+            } else if (!done) {
+                if (t.phase == TorrentPhase.PAUSED) GlassIconButton(Icons.Rounded.Download, "Resume", { engine.resume(t.infoHash) })
+                else GlassIconButton(Icons.Rounded.Pause, "Pause", { engine.pause(t.infoHash) })
+            }
+            GlassIconButton(Icons.Rounded.Delete, "Delete", onDelete)
+            if (onMore != null) GlassIconButton(Icons.Rounded.MoreVert, "More", onMore)
+        }
+        DownloadNotice(t)
+        if (t.error == null && t.stalledForSec >= 120) Text("No one is sharing this right now. It'll continue when someone does.", style = Tokens.Type.caption, color = Tokens.Colors.warn)
     }
 }
 
