@@ -5,6 +5,20 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-04 · Smooth TV: measure on the TV, optimise for this one device (docs/SMOOTH_UI_PLAN.md)**
+Decision (user): One Stream should feel as smooth as Netflix / JioHotstar on the Acer R4 and only needs to be
+tuned for this TV and the Pixel 8. Findings and fixes (82e0f8e):
+- GPU (Mali-G31) was the bottleneck on Home: 61 ms/frame. Three full-screen gradient scrims cost ~25 ms; now
+  baked into one small bitmap (`HeroScrims`). Settings (no hero) was already 8 ms.
+- The TV runs three accessibility services (Button Mapper, One Launcher x2), so Compose diffed its semantics tree
+  every frame (20-50 ms main thread). `ComposeA11y` empties Compose's cached service list for our window only
+  (system setting and services untouched; nothing reads One Stream's screen).
+- Sideloads ran mostly interpreted: `tool/install_tv.sh` compiles with `-m speed` (row build 740 → 190 ms).
+- Result on the D-pad route (`tool/tv_jank.sh`): janky frames 100 % → 17 %, median 105 → 30 ms.
+Rejected: rendering at 720p via game-mode downscaling (would also scale the player's video surface).
+
+---
+
 **2026-10-31 · English-only subtitles; ±20 s subtitle delay; Subtitles button = every subtitle setting; volume & dialogue boost; no "Where to watch"**
 Decisions (user):
 - Subtitles: only English is listed or attached. Addons (OpenSubtitles v3) answer every language and can't be asked
