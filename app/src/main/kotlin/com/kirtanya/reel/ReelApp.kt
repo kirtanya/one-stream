@@ -109,7 +109,11 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .components { add(OkHttpNetworkFetcherFactory(callFactory = { http })) }
-            .crossfade(true)
+            // TV: a fade on every poster that loads while a row slides is one more alpha layer per card for the
+            // GPU; the pictures simply appear (the hero cross-fades itself, see HeroPicture). Phone keeps the fade.
+            .crossfade(!isTv)
+            // A 20 % share (default 25 %): the TV has 2 GB and the rows only keep what's near the screen.
+            .memoryCache { coil3.memory.MemoryCache.Builder().maxSizePercent(context, 0.2).build() }
             .build()
 
     companion object {

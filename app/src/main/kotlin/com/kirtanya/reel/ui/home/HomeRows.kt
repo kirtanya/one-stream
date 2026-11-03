@@ -35,10 +35,13 @@ import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
+import com.kirtanya.reel.ui.common.FixedFocusRow
 import com.kirtanya.reel.ui.common.Load
+import com.kirtanya.reel.ui.common.LocalIsTv
+import com.kirtanya.reel.ui.common.RowHeader
+import com.kirtanya.reel.ui.common.rowGap
 import com.kirtanya.reel.ui.common.PosterRow
 import com.kirtanya.reel.ui.common.RemoteImage
-import com.kirtanya.reel.ui.common.SectionHeader
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.common.metaLine
 import com.kirtanya.reel.ui.common.rememberCatalog
@@ -91,45 +94,69 @@ fun TitleRow(
         PosterRow(
             title, items, posterWidth = if (isTv) Tokens.Cinema.posterTv else phonePosterWidth, sidePadding = sidePadding, onOpen = onOpen,
             showText = !isTv, onFocus = onFocus, firstFocus = firstFocus, onSeeAll = onSeeAll, listState = listState,
+            // TV: the info block above the rows carries the rating, so no pill on every poster.
+            badges = !isTv,
         )
         return
     }
     val width = if (isTv) Tokens.Cinema.wideCardTv else Tokens.Cinema.wideCardPhone
     val toggleSaved = rememberWatchlistToggler()
-    val shape = RoundedCornerShape(Tokens.Radius.media)
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        SectionHeader(title, Modifier.padding(horizontal = sidePadding), action = if (onSeeAll != null) "See all" else null, onAction = onSeeAll)
-        LazyRow(
-            modifier = Modifier.focusRestorer(),
-            state = listState,
-            contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
-            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-        ) {
-            itemsIndexed(items, key = { _, it -> it.ref.toString() }) { i, item ->
-                Column(Modifier.width(width), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                    Box(
-                        Modifier
-                            .then(if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                            .focusCard(
-                                shape = shape,
-                                onFocus = onFocus?.let { { it(item) } }, onLongClick = { toggleSaved(item) }, onClick = { onOpen(item) },
-                            )
-                            .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
-                    ) {
-                        RemoteImage(TmdbImages.backdrop(item.backdropPath, "w780") ?: TmdbImages.poster(item.posterPath, "w342"), Modifier.fillMaxSize())
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Tokens.Colors.scrim)))
-                        Text(
-                            item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.align(Alignment.BottomStart).padding(Tokens.Space.s),
-                        )
-                        com.kirtanya.reel.ui.common.PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
-                    }
-                    Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        RowHeader(title, sidePadding, onSeeAll)
+        FixedFocusRow(sidePadding) {
+            LazyRow(
+                modifier = Modifier.focusRestorer(),
+                state = listState,
+                contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
+                horizontalArrangement = Arrangement.spacedBy(rowGap),
+            ) {
+                itemsIndexed(items, key = { _, it -> it.ref.toString() }, contentType = { _, _ -> "wide" }) { i, item ->
+                    WideCard(
+                        item, width, if (i == 0) firstFocus else null,
+                        onFocus = onFocus?.let { { it(item) } }, onLongClick = { toggleSaved(item) }, onClick = { onOpen(item) },
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * A 16:9 backdrop card. Phone: scrim, the title inside, IMDb pill, "Film · 2024" underneath. TV: the picture alone
+ * (the info block names the focused title), so a card is two draw ops plus the focus ring.
+ */
+@Composable
+private fun WideCard(
+    item: TitleSummary,
+    width: Dp,
+    firstFocus: FocusRequester?,
+    onFocus: (() -> Unit)?,
+    onLongClick: () -> Unit,
+    onClick: () -> Unit,
+) {
+    val tv = LocalIsTv.current
+    val shape = RoundedCornerShape(Tokens.Radius.media)
+    val frame = Modifier
+        .then(if (firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
+        .then(if (tv) Modifier.width(width) else Modifier.fillMaxWidth())
+        .aspectRatio(16f / 9f)
+        .focusCard(shape = shape, onFocus = onFocus, onLongClick = onLongClick, outset = tv, onClick = onClick)
+        .then(if (tv) Modifier else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairline, shape))
+    if (tv) {
+        Box(frame) { RemoteImage(TmdbImages.backdrop(item.backdropPath, "w500") ?: TmdbImages.poster(item.posterPath, "w342"), Modifier.fillMaxSize()) }
+        return
+    }
+    Column(Modifier.width(width), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+        Box(frame) {
+            RemoteImage(TmdbImages.backdrop(item.backdropPath, "w780") ?: TmdbImages.poster(item.posterPath, "w342"), Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Tokens.Colors.scrim)))
+            Text(
+                item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.BottomStart).padding(Tokens.Space.s),
+            )
+            com.kirtanya.reel.ui.common.PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
+        }
+        Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -162,36 +189,40 @@ fun NewEpisodesRow(
     val width = if (isTv) Tokens.Cinema.wideCardTv else Tokens.Cinema.wideCardPhone
     val shape = RoundedCornerShape(Tokens.Radius.media)
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        SectionHeader("New episodes", Modifier.padding(horizontal = sidePadding))
-        LazyRow(
-            modifier = Modifier.focusRestorer(),
-            contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
-            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-        ) {
-            itemsIndexed(entries, key = { _, e -> e.show.ref.toString() }) { i, e ->
-                val upcoming = e.date.isAfter(today)
-                Column(Modifier.width(width), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                    Box(
-                        Modifier
-                            .then(if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                            .focusCard(
-                                shape = shape,
-                                onFocus = onFocus?.let { { it(e.show) } }, onClick = { onOpen(e.show) },
-                            )
-                            .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
-                    ) {
-                        RemoteImage(TmdbImages.still(e.episode.stillPath, "w780") ?: TmdbImages.backdrop(e.show.backdropPath, "w780"), Modifier.fillMaxSize())
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Tokens.Colors.scrim)))
+        RowHeader("New episodes", sidePadding)
+        FixedFocusRow(sidePadding) {
+            LazyRow(
+                modifier = Modifier.focusRestorer(),
+                contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
+                horizontalArrangement = Arrangement.spacedBy(rowGap),
+            ) {
+                itemsIndexed(entries, key = { _, e -> e.show.ref.toString() }, contentType = { _, _ -> "episode" }) { i, e ->
+                    val upcoming = e.date.isAfter(today)
+                    val frame = Modifier
+                        .then(if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
+                        .then(if (isTv) Modifier.width(width) else Modifier.fillMaxWidth())
+                        .aspectRatio(16f / 9f)
+                        .focusCard(shape = shape, onFocus = onFocus?.let { { it(e.show) } }, outset = isTv, onClick = { onOpen(e.show) })
+                        .then(if (isTv) Modifier else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairline, shape))
+                    val card: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+                        RemoteImage(TmdbImages.still(e.episode.stillPath, if (isTv) "w500" else "w780") ?: TmdbImages.backdrop(e.show.backdropPath, if (isTv) "w500" else "w780"), Modifier.fillMaxSize())
+                        if (!isTv) Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Tokens.Colors.scrim)))
                         com.kirtanya.reel.ui.common.Pill(
                             com.kirtanya.reel.core.browse.AirDates.label(e.date, today),
                             Modifier.align(Alignment.TopStart).padding(Tokens.Space.s),
                             accent = !upcoming,
                         )
                     }
-                    Text(e.show.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(listOf(e.episode.label, e.episode.name).filter { it.isNotBlank() }.joinToString(" · "), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (isTv) {
+                        // The info block names the show; the pill (when it airs) stays on the card.
+                        Box(frame, content = card)
+                    } else {
+                        Column(Modifier.width(width), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                            Box(frame, content = card)
+                            Text(e.show.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(listOf(e.episode.label, e.episode.name).filter { it.isNotBlank() }.joinToString(" · "), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
                 }
             }
         }
