@@ -1137,6 +1137,46 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         finish()
     }
 
+    // ---------------------------------------------------------------- Change source page (inside the panel)
+
+    /** The search behind the Change source page; the Sources page's cache answers a repeat at once. */
+    private var sourceSearch: com.kirtanya.reel.core.sources.SourceSearch? = null
+    private var sourceSearchJob: Job? = null
+
+    /** The page opened: search this film / episode with the app's own source search (same ranking as the Sources page). */
+    private fun searchSources() {
+        val req = sourceRequest(playback.episode) ?: return
+        com.kirtanya.reel.ui.sources.cachedSearch(req.key)?.let { sourceSearch = it; return }
+        if (sourceSearchJob?.isActive == true) return
+        sourceSearchJob = lifecycleScope.launch {
+            app.sources.ensureReady()
+            app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision())).collect {
+                sourceSearch = it
+                if (it.done) com.kirtanya.reel.ui.sources.cacheSearch(req.key, it)
+                tvControls?.refreshPanel()
+                phoneControls?.refreshPanel()
+            }
+        }
+    }
+
+    /**
+     * A source picked on the Change source page plays from here, same hand-over as the Sources page's: save the
+     * position, start the new player at it, close this one (its stream stops in onDestroy, owner-checked).
+     * A torrent picked on the phone while a direct link plays needs the phone's network rule asked first: that
+     * question lives on the Sources page, so it opens there.
+     */
+    private fun pickSource(alt: Source) {
+        if (leavingForNext) return
+        if (alt.kind == SourceKind.TORRENT && !app.isTv && playback.source.kind != SourceKind.TORRENT) { changeSource(); return }
+        val at = currentPositionMs()
+        saveProgress()
+        leavingForNext = true
+        Log.i(TAG, "switch source for ${playback.key} at ${formatTime(at)} to ${alt.key}")
+        startActivity(forPlayback(this, playback.copy(source = alt), at)
+            .apply { if (sleepChoice.minutes != null) putExtra(EXTRA_SLEEP, sleepChoice.name).putExtra(EXTRA_SLEEP_AT, sleepSetAt) })
+        finish()
+    }
+
     // ---------------------------------------------------------------- debrid placeholder clips
 
     /**
@@ -1679,6 +1719,16 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         )
         tvControls?.setRows(subtitle, audio, playbackRows, ::onPanelChoice)
         phoneControls?.setRows(subtitle, audio, playbackRows, ::onPanelChoice)
+        if (PlayerSourceChange.available(playback)) {
+            val sources = SourcePanelHost(
+                page = { com.kirtanya.reel.core.player.PlayerSources.page(sourceSearch, playback.source) },
+                open = ::searchSources,
+                pick = ::pickSource,
+                all = ::changeSource,
+            )
+            tvControls?.setSources(sources)
+            phoneControls?.setSources(sources)
+        }
     }
 
     /** Volume / dialogue boost from the options: the audio sink picks them up on its next buffer. */

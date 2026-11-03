@@ -5,6 +5,16 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-04 · Change source opens inside the player, as a panel page**
+Decision (user): the Change source button / Settings row no longer leave the player for the Sources page; a panel
+page (like Subtitles) lists the sources best first with quality, size, provider, seed health or "Direct", the playing
+one marked. Picking one hands over at the current position (new player, same as the Sources page's hand-over);
+"All sources…" keeps the old full page. Same search + ranking as the Sources page (shared cache), row text in
+`core/player/PlayerSources` (tested). A torrent picked on the phone while a direct link plays opens the full page
+instead, because the phone's network-rule question lives there.
+
+---
+
 **2026-11-04 · Smooth TV: measure on the TV, optimise for this one device (docs/SMOOTH_UI_PLAN.md)**
 Decision (user): One Stream should feel as smooth as Netflix / JioHotstar on the Acer R4 and only needs to be
 tuned for this TV and the Pixel 8. Findings and fixes (82e0f8e):

@@ -68,12 +68,21 @@ class PhoneControlsRender {
     @Test fun renderEdgeSettings() = render("phone_edge_settings", panel = true, edge = Side.LEFT, panelEnd = true)
     @Test @Config(qualifiers = PORT) fun renderEdgePortrait() = render("phone_edge_portrait", panel = false, edge = Side.LEFT)
 
+    // Change source inside the player (the band's button opens its page; or through the Settings row).
+    @Test fun renderPhoneSources() = render("phone_sources", panel = true, sources = PlayerScenes.Sources.LIST)
+    @Test fun renderPhoneSourcesSearching() = render("phone_sources_searching", panel = true, sources = PlayerScenes.Sources.SEARCHING)
+    @Test @Config(qualifiers = PORT) fun renderPortraitSources() = render("phone_portrait_sources", panel = true, sources = PlayerScenes.Sources.LIST)
+    @Test @Config(qualifiers = PORT) fun renderPortraitSourcesEmpty() = render("phone_portrait_sources_empty", panel = true, sources = PlayerScenes.Sources.EMPTY)
+    @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortraitSources130() = render("phone_portrait_sources_130", panel = true, sources = PlayerScenes.Sources.LIST)
+    @Test @Config(qualifiers = PORT) fun renderPortraitSourcesViaSettings() = render("phone_portrait_sources_via_settings", panel = true, sources = PlayerScenes.Sources.LIST, sourcesViaRow = true)
+
     private fun render(
         name: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
         overlay: PlayerScenes.Overlay? = null, slider: String? = null, edge: Side? = null, audio: Boolean = true, audioPanel: Boolean = false,
+        sources: PlayerScenes.Sources? = null, sourcesViaRow: Boolean = false,
     ) {
         val scene = PlayerScenes.phone(panel, withPlayer = panel, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider,
-            layout = if (edge != null) PhoneLayout.EDGE else PhoneLayout.CLASSIC, cutout = edge, audio = audio, audioPanel = audioPanel)
+            layout = if (edge != null) PhoneLayout.EDGE else PhoneLayout.CLASSIC, cutout = edge, audio = audio, audioPanel = audioPanel, sources = sources, sourcesViaRow = sourcesViaRow)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

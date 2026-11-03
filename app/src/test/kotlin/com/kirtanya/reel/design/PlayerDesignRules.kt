@@ -110,6 +110,19 @@ class PlayerDesignRules {
         scene.release()
     }
 
+    /** Change source inside the player (the panel's page), searching and finished, at 100 % and 130 %. */
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitSources() = phoneSources("player/phone-portrait-sources", PlayerScenes.Sources.LIST)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortraitSources130() = phoneSources("player/phone-portrait-sources-130", PlayerScenes.Sources.SEARCHING)
+
+    private fun phoneSources(where: String, which: PlayerScenes.Sources) {
+        val scene = PlayerScenes.phone(panel = true, withPlayer = true, sources = which)
+        check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
+        scene.release()
+    }
+
     private fun phone(where: String, panel: Boolean, next: Boolean = true, scrub: Boolean = false, audio: Boolean = true, audioPanel: Boolean = false) {
         val scene = PlayerScenes.phone(panel, withPlayer = true, next = next, scrubAtMs = if (scrub) PlayerScenes.SCRUB_MS else null, audio = audio, audioPanel = audioPanel)
         check(where, ViewChecks(scene.root, where), Rule.TOUCH, Rule.CLIPPING, Rule.CONTRAST)
@@ -288,6 +301,14 @@ class PlayerDesignRules {
 
     @Test @Config(sdk = [34], qualifiers = TV)
     fun tvAudioPicker() = tv("player/tv-audio-picker", PlayerScenes.MID, panel = true, audioPanel = true)
+
+    /** Change source inside the player: the page's rows must show focus (the playing source starts focused). */
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvSources() {
+        val scene = PlayerScenes.tv(PlayerScenes.MID, panel = true, sources = PlayerScenes.Sources.LIST)
+        check("player/tv-sources", ViewChecks(scene.root, "player/tv-sources"), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
+        scene.release()
+    }
 
     /** A film: no Next chip, one audio track (no Audio button). */
     @Test @Config(sdk = [34], qualifiers = TV)

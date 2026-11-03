@@ -44,6 +44,11 @@ fun requestFor(d: TitleDetails, season: Int?, episode: Int?) = SourceRequest(
 /** Last results per title/episode, so going back and forth doesn't search again. */
 private val searchCache = HashMap<String, SourceSearch>()
 
+/** The finished search for [key] ("movie:603", "tv:1399:s1e3") if this run has one: shared with the player's Change source page. */
+fun cachedSearch(key: String): SourceSearch? = searchCache[key]?.takeIf { it.done }
+
+fun cacheSearch(key: String, search: SourceSearch) { searchCache[key] = search }
+
 /**
  * Searches every enabled addon and plugin for [req] and updates as answers arrive.
  * [rescan] forgets the cached answer and searches again.

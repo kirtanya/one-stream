@@ -420,7 +420,19 @@ internal class PanelSlider(
  */
 internal class PanelExtra(val label: String, val note: String? = null, val icon: Int? = null, val action: (() -> Unit)?) : PanelRow
 
-/** The settings panel's "Change source" row: the Sources page, the pick plays from here. */
+/**
+ * What the Change source page needs from the player: the list as it is now ([page], asked again on every refresh
+ * while the search fills in), the page opening ([open] starts the search), a source picked ([pick]) and the
+ * "All sources…" row ([all], the full Sources page).
+ */
+internal class SourcePanelHost(
+    val page: () -> com.kirtanya.reel.core.player.PlayerSourcePage,
+    val open: () -> Unit,
+    val pick: (com.kirtanya.reel.core.sources.Source) -> Unit,
+    val all: () -> Unit,
+)
+
+/** The settings panel's "Change source" row: opens the Change source page; the pick plays from here. */
 internal const val CHANGE_SOURCE_ROW = "Change source"
 
 /** The settings panel's "Report a problem" row (docs/MACHINE_FIRST_PLAN.md step 1). */
@@ -493,9 +505,18 @@ internal class SettingsPanel(
     /** The user picked a subtitle / audio track ("sub" / "audio") or a speed ("speed"), after the player has it. */
     var onChoice: ((String) -> Unit)? = null
 
+    /** The Change source page's data; null = the Change source row just calls its own action (renders without a player). */
+    var sources: SourcePanelHost? = null
+
+    /** On the Change source page: opened by the source button (home) or by the Settings row (a page one level down). */
+    private val onSourcePage get() = (home == "source" && submenu == null) || submenu == CHANGE_SOURCE_ROW
+    private var shownSources: com.kirtanya.reel.core.player.PlayerSourcePage? = null
+
     /** Rebuilds the list in place (a value changed elsewhere), keeping the focused row. */
     fun refresh() {
-        if (!open || submenu != null) return
+        if (!open) return
+        if (onSourcePage) { refreshSources(); return }
+        if (submenu != null) return
         val focused = list.findFocus()?.tag as? String
         val hadFocus = list.findFocus() != null
         buildHome()
@@ -508,9 +529,10 @@ internal class SettingsPanel(
         panel.alpha = 0f
         panel.translationY = context.dpf(12f)
         panel.animate().alpha(1f).translationY(0f).setDuration(160).start()
-        home = if (section == "sub") "sub" else null
+        home = if (section == "sub" || (section == "source" && sources != null)) section else null
         when (section) {
             "sub" -> showSubtitlePage()
+            "source" -> if (sources != null) showSources() else { submenu = null; buildMain() }
             "audio" -> showTracks(C.TRACK_TYPE_AUDIO)
             else -> { submenu = null; buildMain() }
         }
@@ -523,7 +545,11 @@ internal class SettingsPanel(
      */
     private var home: String? = null
 
-    private fun buildHome() = if (home == "sub") buildSubtitlePage() else buildMain()
+    private fun buildHome() = when (home) {
+        "sub" -> buildSubtitlePage()
+        "source" -> buildSourcePage()
+        else -> buildMain()
+    }
 
     /**
      * The Subtitles button: every subtitle setting on one page. The tracks first (focus on the one showing),
@@ -608,9 +634,88 @@ internal class SettingsPanel(
                     else -> R.drawable.ic_pl_external
                 }
                 val action = r.action
-                list.addView(if (action != null) row(icon, r.label, null, r.label) { onExtra(); action() } else offRow(icon, r.label, r.note))
+                list.addView(
+                    if (action == null) offRow(icon, r.label, r.note)
+                    // Change source is a page of this panel; the row's action is only its fallback without a host.
+                    else if (r.label == CHANGE_SOURCE_ROW && sources != null) row(icon, r.label, null, r.label) { showSources() }
+                    else row(icon, r.label, null, r.label) { onExtra(); action() },
+                )
             }
         }
+    }
+
+    /**
+     * The Change source page: the sources for this film / episode, best first, the playing one marked; a
+     * "Searching… N of M" line while providers answer; "All sources…" last (the full Sources page).
+     */
+    private fun showSources() {
+        val host = sources ?: return
+        if (home != "source") submenu = CHANGE_SOURCE_ROW
+        host.open()
+        buildSourcePage()
+        focusSourceRow(null)
+    }
+
+    private fun buildSourcePage() {
+        val host = sources ?: return
+        val page = host.page()
+        shownSources = page
+        list.removeAllViews()
+        list.addView(header("Change source"))
+        page.searching?.let { list.addView(note(it)) }
+        for (r in page.rows) list.addView(sourceRow(r) { onExtra(); if (!r.current) host.pick(r.source) })
+        page.empty?.let { list.addView(note(it)) }
+        list.addView(choice(com.kirtanya.reel.core.player.PlayerSources.ALL_SOURCES_ROW, false) { onExtra(); host.all() }.also { it.tag = ALL_SOURCES })
+    }
+
+    /** More answers came in: rebuild only when the list changed, keeping the focused row. */
+    private fun refreshSources() {
+        val host = sources ?: return
+        if (host.page() == shownSources) return
+        val focused = list.findFocus()?.tag as? String
+        buildSourcePage()
+        focusSourceRow(focused)
+    }
+
+    /** Focus [tag]'s row, else the playing source (the remote must always have a row). */
+    private fun focusSourceRow(tag: String?) {
+        val kids = (0 until list.childCount).map { list.getChildAt(it) }
+        val playing = shownSources?.rows?.firstOrNull { it.current }?.key
+        (kids.firstOrNull { tag != null && it.tag == tag }
+            ?: kids.firstOrNull { playing != null && it.tag == playing }
+            ?: kids.firstOrNull { it.isFocusable })?.requestFocus()
+    }
+
+    /** A source: quality and size on top, provider and seed health under; the playing one in medium weight with the dot. */
+    private fun sourceRow(r: com.kirtanya.reel.core.player.PlayerSourceRow, onClick: () -> Unit) = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = context.dp(minRowDp)
+        setPadding(context.dp(14), context.dp(6), context.dp(14), context.dp(6))
+        isFocusable = true
+        isClickable = true
+        background = rowBackground()
+        tag = r.key
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(text(15f, medium = r.current).apply {
+                text = r.title
+                alpha = if (r.current) 1f else 0.85f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            if (r.detail.isNotEmpty()) addView(text(13f).apply {
+                text = r.detail
+                setTextColor(PlayerColors.PANEL_NOTE)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(View(context).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(PlayerColors.FOREGROUND) }
+            visibility = if (r.current) View.VISIBLE else View.INVISIBLE
+        }, LinearLayout.LayoutParams(context.dp(8), context.dp(8)).apply { marginStart = context.dp(8) })
+        setOnClickListener { onClick() }
     }
 
     /** A delay: the value, a slider (←/→ on the remote, drag on the phone) and Reset. */
@@ -899,6 +1004,7 @@ internal class SettingsPanel(
 
     companion object {
         private const val SELECTED = "selected"
+        private const val ALL_SOURCES = "all sources"
     }
 }
 
