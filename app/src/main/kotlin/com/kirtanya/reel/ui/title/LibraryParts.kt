@@ -43,7 +43,8 @@ fun FranchiseRow(d: TitleDetails, sidePadding: Dp, posterWidth: Dp, onOpen: (Tit
     val c = d.collection ?: return
     val catalog = rememberCatalog()
     val (load, _) = rememberLoad(c.id) { catalog.collection(c.id) }
-    val parts = (load as? Load.Ready)?.value?.parts.orEmpty()
+    // distinctBy: rows key cards by title, and a repeated part would crash the row.
+    val parts = (load as? Load.Ready)?.value?.parts.orEmpty().distinctBy { it.ref }
     if (parts.size < 2) return
     // TV: text-less posters with the focused one named beside the heading.
     if (tv) {

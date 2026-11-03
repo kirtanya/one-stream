@@ -47,14 +47,16 @@ class TvControlsRender {
     /** The Subtitles button: tracks first, then style, delay, search again. */
     @Test fun renderSubtitlePage() = render("tv_controls_subtitle_page", PlayerScenes.MID, panel = true, section = "sub")
     /** Back with the controls hidden: "Press Back again to exit". */
+    @Test fun renderLogo() = render("tv_controls_logo", PlayerScenes.MID, logo = true)
+
     @Test fun renderExitChip() = render("tv_exit_chip", PlayerScenes.BRIGHT, exitChip = true)
 
     private fun render(
         name: String, picture: IntArray, panel: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
         overlay: PlayerScenes.Overlay? = null, slider: String? = null, audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false,
-        section: String? = null, exitChip: Boolean = false,
+        section: String? = null, exitChip: Boolean = false, logo: Boolean = false,
     ) {
-        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider, audio = audio, next = next, audioPanel = audioPanel, section = section, exitChip = exitChip)
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider, audio = audio, next = next, audioPanel = audioPanel, section = section, exitChip = exitChip, logo = logo)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
     }

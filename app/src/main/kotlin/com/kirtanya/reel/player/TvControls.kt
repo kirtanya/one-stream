@@ -21,8 +21,9 @@ import kotlin.math.pow
  * TV player controls, nothing in the middle of the picture and no dimming:
  *  - the seek bar is a hairline along the very bottom edge, end to end (only the played part
  *    shows); elapsed time above its start, remaining time above its end;
- *  - above that, the title and "ends at" on the left (for an episode with a next one, a very small
- *    "Next · S1 E4" just above the title), and every control on the right — Change source, Audio
+ *  - above that, the title's logo on the left (fixed height; the title as text when there's no logo or it
+ *    fails), and every control on the right, with "Next · S1 E4" just above them for an episode
+ *    that has a next one — Change source, Audio
  *    (only with more than one audio track) first, then back N s, play / pause, forward N s (N = Settings →
  *    Playback → Skip by), subtitles, settings — all the same size: no button stands out.
  * Settings opens a panel above the controls. Everything is white with a small, tight shadow under it
@@ -49,7 +50,13 @@ internal class TvControls(
     val view = FrameLayout(context)
     private val bar = LinearLayout(context)
     private val titleView = text(20f, medium = true)
-    private val metaView = text(13f)
+    /** The title's logo artwork; [titleView] shows instead until (unless) it loads. */
+    private val logoView = android.widget.ImageView(context).apply {
+        visibility = View.GONE
+        adjustViewBounds = true
+        maxWidth = context.dp(LOGO_MAX_W)
+        scaleType = android.widget.ImageView.ScaleType.FIT_END
+    }
     // One size for every control (no filled play button).
     private val play = RoundButton(context, R.drawable.ic_pl_pause, "Play or pause", BUTTON, 26)
     private val rew = SkipButton(context, forward = false, seconds = 10, sizeDp = BUTTON, iconDp = 28, font = font(true))
@@ -97,18 +104,23 @@ internal class TvControls(
         bar.orientation = LinearLayout.HORIZONTAL
         bar.gravity = Gravity.BOTTOM
 
-        // Left: title, then "ends at".
-        val info = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        // The chip's ring sits 8 dp left of its marks: pull it back so the marks line up with the title.
-        info.addView(nextChip, LinearLayout.LayoutParams(-2, -2).apply { marginStart = -context.dp(8); bottomMargin = context.dp(2) })
+        // Left: the title's logo, never taller than the controls (LOGO_H); the title as text until it loads.
+        val info = FrameLayout(context)
         titleView.text = title
         titleView.maxLines = 1
         titleView.ellipsize = android.text.TextUtils.TruncateAt.END
-        info.addView(titleView, LinearLayout.LayoutParams(-1, -2))
-        info.addView(metaView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.dp(2) })
+        info.addView(titleView, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START))
+        info.addView(logoView, FrameLayout.LayoutParams(-2, context.dp(LOGO_H), Gravity.BOTTOM or Gravity.START))
         bar.addView(info, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = context.dp(24) })
 
-        // Right: the controls, all the same size.
+        // Right: "Next · S1 E4" just above the controls (right-aligned), then the controls, all the same size.
+        val right = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+            clipChildren = false
+        }
+        // The chip's ring sits 8 dp outside its marks: push it out so the marks line up with the last button.
+        right.addView(nextChip, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = -context.dp(8); bottomMargin = context.dp(6) })
         val buttons = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -117,7 +129,9 @@ internal class TvControls(
         for ((i, b) in listOf(source, audioBtn, rew, play, ffwd, subs, settings).withIndex()) {
             buttons.addView(b, LinearLayout.LayoutParams(context.dp(BUTTON), context.dp(BUTTON)).apply { if (i > 0) marginStart = context.dp(8) })
         }
-        bar.addView(buttons, LinearLayout.LayoutParams(-2, -2))
+        right.addView(buttons, LinearLayout.LayoutParams(-2, -2))
+        right.clipToPadding = false
+        bar.addView(right, LinearLayout.LayoutParams(-2, -2))
 
         // Under it: elapsed at the start, remaining at the end.
         val times = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -150,12 +164,47 @@ internal class TvControls(
         seek.onScrubStart = { touch() }
         seek.onScrubMove = { elapsed.text = PlayerActivity.formatTime(it); remaining.text = "−" + PlayerActivity.formatTime((seek.duration - it).coerceAtLeast(0)); touch() }
         seek.onSeek = { player?.seekTo(it); touch() }
+        // OK on the seek bar (not scrubbing) plays / pauses; ←/→ still skip.
+        seek.onOk = { togglePlay(); touch() }
 
         view.addView(settingsPanel.panel, FrameLayout.LayoutParams(context.dp(340), -2, Gravity.BOTTOM or Gravity.END).apply {
             setMargins(0, context.dp(24), context.dp(EDGE), context.dp(EDGE + 104))
         })
         applyLook()
     }
+
+    /**
+     * The title's logo (TMDB artwork URL), loaded once; the text title stays if [url] is null or it fails.
+     * [load] is Coil, passed in so this class stays free of image-loading details.
+     */
+    fun setLogo(url: String?, load: (String, (android.graphics.drawable.Drawable?) -> Unit) -> Unit) {
+        if (url == null) return
+        load(url) { d ->
+            if (d == null) return@load
+            logoView.setImageDrawable(d)
+            // A dark logo (black wordmark) would vanish over a dark picture: draw it in the strip's white.
+            if (isDark(d)) logoView.setColorFilter(PlayerColors.FOREGROUND, android.graphics.PorterDuff.Mode.SRC_IN)
+            logoView.visibility = View.VISIBLE
+            titleView.visibility = View.INVISIBLE
+        }
+    }
+
+    /** Mean luminance of the logo's visible pixels (sampled on a small grid) below 0.35. */
+    private fun isDark(d: android.graphics.drawable.Drawable): Boolean {
+        val bmp = (d as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return false
+        val soft = if (bmp.config == android.graphics.Bitmap.Config.HARDWARE) bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else bmp
+        var sum = 0f
+        var n = 0
+        for (y in 0 until 24) for (x in 0 until 48) {
+            val c = soft.getPixel(x * soft.width / 48, y * soft.height / 24)
+            if (Color.alpha(c) < 128) continue
+            sum += luminance(c); n++
+        }
+        return n > 0 && sum / n < 0.35f
+    }
+
+    /** Renders only: a logo drawable instead of a network load. */
+    internal fun previewLogo(d: android.graphics.drawable.Drawable) = setLogo("preview") { _, done -> done(d) }
 
     fun attach(p: Player) {
         player = p
@@ -264,7 +313,6 @@ internal class TvControls(
         elapsed.text = PlayerActivity.formatTime(positionMs)
         remaining.text = "−" + PlayerActivity.formatTime(durationMs - positionMs)
         play.setIcon(if (playing) R.drawable.ic_pl_pause else R.drawable.ic_pl_play)
-        metaView.text = "Ends at 10:42 PM"
         showButtons()
     }
 
@@ -308,15 +356,6 @@ internal class TvControls(
         seek.position = p.currentPosition
         if (!seek.scrubbing) elapsed.text = PlayerActivity.formatTime(p.currentPosition)
         remaining.text = if (d > 0) "−" + PlayerActivity.formatTime((d - p.currentPosition).coerceAtLeast(0)) else "--:--"
-        metaView.text = metaLine(p, d)
-    }
-
-    /** "Ends at 10:42 PM" (at the current speed); "Paused" when paused. */
-    private fun metaLine(p: Player, d: Long): String {
-        if (d <= 0) return ""
-        val left = ((d - p.currentPosition) / p.playbackParameters.speed).toLong().coerceAtLeast(0)
-        val end = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(System.currentTimeMillis() + left))
-        return if (p.playWhenReady) "Ends at $end" else "Paused · ends at $end"
     }
 
     // ---------------------------------------------------------------- settings panel
@@ -342,8 +381,8 @@ internal class TvControls(
     /** White text and icons, each with the same small shadow (CONTROL_SHADOW, 1.5 dp blur, 1 dp down). */
     private fun applyLook() {
         val c = PlayerColors.FOREGROUND
-        for (t in listOf(titleView, metaView, elapsed, remaining)) {
-            t.setTextColor(if (t === metaView) withAlpha(c, 0xD9) else c)
+        for (t in listOf(titleView, elapsed, remaining)) {
+            t.setTextColor(c)
             t.setShadowLayer(context.dpf(1.5f), 0f, context.dpf(1f), PlayerColors.CONTROL_SHADOW)
         }
         for (b in listOf(play, rew, ffwd, source, audioBtn, subs, settings)) {
@@ -367,6 +406,10 @@ internal class TvControls(
     companion object {
         /** Every control's size (dp). */
         const val BUTTON = 48
+
+        /** The title logo's box (dp): no taller than the Next chip + the controls, so the strip keeps its height. */
+        const val LOGO_H = 72
+        const val LOGO_MAX_W = 320
 
         /** The controls' distance from the left, right and bottom of the screen (dp). */
         const val EDGE = 40

@@ -28,6 +28,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.withStarted
 import androidx.lifecycle.lifecycleScope
+import coil3.asDrawable
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -1321,6 +1322,23 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         }
     }
 
+    /** TV strip: the title's logo artwork instead of its name (the name stays when there's none). */
+    private fun loadTitleLogo(c: TvControls) {
+        val id = playback.tmdbId ?: return
+        val ref = com.kirtanya.reel.core.tmdb.TitleRef(
+            if (playback.tmdbType == com.kirtanya.reel.core.tmdb.MediaType.TV.path) com.kirtanya.reel.core.tmdb.MediaType.TV else com.kirtanya.reel.core.tmdb.MediaType.MOVIE, id,
+        )
+        lifecycleScope.launch {
+            val path = runCatching { ReelApp.get(this@PlayerActivity).tmdb.logo(ref) }.getOrNull()
+            c.setLogo(com.kirtanya.reel.core.tmdb.TmdbImages.titleLogo(path, "w500")) { url, done ->
+                val request = coil3.request.ImageRequest.Builder(this@PlayerActivity).data(url)
+                    .target(onSuccess = { done(it.asDrawable(resources)) }, onError = { done(null) })
+                    .build()
+                coil3.SingletonImageLoader.get(this@PlayerActivity).enqueue(request)
+            }
+        }
+    }
+
     /** The Change source row for the settings panel: off (with a note) for a file without TMDB info. */
     private fun changeSourceRow() =
         if (PlayerSourceChange.available(playback)) PanelExtra(CHANGE_SOURCE_ROW) { changeSource() }
@@ -2105,6 +2123,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 it.setToggles(listOf(picture, crop, cinema))
                 it.seekStepMs = options.seekStepS * 1_000L
                 root.addView(it.view, FrameLayout.LayoutParams(-1, -1))
+                loadTitleLogo(it)
             }
             setPanelRows()
             overlays.addTo(root)

@@ -114,13 +114,15 @@ fun RingAvatar(
     sublabel: String? = null,
     placeholder: String? = null,
     ring: Boolean = true,
+    /** TV cast rows: no resting border at all, so the focus ring (white, from focusCard) is the only ring. */
+    plain: Boolean = false,
 ) {
     Column(modifier.width(size + 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
         val inner = Modifier
             .size(size)
             .then(if (onClick != null) Modifier.focusCard(shape = CircleShape, onClick = onClick) else Modifier)
-            .then(if (ring) Modifier.border(Tokens.Size.ring, Tokens.Gradients.ring, CircleShape) else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, CircleShape))
-            .padding(if (ring) 4.dp else 0.dp)
+            .then(if (plain) Modifier else if (ring) Modifier.border(Tokens.Size.ring, Tokens.Gradients.ring, CircleShape) else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairlineStrong, CircleShape))
+            .padding(if (ring && !plain) 4.dp else 0.dp)
             .clip(CircleShape)
             .background(Tokens.Colors.surface2)
         Box(inner, contentAlignment = Alignment.Center) {

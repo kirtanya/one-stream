@@ -259,6 +259,8 @@ internal object PlayerScenes {
         section: String? = null,
         /** "Press Back again to exit" showing (after the first Back). */
         exitChip: Boolean = false,
+        /** A wide title logo instead of the text title. */
+        logo: Boolean = false,
     ): Tv {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         val root = FrameLayout(activity)
@@ -269,6 +271,7 @@ internal object PlayerScenes {
         val c = TvControls(playerView, TITLE, { null }, extraSettings = { extras(file) },
             nextLabel = { if (next) "Next · S1 E4" else null }, onChangeSource = {}, canChangeSource = { !file })
         c.previewAudioChoice = audio
+        if (logo) c.previewLogo(fakeLogo(activity))
         c.previewTracks(tracks())
         c.setToggles(pictureRows(cropPercent))
         val (subRows, audioRows, playRows) = rows()
@@ -293,6 +296,16 @@ internal object PlayerScenes {
         val scene = Tv(root, c, exo, o)
         scene.midFilm()
         return scene
+    }
+
+    /** A wide white wordmark, like TMDB's logos (5:1). */
+    private fun fakeLogo(context: android.content.Context): android.graphics.drawable.Drawable {
+        val bmp = android.graphics.Bitmap.createBitmap(1000, 200, android.graphics.Bitmap.Config.ARGB_8888)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt(); textSize = 170f; typeface = android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD)
+        }
+        android.graphics.Canvas(bmp).drawText("THE NIGHT", 10f, 170f, paint)
+        return android.graphics.drawable.BitmapDrawable(context.resources, bmp)
     }
 
     val BRIGHT = intArrayOf(0xFFBFD9F2.toInt(), 0xFFF4EBD9.toInt())

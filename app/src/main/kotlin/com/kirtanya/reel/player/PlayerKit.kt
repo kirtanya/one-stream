@@ -198,6 +198,8 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
     var buffered = 0L; set(v) { field = v; invalidate() }
     var onScrubStart: (() -> Unit)? = null
     var onScrubMove: ((Long) -> Unit)? = null
+    /** OK while not scrubbing (the TV: play / pause). */
+    var onOk: (() -> Unit)? = null
     var onSeek: ((Long) -> Unit)? = null
 
     /**
@@ -348,7 +350,11 @@ internal class SeekStrip(context: Context, private val font: Typeface?) : View(c
                 postDelayed(commit, 700)
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> if (scrubbing) { finish(cancel = false); return true }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                if (scrubbing) { finish(cancel = false); return true }
+                val ok = onOk
+                if (ok != null) { if (event.repeatCount == 0) ok(); return true }
+            }
             KeyEvent.KEYCODE_BACK -> if (scrubbing) { finish(cancel = true); return true }
         }
         return super.onKeyDown(keyCode, event)

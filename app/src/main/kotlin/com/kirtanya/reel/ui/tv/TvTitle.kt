@@ -262,7 +262,7 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int
                                     LazyRow(Modifier.focusRestorer(), contentPadding = PaddingValues(horizontal = side, vertical = Tokens.Space.s), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                                         itemsIndexed(d.cast, key = { i, c -> "$i:${c.id}" }, contentType = { _, _ -> "person" }) { i, c ->
                                             RingAvatar(
-                                                TmdbImages.profile(c.profilePath), c.name, 60.dp, modifier = Modifier.rowStart(i == 0), sublabel = c.character, placeholder = c.name.take(1),
+                                                TmdbImages.profile(c.profilePath), c.name, 60.dp, modifier = Modifier.rowStart(i == 0), sublabel = c.character, placeholder = c.name.take(1), plain = true,
                                                 onClick = { c.id?.let { onOpenDest(Dest.Person(it, c.name)) } },
                                             )
                                         }

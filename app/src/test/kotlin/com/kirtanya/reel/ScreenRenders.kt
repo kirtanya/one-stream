@@ -527,6 +527,7 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvTitleRowDownEpisodes() = behaviour().let { render("title-row-down-episodes", tv = true, focusRight = 3, keyDown = 2, content = tvApp { open(Dest.Title(Fake.show)) }) }
     @Test @Config(qualifiers = TV) fun tvTitleShowEpisodes() = render("title-show-episodes", tv = true, focusDown = 2, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvReviewOpen() = render("review-open", tv = true, windows = true) { TvScene { com.kirtanya.reel.ui.title.ReviewSheet(Fake.reviews.items[0], onDismiss = {}) } }
+    @Test @Config(qualifiers = TV) fun tvTitleCastFocused() = render("title-cast-focused", tv = true, focusDown = 4, focusRight = 1, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvTitleShow() = render("title-show", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvImdbUnknown() = render("imdb-unknown", tv = true, catalog = FakeCatalog(Answer.Empty), content = tvApp { open(Dest.ImdbTitle("tt0944947", com.kirtanya.reel.core.tmdb.MediaType.TV)) })
     @Test @Config(qualifiers = TV) fun tvTitleBare() = render("title-bare", tv = true, content = tvApp { open(Dest.Title(Fake.long)) })
