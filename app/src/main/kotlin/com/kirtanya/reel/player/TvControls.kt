@@ -171,7 +171,7 @@ internal class TvControls(
         seek.onOk = { togglePlay(); touch() }
 
         view.addView(settingsPanel.panel, FrameLayout.LayoutParams(context.dp(340), -2, Gravity.BOTTOM or Gravity.END).apply {
-            setMargins(0, context.dp(24), context.dp(EDGE), context.dp(EDGE + 104))
+            setMargins(0, context.dp(24), context.dp(EDGE), context.dp(EDGE + 148)) // clears the Next chip above the controls
         })
         applyLook()
     }
