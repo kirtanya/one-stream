@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,37 +52,82 @@ fun PosterCard(
     modifier: Modifier = Modifier,
     showText: Boolean = true,
     onFocus: (() -> Unit)? = null,
+    /** The IMDb pill in the corner (TV: only when the rating is already cached). */
+    badge: Boolean = true,
 ) {
-    val shape = RoundedCornerShape(Tokens.Radius.m)
     var options by remember { mutableStateOf(false) }
     if (options) PosterOptions(item, onOpen = onClick, onDismiss = { options = false })
-    Column(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-        // [modifier] goes on the focusable image so focus requesters land on it.
-        val frame = modifier
-            .fillMaxWidth()
-            .aspectRatio(2f / 3f)
-            .focusCard(
-                shape = shape, onFocus = onFocus, onLongClick = { options = true },
-                onClick = onClick,
-            )
-            .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
-        Box(frame) {
-            if (item.posterPath != null) {
-                RemoteImage(url = TmdbImages.poster(item.posterPath), modifier = Modifier.fillMaxSize())
-            } else {
-                // No poster: the name on a tonal card, so the grid never shows a blank hole.
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.surface2))).padding(Tokens.Space.s), contentAlignment = Alignment.BottomStart) {
-                    Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                }
+    PosterCardBody(item, width, onClick, { options = true }, modifier, showText, onFocus, badge)
+}
+
+/** [PosterCard] without its own options state: a row that owns one dialog for all its cards passes [onLongClick]. */
+@Composable
+internal fun PosterCardBody(
+    item: TitleSummary,
+    width: Dp?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier,
+    showText: Boolean,
+    onFocus: (() -> Unit)?,
+    badge: Boolean,
+    outset: Boolean = false,
+) {
+    val shape = RoundedCornerShape(Tokens.Radius.m)
+    val tv = LocalIsTv.current
+    // [modifier] goes on the focusable image so focus requesters land on it.
+    val size = if (width != null) Modifier.width(width) else Modifier.fillMaxWidth()
+    val frame = modifier
+        .then(if (showText) Modifier.fillMaxWidth() else size)
+        .aspectRatio(2f / 3f)
+        .focusCard(shape = shape, onFocus = onFocus, onLongClick = onLongClick, outset = outset, onClick = onClick)
+        // TV: no hairline (a stroked path per card); the dim and the ring carry the edge.
+        .then(if (tv) Modifier else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairline, shape))
+    val image: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        if (item.posterPath != null) {
+            RemoteImage(url = TmdbImages.poster(item.posterPath), modifier = Modifier.fillMaxSize())
+        } else {
+            // No poster: the name on a tonal card, so the grid never shows a blank hole.
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Tokens.Colors.accentDeep, Tokens.Colors.surface2))).padding(Tokens.Space.s), contentAlignment = Alignment.BottomStart) {
+                Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
-            PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
         }
-        if (showText) {
-            Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (badge) PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
+    }
+    if (!showText) {
+        Box(frame) { image() }
+        return
+    }
+    Column(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+        Box(frame) { image() }
+        Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * A row's heading. TV: the larger title style in a fixed-height band, so every row's cards share one top line (the
+ * column glides to it, see [rememberHomeColumnSpec]); phone: the usual section header.
+ */
+@Composable
+internal fun RowHeader(title: String, sidePadding: Dp, onSeeAll: (() -> Unit)? = null) {
+    if (!LocalIsTv.current) {
+        SectionHeader(title, Modifier.padding(horizontal = sidePadding), action = if (onSeeAll != null) "See all" else null, onAction = onSeeAll)
+        return
+    }
+    Row(Modifier.fillMaxWidth().height(Tokens.Cinema.tvRowHeader).padding(horizontal = sidePadding), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = Tokens.Type.title, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        if (onSeeAll != null) {
+            Text(
+                "See all", style = Tokens.Type.label, color = Tokens.Colors.text,
+                modifier = Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.pill), onClick = onSeeAll).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs),
+            )
         }
     }
 }
+
+/** A row's cards: the gap between them (TV leaves room for the focus ring) and the padding that keeps rings uncut. */
+internal val rowGap: Dp @Composable get() = if (LocalIsTv.current) Tokens.Space.tvCardGap else Tokens.Space.m
 
 @Composable
 fun PosterRow(
@@ -95,19 +142,30 @@ fun PosterRow(
     firstFocus: FocusRequester? = null,
     onSeeAll: (() -> Unit)? = null,
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+    /** IMDb pills on the posters (the TV Home shows the rating in its info block instead). */
+    badges: Boolean = true,
 ) {
+    val tv = LocalIsTv.current
+    // One options dialog for the whole row, not one state per poster.
+    var optionsFor by remember { mutableStateOf<TitleSummary?>(null) }
+    optionsFor?.let { PosterOptions(it, onOpen = { onOpen(it) }, onDismiss = { optionsFor = null }) }
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        SectionHeader(title, Modifier.padding(horizontal = sidePadding), action = if (onSeeAll != null) "See all" else null, onAction = onSeeAll)
-        LazyRow(
-            // TV: up/down between rows comes back to the card last focused in this row.
-            modifier = Modifier.focusRestorer(),
-            state = listState,
-            contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
-            horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
-        ) {
-            itemsIndexed(items, key = { _, it -> it.ref.toString() }) { i, item ->
-                val m = (if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier).rowStart(i == 0)
-                PosterCard(item, posterWidth, onClick = { onOpen(item) }, modifier = m, showText = showText, onFocus = onFocus?.let { { it(item) } })
+        RowHeader(title, sidePadding, onSeeAll)
+        FixedFocusRow(sidePadding) {
+            LazyRow(
+                // TV: up/down between rows comes back to the card last focused in this row.
+                modifier = Modifier.focusRestorer(),
+                state = listState,
+                contentPadding = PaddingValues(horizontal = sidePadding, vertical = Tokens.Space.s),
+                horizontalArrangement = Arrangement.spacedBy(rowGap),
+            ) {
+                itemsIndexed(items, key = { _, it -> it.ref.toString() }, contentType = { _, _ -> "poster" }) { i, item ->
+                    val m = (if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier).rowStart(i == 0)
+                    PosterCardBody(
+                        item, posterWidth, onClick = { onOpen(item) }, onLongClick = { optionsFor = item }, modifier = m, showText = showText,
+                        onFocus = onFocus?.let { { it(item) } }, badge = badges, outset = tv,
+                    )
+                }
             }
         }
     }

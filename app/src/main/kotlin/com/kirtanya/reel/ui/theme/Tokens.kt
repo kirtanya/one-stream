@@ -3,6 +3,8 @@ package com.kirtanya.reel.ui.theme
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -127,6 +129,8 @@ object Tokens {
         /** TV overscan-safe margins (10-foot UI). */
         val tvSafeH = 48.dp
         val tvSafeV = 27.dp
+        /** TV: gap between cards in a row (the 5 dp focus ring sits inside it). */
+        val tvCardGap = 16.dp
         /** Phone side gutter. */
         val phoneGutter = 16.dp
         /** Gap between the floating tab bar and the gesture / navigation bar under it. */
@@ -200,6 +204,25 @@ object Tokens {
     }
 
     object Motion {
+        /** "Emphasised decelerate": fast start, long soft landing. Every TV move uses it (docs/SMOOTH_UI_PLAN.md §3). */
+        val easing: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+        /** Focus ring fading in / out on a TV card. */
+        const val focusFadeMs = 120
+        /** A row sliding sideways under the fixed focus. */
+        const val rowSlideMs = 260
+        /** The focused row gliding to its line under the info block. */
+        const val columnGlideMs = 300
+        /** A held D-pad key: rows and the column shorten their slide so they keep up instead of queueing. */
+        const val heldScrollMs = 100
+        /** The remote must rest this long on a card before Home's info block changes... */
+        const val infoSettleMs = 120
+        /** ...and this long before the hero picture changes (then it fades over [heroFadeMs]). */
+        const val heroSettleMs = 300
+        const val heroFadeMs = 350
+        /** A new page's content fading in (opacity only, on the content layer). */
+        const val pageEnterMs = 180
+        /** The info block's change: opacity + a small lift, at most this long. */
+        const val infoInMs = 180
         const val focusMs = 160
         const val stateMs = 220
         const val ambientMs = 600
@@ -233,8 +256,12 @@ object Tokens {
         val logoMaxHeightTv = 110.dp
         /** TV title page: room above the header, so the picture shows and the next row peeks below. */
         val tvTitleTop = 64.dp
-        /** TV Home: the info block above the rows. */
-        val tvInfoHeight = 196.dp
+        /** TV Home: the info block above the rows (badge, logo, meta, two lines of story). */
+        val tvInfoHeight = 184.dp
+        /** TV row heading: fixed so every row's cards share one top line. */
+        val tvRowHeader = 32.dp
+        /** TV: a row's cards start this far under the row's top (heading + gaps), see [Space.s] twice. */
+        val tvRowCardTop = tvRowHeader + 8.dp + 8.dp
         /** Netflix-style action tiles on the phone title page (icon over a short label). */
         val actionTileHeight = 64.dp
         val thumbWidthPhone = 220.dp

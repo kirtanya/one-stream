@@ -94,6 +94,12 @@ fun ImdbPill(rating: Double, modifier: Modifier = Modifier, onPoster: Boolean = 
 fun PosterImdbBadge(ref: TitleRef, modifier: Modifier = Modifier) {
     val catalog = rememberCatalog()
     val cached = remember(ref) { catalog.cachedImdb(ref) }
+    if (LocalIsTv.current) {
+        // TV: no fetch, no effect, no fade per card (plan §2.5): a plain pill when the rating is already known.
+        // TV Home shows the rating in its info block instead.
+        if (cached != null) ImdbPill(cached, modifier, onPoster = true)
+        return
+    }
     var rating by remember(ref) { mutableStateOf(cached) }
     LaunchedEffect(ref) {
         val fresh = runCatching { catalog.posterImdb(ref) }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it; null }

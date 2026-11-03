@@ -10,6 +10,7 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -48,6 +49,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +58,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -146,6 +153,66 @@ fun HeroImage(urls: List<String>, modifier: Modifier = Modifier, alignment: Alig
     Box(modifier.clipToBounds()) {
         Crossfade(urls[index.coerceIn(0, urls.lastIndex)], Modifier.fillMaxSize(), animationSpec = tween(fadeMs), label = "hero") { url ->
             RemoteImage(url, Modifier.fillMaxSize(), alignment = alignment)
+        }
+    }
+}
+
+/**
+ * TV Home's backdrop: [url] cross-fades in over [fadeMs], and only once the new picture has loaded (so it never
+ * fades to a grey placeholder, then pops). Opacity only, never more than two full-screen layers: the old one stays
+ * opaque underneath and is dropped when the new one is fully in. The fade runs in the layer's draw phase
+ * (`graphicsLayer`, no offscreen buffer), so composition and layout never see it. A null [url] fades to the canvas.
+ * If the remote moves on past the fade's middle, the half-faded picture counts as shown (no pop back).
+ */
+@Composable
+fun HeroPicture(url: String?, modifier: Modifier = Modifier, fadeMs: Int = Tokens.Motion.heroFadeMs) {
+    val urls = remember { mutableStateListOf<String?>(null, null) }
+    val used = remember { mutableStateListOf(false, false) }
+    val ready = remember { mutableStateListOf(false, false) }
+    var current by remember { mutableIntStateOf(-1) }
+    var incoming by remember { mutableIntStateOf(-1) }
+    val fade = remember { Animatable(0f) }
+    LaunchedEffect(url) {
+        if (incoming >= 0 && ready[incoming] && fade.value > 0.35f) {
+            // The interrupted fade counts as done: drop what was under it.
+            if (current >= 0) { used[current] = false; urls[current] = null }
+            current = incoming
+        }
+        incoming = -1
+        if (current >= 0 && used[current] && urls[current] == url) return@LaunchedEffect
+        val slot = if (current == 0) 1 else 0
+        fade.snapTo(0f)
+        urls[slot] = url
+        used[slot] = true
+        ready[slot] = url == null
+        incoming = slot
+        snapshotFlow { ready[slot] }.first { it }
+        fade.animateTo(1f, tween(fadeMs, easing = Tokens.Motion.easing))
+        if (current >= 0) { used[current] = false; urls[current] = null }
+        current = slot
+        incoming = -1
+    }
+    Box(modifier.clipToBounds()) {
+        for (i in 0..1) {
+            if (!used[i]) continue
+            val u = urls[i]
+            // The incoming layer sits on top and fades in; the one it covers stays fully opaque.
+            val layer = Modifier
+                .fillMaxSize()
+                .zIndex(if (i == incoming) 2f else 1f)
+                .graphicsLayer {
+                    alpha = if (i == incoming) fade.value else 1f
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                }
+            if (u == null) {
+                Box(layer.background(Tokens.Colors.canvas))
+            } else {
+                AsyncImage(
+                    model = u, contentDescription = null, contentScale = ContentScale.Crop,
+                    onSuccess = { ready[i] = true },
+                    modifier = layer,
+                )
+            }
         }
     }
 }
