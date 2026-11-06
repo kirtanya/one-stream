@@ -40,7 +40,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Personal sideload: sign release builds with the debug key for now.
+            // Debug key here only so Gradle outputs an installable APK; tool/build_release.sh re-signs it
+            // with One Stream's own key + the debug → release rotation record (docs/DECISIONS.md 2026-11-06).
             signingConfig = signingConfigs.getByName("debug")
         }
     }

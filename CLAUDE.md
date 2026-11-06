@@ -56,7 +56,9 @@ tool/build_release.sh                         # design rules + core tests + rele
 ./gradlew :app:recordRoborazziDebug --tests 'com.kirtanya.reel.ScreenRenders'   # screen renders → app/build/screens/
 ```
 - Version: `versionCode` / `versionName` in `app/build.gradle.kts` (bump both for every release).
-- One APK per ABI: phone = arm64-v8a, TV = armeabi-v7a. Release is signed with the debug key (sideload).
+- One APK per ABI: phone = arm64-v8a, TV = armeabi-v7a. Release is signed by `tool/build_release.sh` with One Stream's own key
+  (`~/.one-stream-signing/`, rotated from the debug key; never print the password, never commit the folder). Always ship
+  through the script: a plain `assembleRelease` APK (debug key) won't install over a rotated install.
 - Screen renders: Robolectric SDK 34 (`app/src/test/resources/robolectric.properties`) + Roborazzi;
   `ScreenRenders.kt` (phone + TV screens, light/dark, font scales), `player/PhoneControlsRender.kt`,
   `player/TvControlsRender.kt` (scenes in `player/PlayerScenes.kt`). Look at the PNGs before claiming a

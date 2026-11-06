@@ -5,6 +5,19 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-06 · Release builds signed with One Stream's own key (rotated from the debug key)**
+Decision (user): stop shipping with the Android debug key, which Play Protect treats as suspicious. New key
+`CN=One Stream` (RSA 4096) in `~/.one-stream-signing/` (keystore + `signing.properties` + `debug-to-release.lineage`;
+never in git, must be backed up). `tool/build_release.sh` re-signs both APKs with APK Signature Scheme v3 key
+rotation (debug → release, `--rotation-min-sdk-version 28`), so installed copies take it as a normal update and
+keep their data; no uninstall. Gradle still signs with the debug key first, so an APK built without the script
+won't install over a rotated install.
+Evidence: 0.15.1 re-signed; Samsung S24 and Pixel 8 updated in place (firstInstallTime kept; `dumpsys package`
+shows the new signer current and the debug key as past); Pixel watch history and Continue watching read back
+identical after the update. TV not updated yet (not reachable from the office).
+
+---
+
 **2026-11-04 · Change source opens inside the player, as a panel page**
 Decision (user): the Change source button / Settings row no longer leave the player for the Sources page; a panel
 page (like Subtitles) lists the sources best first with quality, size, provider, seed health or "Direct", the playing

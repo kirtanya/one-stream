@@ -18,6 +18,27 @@ out="$HOME/Desktop/APKs"
 mkdir -p "$out"
 cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "$out/OneStream-$version-phone.apk"
 cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "$out/OneStream-$version-tv.apk"
+
+# Official key: Gradle signs with the debug key, then this re-signs with One Stream's own key plus the
+# debug → release rotation record, so phones and the TV take it as a normal update (data kept) and Play
+# Protect sees a real signer. Key, password and record live in ~/.one-stream-signing (never in git).
+sign="$HOME/.one-stream-signing/signing.properties"
+if [ ! -f "$sign" ]; then
+    echo "Release stopped: $sign missing (the One Stream signing key folder; restore it from backup)." >&2
+    exit 1
+fi
+prop() { sed -n "s/^$1=//p" "$sign"; }
+bt=$(ls -d "$HOME"/Library/Android/sdk/build-tools/* | tail -1)
+for apk in "$out/OneStream-$version-phone.apk" "$out/OneStream-$version-tv.apk"; do
+    "$bt/apksigner" sign \
+        --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --ks-key-alias androiddebugkey \
+        --next-signer --ks "$(prop storeFile)" --ks-pass "pass:$(prop storePassword)" \
+        --ks-key-alias "$(prop keyAlias)" --key-pass "pass:$(prop keyPassword)" \
+        --lineage "$(prop lineage)" --rotation-min-sdk-version 28 \
+        --in "$apk" --out "$apk.signed"
+    mv "$apk.signed" "$apk"
+    rm -f "$apk.signed.idsig" "$apk.idsig"
+done
 ls -lh "$out"/OneStream-"$version"-*.apk
 # The decoder for this version's short names: report stacks are translated with it on the Mac.
 mkdir -p mappings
