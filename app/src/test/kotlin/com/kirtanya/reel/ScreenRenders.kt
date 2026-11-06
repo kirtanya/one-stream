@@ -144,6 +144,8 @@ open class ScreenRenders(protected val variant: Variant) {
         back: Int = 0,
         /** TV: then send the remote's ↓ key this many times (screens that handle the key themselves). */
         keyDown: Int = 0,
+        /** TV: then press the remote's OK this many times (opens a panel, expands a list). */
+        keyOk: Int = 0,
         content: @Composable () -> Unit,
     ) {
         if (tv) assumeTrue("TV renders run once", variant == DEFAULT)
@@ -216,6 +218,11 @@ open class ScreenRenders(protected val variant: Variant) {
         }
         repeat(back) {
             compose.runOnUiThread { backDispatcher?.onBackPressed() }
+            settle(700)
+        }
+        repeat(keyOk) {
+            @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+            compose.onAllNodes(androidx.compose.ui.test.isRoot())[0].performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionCenter) }
             settle(700)
         }
         onScreenReady(name, tv, windows)
@@ -544,19 +551,36 @@ open class ScreenRenders(protected val variant: Variant) {
     /** ↓ from a card in the middle of the first row lands on the next row’s first card (not the one below it). */
     @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusDown = 1, focusRight = 3, keyDown = 1) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
     @Test @Config(qualifiers = TV) fun tvSearchNone() = render("search-none", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
-    @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.film)) })
-    @Test @Config(qualifiers = TV) fun tvTitleRotten() = render("title-rotten", tv = true, content = tvApp { open(Dest.Title(Fake.rotten)) })
-    @Test @Config(qualifiers = TV) fun tvTitleReviews() = render("title-reviews", tv = true, focusDown = 1, content = tvApp { open(Dest.Title(Fake.film)) })
-    /** Down to the episodes and back up: the header shows whole again (not scrolled to just the buttons). */
-    @Test @Config(qualifiers = TV) fun tvTitleShowBackUp() = render("title-show-back-up", tv = true, focusDown = 3, focusUp = 3, content = tvApp { open(Dest.Title(Fake.show)) })
-    /** ↓ from the last button (All sources) enters the seasons at Season 1, not the season right below it. */
-    @Test @Config(qualifiers = TV) fun tvTitleRowDown() = behaviour().let { render("title-row-down", tv = true, focusRight = 3, keyDown = 1, content = tvApp { open(Dest.Title(Fake.show)) }) }
-    /** Then ↓ once more: the episodes start at episode 1. */
-    @Test @Config(qualifiers = TV) fun tvTitleRowDownEpisodes() = behaviour().let { render("title-row-down-episodes", tv = true, focusRight = 3, keyDown = 2, content = tvApp { open(Dest.Title(Fake.show)) }) }
-    @Test @Config(qualifiers = TV) fun tvTitleShowEpisodes() = render("title-show-episodes", tv = true, focusDown = 2, content = tvApp { open(Dest.Title(Fake.show)) })
+    // TV title page (docs/TV_CLEAN_REDESIGN.md §4, §5): film = sources on the page; series = episodes, OK opens the source panel.
+    private val manySources = RenderData(sourceSearch = { Fake.manySources })
+    /** The film with a saved position (history): the top source says "Resume 70:00", sources best first, "All sources…" at the end. */
+    @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, data = manySources, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmFresh() = render("title-film-fresh", tv = true, data = manySources, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmSearching() = render("title-film-searching", tv = true, data = RenderData(sourceSearch = { Fake.searching }), content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmStarting() = render("title-film-starting", tv = true, data = RenderData(sourceSearch = { null }), content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmNothing() = render("title-film-nothing", tv = true, data = RenderData(sourceSearch = { Fake.nothingFound }), content = tvApp { open(Dest.Title(Fake.film)) })
+    /** ↓ to "All sources…" and OK: the whole list opens in place and focus lands on the first new row. */
+    @Test @Config(qualifiers = TV) fun tvTitleFilmAll() = behaviour().let { render("title-film-all", tv = true, data = manySources, focusDown = 5, keyOk = 1, content = tvApp { open(Dest.Title(Fake.film)) }) }
+    @Test @Config(qualifiers = TV) fun tvTitleRotten() = render("title-rotten", tv = true, data = manySources, content = tvApp { open(Dest.Title(Fake.rotten)) })
+    /** One ↓ past the list: the quiet actions row under the page (Trailer, My list, Mark watched). */
+    @Test @Config(qualifiers = TV) fun tvTitleBelow() = render("title-below", tv = true, data = manySources, focusDown = 6, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleCastFocused() = render("title-cast-focused", tv = true, data = manySources, focusDown = 7, focusRight = 1, content = tvApp { open(Dest.Title(Fake.film)) })
+    /** Back up from the rows below: the page glides back to the top. */
+    @Test @Config(qualifiers = TV) fun tvTitleBackUp() = render("title-back-up", tv = true, data = manySources, focusDown = 7, focusUp = 7, content = tvApp { open(Dest.Title(Fake.film)) })
+    /** The show with history: season 2 opens with the up-next episode (E6) in view and focused. */
+    @Test @Config(qualifiers = TV) fun tvTitleShow() = render("title-show", tv = true, history = true, data = manySources, content = tvApp { open(Dest.Title(Fake.show)) })
+    /** A part-watched episode (S2 E8, 20 of 50 min) is what "keep watching" means: it is focused, says "Resume 20:00" and has a progress line. */
+    @Test @Config(qualifiers = TV) fun tvTitleShowResume() = render("title-show-resume", tv = true, data = manySources) { ResumeShowScene() }
+    /** OK on that episode: the top source says "Resume 20:00" (any pick carries on there). */
+    @Test @Config(qualifiers = TV) fun tvSourcePanelResume() = render("source-panel-resume", tv = true, data = manySources, keyOk = 1) { ResumeShowScene() }
+    @Test @Config(qualifiers = TV) fun tvTitleShowFresh() = render("title-show-fresh", tv = true, data = manySources, content = tvApp { open(Dest.Title(Fake.show)) })
+    /** OK on the focused episode: the source panel opens over the page (the Resume label comes from history). */
+    @Test @Config(qualifiers = TV) fun tvSourcePanel() = render("source-panel", tv = true, history = true, data = manySources, keyOk = 1, content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvSourcePanelSearching() = render("source-panel-searching", tv = true, data = RenderData(sourceSearch = { Fake.searching }), keyOk = 1, content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvSourcePanelStarting() = render("source-panel-starting", tv = true, data = RenderData(sourceSearch = { null }), keyOk = 1, content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvSourcePanelNothing() = render("source-panel-nothing", tv = true, data = RenderData(sourceSearch = { Fake.nothingFound }), keyOk = 1, content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvSourcePanelNoProviders() = render("source-panel-none", tv = true, data = RenderData(sourceSearch = { Fake.noProviders }), keyOk = 1, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvReviewOpen() = render("review-open", tv = true, windows = true) { TvScene { com.kirtanya.reel.ui.title.ReviewSheet(Fake.reviews.items[0], onDismiss = {}) } }
-    @Test @Config(qualifiers = TV) fun tvTitleCastFocused() = render("title-cast-focused", tv = true, focusDown = 4, focusRight = 1, content = tvApp { open(Dest.Title(Fake.show)) })
-    @Test @Config(qualifiers = TV) fun tvTitleShow() = render("title-show", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvImdbUnknown() = render("imdb-unknown", tv = true, catalog = FakeCatalog(Answer.Empty), content = tvApp { open(Dest.ImdbTitle("tt0944947", com.kirtanya.reel.core.tmdb.MediaType.TV)) })
     @Test @Config(qualifiers = TV) fun tvTitleBare() = render("title-bare", tv = true, content = tvApp { open(Dest.Title(Fake.long)) })
     @Test @Config(qualifiers = TV) fun tvSourcesMany() = render("sources-many", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.show, 2, 6)) })
@@ -645,6 +669,22 @@ open class ScreenRenders(protected val variant: Variant) {
     }
 
     // ─── Option sheets (shown as if long-pressed) ─────────────────────────────────────────────
+
+    /** The show's title page with S2 E8 part-watched (20 of 50 min): what "keep watching" means. */
+    @Composable
+    private fun ResumeShowScene() {
+        val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as ReelApp
+        androidx.compose.runtime.remember {
+            app.history.save(
+                com.kirtanya.reel.core.playback.Playback(
+                    "tv:${Fake.SHOW_ID}:s2e8", "tv:${Fake.SHOW_ID}", "The Night Manager", subtitle = "S2 E8 · Pilot", tmdbType = "tv", tmdbId = Fake.SHOW_ID,
+                    episode = com.kirtanya.reel.core.playback.EpisodeNumber(2, 8), next = com.kirtanya.reel.core.playback.EpisodeNumber(2, 9), source = Fake.sources(1).first(),
+                ),
+                positionMs = 20 * 60_000L, durationMs = 50 * 60_000L,
+            )
+        }
+        tvApp { open(Dest.Title(Fake.show)) }()
+    }
 
     /** The TV root's locals: remote input, sheets as a side panel. */
     @Composable

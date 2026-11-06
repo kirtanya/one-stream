@@ -35,6 +35,8 @@ fun EpisodeOptions(
     onPlay: (season: Int, episode: Int) -> Unit,
     onOpenDest: (Dest) -> Unit,
     onDismiss: () -> Unit,
+    /** TV: Download picks the source in the title page's own panel instead of opening the Sources page. */
+    onDownload: ((season: Int, episode: Int) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val history = ReelApp.get(context).history
@@ -50,7 +52,9 @@ fun EpisodeOptions(
                 onPlay(e.season, e.number)
             }
         }),
-        OptionAction(Icons.Rounded.Download, "Download", { onOpenDest(Dest.Sources(show.summary.ref, e.season, e.number, download = true)) }),
+        OptionAction(Icons.Rounded.Download, "Download", {
+            if (onDownload != null) onDownload(e.season, e.number) else onOpenDest(Dest.Sources(show.summary.ref, e.season, e.number, download = true))
+        }),
         if (watched?.finished == true) {
             OptionAction(Icons.Rounded.RemoveDone, "Mark unwatched", {
                 history.markUnwatched(watched.playback.key)
