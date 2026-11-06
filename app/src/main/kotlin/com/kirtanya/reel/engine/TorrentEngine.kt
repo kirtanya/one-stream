@@ -132,7 +132,7 @@ class TorrentEngine(private val context: Context) {
 
     private val is64 = is64Bit()
     private val formFactor by lazy { if (runCatching { (context.applicationContext as com.kirtanya.reel.ReelApp).isTv }.getOrDefault(false)) FormFactor.TV else FormFactor.PHONE }
-    private val disk = if (is64) DiskBackend.MMAP else DiskBackend.POSIX
+    private val disk = DiskBackend.forDevice(is64, Build.MANUFACTURER)
 
     private val metas = ConcurrentHashMap<String, TorrentMeta>()
     private val errors = ConcurrentHashMap<String, String>()

@@ -5,6 +5,13 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-06 · Samsung phones use the posix disk backend, not mmap (0.15.3)**
+Decision: `DiskBackend.forDevice` picks POSIX on Samsung even on 64-bit. Why: on the S24, every launch resumed the two
+downloads in the app's external folder; ~3 s later Samsung's MediaProvider FUSE daemon aborted
+(`Check failed: active_nodes_.find(node)`, pf_open) and Android killed One Stream with it, so the app closed on every
+open (19 MediaProvider deaths, 21 One Stream deaths in one log). Evidence: with 0.15.3 (POSIX) the same downloads write
+for 100 s+ with no crash. The Pixel keeps mmap (no such crash there). Test: `core/.../stream/DiskBackendTest.kt`.
+
 **2026-11-06 · Release builds signed with One Stream's own key (rotated from the debug key)**
 Decision (user): stop shipping with the Android debug key, which Play Protect treats as suspicious. New key
 `CN=One Stream` (RSA 4096) in `~/.one-stream-signing/` (keystore + `signing.properties` + `debug-to-release.lineage`;

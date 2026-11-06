@@ -4,7 +4,19 @@ package com.kirtanya.reel.core.stream
 enum class FormFactor { PHONE, TV }
 
 /** libtorrent disk backend: mmap (64-bit) or posix on the network thread (the 32-bit TV). */
-enum class DiskBackend { MMAP, POSIX }
+enum class DiskBackend {
+    MMAP, POSIX;
+
+    companion object {
+        /**
+         * Samsung gets posix even on 64-bit: mmap of downloads in the app's external folder crashes Samsung's
+         * storage service (MediaProvider FUSE "active_nodes_" check, 2026-11-06 on the S24), and Android then
+         * kills One Stream with it, so the app closed seconds after every launch while downloads resumed.
+         */
+        fun forDevice(is64: Boolean, manufacturer: String): DiskBackend =
+            if (is64 && !manufacturer.equals("samsung", ignoreCase = true)) MMAP else POSIX
+    }
+}
 
 /**
  * libtorrent session settings for streaming, as plain data (the engine maps each field to its
