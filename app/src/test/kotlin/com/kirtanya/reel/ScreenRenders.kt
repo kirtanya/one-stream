@@ -548,10 +548,21 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvHomeError() = render("home-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp())
     @Test @Config(qualifiers = TV) fun tvSearch() = render("search", tv = true, content = tvApp { select(Tab.Search) })
     @Test @Config(qualifiers = TV) fun tvSearchResults() = render("search-results", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } }
+    /** The TV's own keyboard on the symbols page: from "o", ▼▼ ►►► reaches 123 / abc, OK flips the page. */
+    @Test @Config(qualifiers = TV) fun tvSearchSymbols() = render("search-symbols", tv = true, focusDown = 2, focusRight = 3, keyOk = 1) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } }
+    /** Typing "du": the suggestions are what was searched before (nothing is fetched per key), next letters outlined. */
+    @Test @Config(qualifiers = TV) fun tvSearchSuggest() = tvSearchRecents().let { render("search-suggest", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "du") } } }
+    /** ► off the keyboard's right edge lands on the results; focus then sits on a poster (named above the grid). */
+    @Test @Config(qualifiers = TV) fun tvSearchResultsFocus() = behaviour().let { render("search-results-focus", tv = true, focusRight = 6) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
     /** ↓ from a card in the middle of the first row lands on the next row’s first card (not the one below it). */
-    @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusDown = 1, focusRight = 3, keyDown = 1) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
+    @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusRight = 8, keyDown = 1) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
     @Test @Config(qualifiers = TV) fun tvSearchNone() = render("search-none", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
     // TV title page (docs/TV_CLEAN_REDESIGN.md §4, §5): film = sources on the page; series = episodes, OK opens the source panel.
+    /** Recent searches for the suggestion render (the same store the phone uses). */
+    private fun tvSearchRecents() {
+        RecentSearches.clear(app)
+        listOf("dune part two", "interstellar", "dune").forEach { RecentSearches.add(app, it) }
+    }
     private val manySources = RenderData(sourceSearch = { Fake.manySources })
     /** The film with a saved position (history): the top source says "Resume 70:00", sources best first, "All sources…" at the end. */
     @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, data = manySources, content = tvApp { open(Dest.Title(Fake.film)) })
