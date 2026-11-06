@@ -60,7 +60,7 @@ fun TvSearch(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit = {}, in
 
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
         Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.height(TvTopBarHeight))
+            Spacer(Modifier.height(Tokens.Space.tvSafeV))
             Row(Modifier.padding(horizontal = side), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l), verticalAlignment = Alignment.CenterVertically) {
                 SearchField(query, { query = it }, Modifier.width(440.dp).focusRequester(field))
                 // The same text tabs as the top bar.

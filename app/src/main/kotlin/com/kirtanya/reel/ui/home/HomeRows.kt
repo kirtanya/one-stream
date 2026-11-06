@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.playback.ContinueItem
 import com.kirtanya.reel.core.tmdb.MediaType
@@ -77,7 +78,18 @@ fun continueTitles(items: List<ContinueItem>): List<TitleSummary> = items.mapNot
 /** Poster width for phone rows, from Settings → Home screen → Size. */
 val phonePosterWidth: Dp get() = if (HomeLayout.density == Density.Compact) Tokens.Cinema.posterCompact else Tokens.Cinema.posterRoomy
 
-/** A Home row in the chosen look: posters, or wide 16:9 cards. */
+/**
+ * TV Home card widths for the chosen shape and size (Settings → Home screen). Landscape cards use backdrops (w500 is
+ * enough up to 250 dp at 2 px/dp), portrait ones posters (w342 up to 171 dp). Medium portrait is the old poster size.
+ */
+object TvCards {
+    fun landscapeWidth(size: TvCardSize): Dp = when (size) { TvCardSize.Small -> 144.dp; TvCardSize.Medium -> 184.dp; TvCardSize.Large -> 232.dp }
+    fun portraitWidth(size: TvCardSize): Dp = when (size) { TvCardSize.Small -> 96.dp; TvCardSize.Medium -> 112.dp; TvCardSize.Large -> 136.dp }
+    /** Continue watching and New episodes are stills, so they follow the size even when the rows are portrait. */
+    val stillWidth: Dp get() = landscapeWidth(HomeLayout.tvCardSize)
+}
+
+/** A Home row in the chosen look: posters, or wide 16:9 cards. TV follows [HomeLayout.tvCardShape] / [HomeLayout.tvCardSize]. */
 @Composable
 fun TitleRow(
     title: String,
@@ -90,16 +102,17 @@ fun TitleRow(
     firstFocus: FocusRequester? = null,
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
 ) {
-    if (HomeLayout.posterStyle == PosterStyle.Posters) {
+    val posters = if (isTv) HomeLayout.tvCardShape == TvCardShape.Portrait else HomeLayout.posterStyle == PosterStyle.Posters
+    if (posters) {
         PosterRow(
-            title, items, posterWidth = if (isTv) Tokens.Cinema.posterTv else phonePosterWidth, sidePadding = sidePadding, onOpen = onOpen,
+            title, items, posterWidth = if (isTv) TvCards.portraitWidth(HomeLayout.tvCardSize) else phonePosterWidth, sidePadding = sidePadding, onOpen = onOpen,
             showText = !isTv, onFocus = onFocus, firstFocus = firstFocus, onSeeAll = onSeeAll, listState = listState,
             // TV: the info block above the rows carries the rating, so no pill on every poster.
             badges = !isTv,
         )
         return
     }
-    val width = if (isTv) Tokens.Cinema.wideCardTv else Tokens.Cinema.wideCardPhone
+    val width = if (isTv) TvCards.landscapeWidth(HomeLayout.tvCardSize) else Tokens.Cinema.wideCardPhone
     val toggleSaved = rememberWatchlistToggler()
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         RowHeader(title, sidePadding, onSeeAll)
@@ -186,7 +199,7 @@ fun NewEpisodesRow(
     firstFocus: FocusRequester? = null,
 ) {
     val today = remember { java.time.LocalDate.now() }
-    val width = if (isTv) Tokens.Cinema.wideCardTv else Tokens.Cinema.wideCardPhone
+    val width = if (isTv) TvCards.stillWidth else Tokens.Cinema.wideCardPhone
     val shape = RoundedCornerShape(Tokens.Radius.media)
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         RowHeader("New episodes", sidePadding)

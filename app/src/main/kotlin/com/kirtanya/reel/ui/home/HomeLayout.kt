@@ -14,6 +14,12 @@ enum class PosterStyle(val label: String) { Posters("Posters"), Wide("Wide") }
 /** Phone poster rows: how many fit across the screen. */
 enum class Density(val label: String, val across: Int) { Roomy("Roomy", 3), Compact("Compact", 4) }
 
+/** TV Home cards: backdrops (landscape, 16:9) or posters (portrait, 2:3). */
+enum class TvCardShape(val label: String) { Landscape("Landscape"), Portrait("Portrait") }
+
+/** TV Home card size, whatever the shape (widths in [TvCards]). */
+enum class TvCardSize(val label: String) { Small("Small"), Medium("Medium"), Large("Large") }
+
 /** Where the TV app opens. */
 enum class TvStart(val label: String) { Home("Home"), Search("Search"), Downloads("Downloads") }
 
@@ -38,6 +44,11 @@ object HomeLayout {
         private set
     var density by mutableStateOf(Density.Roomy)
         private set
+    /** TV only; the phone keeps [posterStyle] and [density]. Default: small landscape cards, so more titles show per row. */
+    var tvCardShape by mutableStateOf(TvCardShape.Landscape)
+        private set
+    var tvCardSize by mutableStateOf(TvCardSize.Small)
+        private set
     var tvStart by mutableStateOf(TvStart.Home)
         private set
     /** TV: after this many minutes idle on a browse screen, a slideshow of My list backdrops (0 = off). */
@@ -48,12 +59,15 @@ object HomeLayout {
         if (prefs != null) return
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs = p
-        p.getString("order", null)?.split('\n')?.filter { it.isNotBlank() }?.let { order = it }
-        hidden = p.getStringSet("hidden", emptySet()).orEmpty().toSet()
+        // "services" (the removed "On your services" row) may still be in a saved layout: drop it.
+        p.getString("order", null)?.split('\n')?.let { order = dropRemoved(it) }
+        hidden = dropRemoved(p.getStringSet("hidden", emptySet()).orEmpty()).toSet()
         hero = p.getString("hero", null)?.let { n -> HeroSource.entries.firstOrNull { it.name == n } } ?: HeroSource.Trending
         heroAutoAdvance = p.getBoolean("heroAuto", true)
         posterStyle = p.getString("posterStyle", null)?.let { n -> PosterStyle.entries.firstOrNull { it.name == n } } ?: PosterStyle.Posters
         density = p.getString("density", null)?.let { n -> Density.entries.firstOrNull { it.name == n } } ?: Density.Roomy
+        tvCardShape = p.getString("tvCardShape", null)?.let { n -> TvCardShape.entries.firstOrNull { it.name == n } } ?: TvCardShape.Landscape
+        tvCardSize = p.getString("tvCardSize", null)?.let { n -> TvCardSize.entries.firstOrNull { it.name == n } } ?: TvCardSize.Small
         tvStart = p.getString("tvStart", null)?.let { n -> TvStart.entries.firstOrNull { it.name == n } } ?: TvStart.Home
         screensaverMin = p.getInt("screensaver", 5)
     }
@@ -89,15 +103,22 @@ object HomeLayout {
     fun chooseHeroAutoAdvance(v: Boolean) { heroAutoAdvance = v; prefs?.edit()?.putBoolean("heroAuto", v)?.apply() }
     fun choosePosterStyle(v: PosterStyle) { posterStyle = v; prefs?.edit()?.putString("posterStyle", v.name)?.apply() }
     fun chooseDensity(v: Density) { density = v; prefs?.edit()?.putString("density", v.name)?.apply() }
+    fun chooseTvCardShape(v: TvCardShape) { tvCardShape = v; prefs?.edit()?.putString("tvCardShape", v.name)?.apply() }
+    fun chooseTvCardSize(v: TvCardSize) { tvCardSize = v; prefs?.edit()?.putString("tvCardSize", v.name)?.apply() }
     fun chooseTvStart(v: TvStart) { tvStart = v; prefs?.edit()?.putString("tvStart", v.name)?.apply() }
     fun chooseScreensaver(min: Int) { screensaverMin = min; prefs?.edit()?.putInt("screensaver", min)?.apply() }
 
     fun reset() {
         order = RowIds.DEFAULT; hidden = emptySet(); hero = HeroSource.Trending; heroAutoAdvance = true
         posterStyle = PosterStyle.Posters; density = Density.Roomy
-        prefs?.edit()?.remove("order")?.remove("hidden")?.remove("hero")?.remove("heroAuto")?.remove("posterStyle")?.remove("density")?.apply()
+        tvCardShape = TvCardShape.Landscape; tvCardSize = TvCardSize.Small
+        prefs?.edit()?.remove("order")?.remove("hidden")?.remove("hero")?.remove("heroAuto")?.remove("posterStyle")?.remove("density")
+            ?.remove("tvCardShape")?.remove("tvCardSize")?.apply()
     }
 }
+
+/** [ids] without rows that no longer exist (a saved layout from before they were removed) and blanks. */
+internal fun dropRemoved(ids: Collection<String>): List<String> = ids.filter { it.isNotBlank() && it != RowIds.REMOVED_SERVICES }
 
 /** Row ids on Home. TMDB rows use "tmdb:<their title>". */
 object RowIds {
@@ -105,11 +126,12 @@ object RowIds {
     const val MY_LIST = "mylist"
     const val BECAUSE = "because"
     const val NEW_EPISODES = "new"
-    const val SERVICES = "services"
+    /** The removed "On your services" row: old saved layouts may still list it. */
+    internal const val REMOVED_SERVICES = "services"
     fun tmdb(title: String) = "tmdb:$title"
 
     val DEFAULT = listOf(
-        CONTINUE, NEW_EPISODES, MY_LIST, BECAUSE, tmdb("Trending this week"), SERVICES,
+        CONTINUE, NEW_EPISODES, MY_LIST, BECAUSE, tmdb("Trending this week"),
         tmdb("Popular movies"), tmdb("Trending shows"), tmdb("Popular in India"), tmdb("Top rated shows"),
     )
 
@@ -118,7 +140,6 @@ object RowIds {
         MY_LIST -> "My list"
         BECAUSE -> "Because you watched…"
         NEW_EPISODES -> "New episodes"
-        SERVICES -> "On your services"
         else -> id.removePrefix("tmdb:")
     }
 }

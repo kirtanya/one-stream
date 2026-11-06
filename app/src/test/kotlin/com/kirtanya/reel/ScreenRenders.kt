@@ -50,8 +50,9 @@ import com.kirtanya.reel.ui.theme.ThemeMode
 import com.kirtanya.reel.ui.theme.Tokens
 import com.kirtanya.reel.ui.tv.TvApp
 import com.kirtanya.reel.ui.tv.TvSearch
-import com.kirtanya.reel.ui.tv.TvTopBar
-import com.kirtanya.reel.ui.tv.TvTopBarHeight
+import com.kirtanya.reel.ui.tv.TvPageInset
+import com.kirtanya.reel.ui.tv.TvRail
+import com.kirtanya.reel.ui.settings.TvSettingsPanel
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -135,6 +136,12 @@ open class ScreenRenders(protected val variant: Variant) {
         focusRight: Int = 0,
         /** TV: then press ↑ this many times (focus coming back up). */
         focusUp: Int = 0,
+        /** TV: press ◄ this many times after all of those (focus goes to the rail). */
+        focusLeft: Int = 0,
+        /** TV: then press ► this many times (back from the rail). */
+        thenRight: Int = 0,
+        /** TV: press the system Back this many times at the very end (the settings panel closing). */
+        back: Int = 0,
         /** TV: then send the remote's ↓ key this many times (screens that handle the key themselves). */
         keyDown: Int = 0,
         content: @Composable () -> Unit,
@@ -158,6 +165,7 @@ open class ScreenRenders(protected val variant: Variant) {
             }
             val density = LocalDensity.current
             focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+            backDispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
             CompositionLocalProvider(
                 LocalDensity provides Density(density.density, if (tv) 1f else variant.fontScale),
                 LocalCatalog provides catalog,
@@ -198,8 +206,22 @@ open class ScreenRenders(protected val variant: Variant) {
             compose.onAllNodes(androidx.compose.ui.test.isRoot())[0].performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionDown) }
             settle(500)
         }
+        repeat(focusLeft) {
+            focusManager?.moveFocus(androidx.compose.ui.focus.FocusDirection.Left)
+            settle(500)
+        }
+        repeat(thenRight) {
+            focusManager?.moveFocus(androidx.compose.ui.focus.FocusDirection.Right)
+            settle(500)
+        }
+        repeat(back) {
+            compose.runOnUiThread { backDispatcher?.onBackPressed() }
+            settle(700)
+        }
         onScreenReady(name, tv, windows)
     }
+
+    private var backDispatcher: androidx.activity.OnBackPressedDispatcher? = null
 
     /** The screen has settled: save it as a PNG. */
     @OptIn(ExperimentalRoborazziApi::class)
@@ -239,15 +261,21 @@ open class ScreenRenders(protected val variant: Variant) {
         }
     }
 
-    /** A TV tab screen under the tab bar (remote only: no touch padding). */
+    /** A TV tab screen beside the rail (remote only: no touch padding). Search and Downloads pad their own content. */
     @Composable
-    private fun TvTab(tab: Tab, padTop: Boolean, content: @Composable () -> Unit) {
+    private fun TvTab(tab: Tab, content: @Composable () -> Unit) {
         CompositionLocalProvider(androidx.compose.material3.LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
             Box(Modifier.fillMaxSize()) {
-                Box(if (padTop) Modifier.padding(top = TvTopBarHeight) else Modifier) { content() }
-                TvTopBar(Navigator().apply { select(tab) })
+                Box(Modifier.padding(start = TvPageInset)) { content() }
+                TvRail(tab, {}, Modifier.align(Alignment.CenterStart))
             }
         }
+    }
+
+    /** Settings' panel over a blank screen, opened on [page] (the panel is what the design rules and renders look at). */
+    @Composable
+    private fun TvSettingsOver(page: SettingsPage?) {
+        TvScene { Box(Modifier.fillMaxSize()) { TvSettingsPanel(onClose = {}, Modifier.align(Alignment.CenterEnd), start = listOfNotNull(page)) } }
     }
 
     // ─── Phone ───────────────────────────────────────────────────────────────────────────────
@@ -390,7 +418,7 @@ open class ScreenRenders(protected val variant: Variant) {
     // Home screen, History, Source preferences (Settings), a rearranged Home in wide rows.
     @Test fun settingsHomeLayout() {
         com.kirtanya.reel.ui.home.HomeLayout.init(app); com.kirtanya.reel.ui.home.HomeLayout.reset()
-        com.kirtanya.reel.ui.home.HomeLayout.setShown(com.kirtanya.reel.ui.home.RowIds.SERVICES, false)
+        com.kirtanya.reel.ui.home.HomeLayout.setShown(com.kirtanya.reel.ui.home.RowIds.BECAUSE, false)
         try { settingsPage(SettingsPage.HomeLayout) } finally { com.kirtanya.reel.ui.home.HomeLayout.reset() }
     }
     @Test fun settingsHistory() {
@@ -512,10 +540,10 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvHomeLoading() = render("home-loading", tv = true, catalog = FakeCatalog(Answer.Loading), content = tvApp())
     @Test @Config(qualifiers = TV) fun tvHomeError() = render("home-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp())
     @Test @Config(qualifiers = TV) fun tvSearch() = render("search", tv = true, content = tvApp { select(Tab.Search) })
-    @Test @Config(qualifiers = TV) fun tvSearchResults() = render("search-results", tv = true) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "dune") } }
+    @Test @Config(qualifiers = TV) fun tvSearchResults() = render("search-results", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } }
     /** ↓ from a card in the middle of the first row lands on the next row’s first card (not the one below it). */
-    @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusDown = 1, focusRight = 3, keyDown = 1) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
-    @Test @Config(qualifiers = TV) fun tvSearchNone() = render("search-none", tv = true) { TvTab(Tab.Search, padTop = false) { TvSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
+    @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusDown = 1, focusRight = 3, keyDown = 1) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
+    @Test @Config(qualifiers = TV) fun tvSearchNone() = render("search-none", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "zzqx the film nobody made") } }
     @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, content = tvApp { open(Dest.Title(Fake.film)) })
     @Test @Config(qualifiers = TV) fun tvTitleRotten() = render("title-rotten", tv = true, content = tvApp { open(Dest.Title(Fake.rotten)) })
     @Test @Config(qualifiers = TV) fun tvTitleReviews() = render("title-reviews", tv = true, focusDown = 1, content = tvApp { open(Dest.Title(Fake.film)) })
@@ -554,9 +582,38 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvContinueUndo() = render("continue-undo", tv = true, history = true) { UndoScene { tvApp()() } }
     @Test @Config(qualifiers = TV) fun tvDownloadsEmpty() = render("downloads-empty", tv = true, data = RenderData(torrents = emptyList(), storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettings() = render("settings", tv = true, content = tvApp { select(Tab.Settings) })
-    @Test @Config(qualifiers = TV) fun tvSettingsHomeLayout() = render("settings-homelayout", tv = true) {
-        TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeLayout)) }
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeLayout() = render("settings-homelayout", tv = true) { TvSettingsOver(SettingsPage.HomeLayout) }
+    /** Back on the root list closes the panel, and the remote lands on the rail's Settings icon. */
+    @Test @Config(qualifiers = TV) fun tvSettingsClosed() = behaviour().let { render("settings-closed", tv = true, history = true, back = 1, content = tvApp { select(Tab.Settings) }) }
+    /** Back on a sub-page only goes up to the list; the panel stays. */
+    @Test @Config(qualifiers = TV) fun tvSettingsSubpageBack() = behaviour().let {
+        com.kirtanya.reel.ui.settings.SettingsLink.pending = SettingsPage.Addons
+        render("settings-back-up", tv = true, history = true, back = 1, data = RenderData(installed = Fake.installed), content = tvApp { select(Tab.Settings) })
     }
+    /** The card style chosen in the panel shows live on Home behind it (portrait, large here). */
+    @Test @Config(qualifiers = TV) fun tvSettingsLive() {
+        com.kirtanya.reel.ui.home.HomeLayout.init(app); com.kirtanya.reel.ui.home.HomeLayout.reset()
+        com.kirtanya.reel.ui.home.HomeLayout.chooseTvCardShape(com.kirtanya.reel.ui.home.TvCardShape.Portrait)
+        com.kirtanya.reel.ui.home.HomeLayout.chooseTvCardSize(com.kirtanya.reel.ui.home.TvCardSize.Large)
+        com.kirtanya.reel.ui.settings.SettingsLink.pending = SettingsPage.HomeLayout
+        try { render("settings-live", tv = true, history = true, content = tvApp { select(Tab.Settings) }) } finally { com.kirtanya.reel.ui.home.HomeLayout.reset() }
+    }
+    /** ◄ from the first card reaches the rail (on the Home icon). */
+    @Test @Config(qualifiers = TV) fun tvRailFocused() = render("rail-focused", tv = true, history = true, focusLeft = 1, content = tvApp())
+    /** ◄ then ► returns to the card you left. */
+    @Test @Config(qualifiers = TV) fun tvRailBack() = behaviour().let { render("rail-back", tv = true, history = true, focusRight = 2, focusLeft = 3, thenRight = 1, content = tvApp()) }
+    private fun tvHomeCards(name: String, shape: com.kirtanya.reel.ui.home.TvCardShape, size: com.kirtanya.reel.ui.home.TvCardSize) {
+        com.kirtanya.reel.ui.home.HomeLayout.init(app); com.kirtanya.reel.ui.home.HomeLayout.reset()
+        com.kirtanya.reel.ui.home.HomeLayout.chooseTvCardShape(shape)
+        com.kirtanya.reel.ui.home.HomeLayout.chooseTvCardSize(size)
+        try { render("home-$name", tv = true, history = true, focusDown = 3, content = tvApp()) } finally { com.kirtanya.reel.ui.home.HomeLayout.reset() }
+    }
+    @Test @Config(qualifiers = TV) fun tvHomeLandscapeSmall() = tvHomeCards("landscape-small", com.kirtanya.reel.ui.home.TvCardShape.Landscape, com.kirtanya.reel.ui.home.TvCardSize.Small)
+    @Test @Config(qualifiers = TV) fun tvHomeLandscapeMedium() = tvHomeCards("landscape-medium", com.kirtanya.reel.ui.home.TvCardShape.Landscape, com.kirtanya.reel.ui.home.TvCardSize.Medium)
+    @Test @Config(qualifiers = TV) fun tvHomeLandscapeLarge() = tvHomeCards("landscape-large", com.kirtanya.reel.ui.home.TvCardShape.Landscape, com.kirtanya.reel.ui.home.TvCardSize.Large)
+    @Test @Config(qualifiers = TV) fun tvHomePortraitSmall() = tvHomeCards("portrait-small", com.kirtanya.reel.ui.home.TvCardShape.Portrait, com.kirtanya.reel.ui.home.TvCardSize.Small)
+    @Test @Config(qualifiers = TV) fun tvHomePortraitMedium() = tvHomeCards("portrait-medium", com.kirtanya.reel.ui.home.TvCardShape.Portrait, com.kirtanya.reel.ui.home.TvCardSize.Medium)
+    @Test @Config(qualifiers = TV) fun tvHomePortraitLarge() = tvHomeCards("portrait-large", com.kirtanya.reel.ui.home.TvCardShape.Portrait, com.kirtanya.reel.ui.home.TvCardSize.Large)
     @Test @Config(qualifiers = TV) fun tvScreensaver() {
         com.kirtanya.reel.ui.home.HomeLayout.init(app)
         render("screensaver", tv = true, history = true) {
@@ -565,7 +622,7 @@ open class ScreenRenders(protected val variant: Variant) {
         }
     }
     private fun tvSettingsPage(page: SettingsPage) =
-        render("settings-${page.name.lowercase()}", tv = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(page)) } }
+        render("settings-${page.name.lowercase()}", tv = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvSettingsOver(page) }
     @Test @Config(qualifiers = TV) fun tvSettingsAppearance() = tvSettingsPage(SettingsPage.Appearance)
     @Test @Config(qualifiers = TV) fun tvSettingsAddons() = tvSettingsPage(SettingsPage.Addons)
     @Test @Config(qualifiers = TV) fun tvSettingsSubtitles() = tvSettingsPage(SettingsPage.Subtitles)
@@ -573,16 +630,16 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvSettingsStoreFiltered() = render(
         "settings-store-filtered", tv = true,
         data = RenderData(installed = Fake.installed, store = Fake.store, storeQuery = com.kirtanya.reel.core.store.StoreQuery(types = setOf("series"))),
-    ) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.Store)) } }
+    ) { TvSettingsOver(SettingsPage.Store) }
     @Test @Config(qualifiers = TV) fun tvSettingsPhoneTv() = tvSettingsPage(SettingsPage.PhoneTv)
     @Test @Config(qualifiers = TV) fun tvSettingsStorageRules() = withNight {
-        render("settings-storage-rules", tv = true, scrollToEnd = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.Storage)) } }
+        render("settings-storage-rules", tv = true, scrollToEnd = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvSettingsOver(SettingsPage.Storage) }
     }
     @Test @Config(qualifiers = TV) fun tvDownloadsNight() = render("downloads-night", tv = true, data = RenderData(torrents = nightTorrents, storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorage() =
-        render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeStorage)) } }
+        render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvSettingsOver(SettingsPage.HomeStorage) }
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageNotSetUp() =
-        render("settings-homestorage-not-set-up", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.notSetUp.copy(isTv = true))) { TvTab(Tab.Settings, padTop = true) { SettingsScreen(isTv = true, start = listOf(SettingsPage.HomeStorage)) } }
+        render("settings-homestorage-not-set-up", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.notSetUp.copy(isTv = true))) { TvSettingsOver(SettingsPage.HomeStorage) }
     @Test @Config(qualifiers = TV) fun tvAddSource() = render("add-source", tv = true, windows = true, data = RenderData(linkPreview = Load.Ready(preview))) {
         AddSourceLinkDialog(preview.url, isTv = true, onDone = {})
     }
