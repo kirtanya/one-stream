@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
@@ -214,8 +215,13 @@ private fun TvAllSourcesRow(more: Int, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("All sources…", style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1)
+        Text("All sources", style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1)
         Text("$more more", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
+        // The rest opens in place below, so a down chevron says what OK does (the user asked for an arrow here).
+        androidx.compose.material3.Icon(
+            androidx.compose.material.icons.Icons.Rounded.KeyboardArrowDown, null,
+            tint = Tokens.Colors.textSecondary, modifier = Modifier.size(20.dp),
+        )
     }
 }
 

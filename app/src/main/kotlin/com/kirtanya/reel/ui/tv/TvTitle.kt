@@ -30,6 +30,8 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -173,11 +175,16 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
         TvColumnGlide(reveal = RowReveal) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
                 item(key = "hero", contentType = "hero") {
+                    // Back up from the rows below: the whole top section shows again. Gliding once on focus entry wasn't enough on the
+                    // TV: the focused row's own bring-into-view scroll could land after the glide and leave the page stuck part-way
+                    // (logo and story cut off). So while focus is anywhere up here, any settled offset is glided back to the top.
+                    var heroFocused by remember { mutableStateOf(false) }
+                    if (heroFocused) LaunchedEffect(Unit) {
+                        snapshotFlow { Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, listState.isScrollInProgress) }
+                            .collect { (index, offset, moving) -> if (!moving && (index > 0 || offset > 0)) listState.glideToTop() }
+                    }
                     Box(
-                        Modifier.fillParentMaxSize().onFocusChanged { f ->
-                            // Back up from the rows below: glide to the very top so the whole page shows, not just the list's last row.
-                            if (f.hasFocus && (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)) scope.launch { listState.glideToTop() }
-                        },
+                        Modifier.fillParentMaxSize().onFocusChanged { f -> heroFocused = f.hasFocus },
                     ) {
                         Backdrop(heroBackdrops(d).firstOrNull(), Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.5f))
                         Column(
