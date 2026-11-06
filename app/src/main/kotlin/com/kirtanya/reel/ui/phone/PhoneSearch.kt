@@ -253,6 +253,8 @@ fun SearchResults(
     showText: Boolean = true,
     /** TV: the poster that just took focus. */
     onFocusItem: ((TitleSummary) -> Unit)? = null,
+    /** TV: the titles shown, whenever the load changes (the keyboard's suggestions read them: nothing extra is fetched). */
+    onResults: ((List<TitleSummary>) -> Unit)? = null,
 ) {
     val catalog = rememberCatalog()
     val (load, retry) = rememberLoad(query) {
@@ -266,6 +268,7 @@ fun SearchResults(
             SearchKind.Shows -> it.ref.type == MediaType.TV
         }
     }
+    if (onResults != null) LaunchedEffect(load, kind, hidden) { onResults(results) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val cardFocus = remember(results) { results.map { FocusRequester() } }
