@@ -92,7 +92,6 @@ import com.kirtanya.reel.ui.common.GradientProgress
 import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.ReelCard
-import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.formatBytes
 import com.kirtanya.reel.ui.store.AddonStorePage
@@ -132,12 +131,32 @@ private val GROUPS = listOf(
 )
 
 /**
- * Settings: a short grouped list (Watching, Sources, Devices, App), each row showing where it
- * stands, opening a page of its own. Back (button on the phone, remote on TV) goes up a level
- * and puts focus back on the row you came from.
+ * Puts the remote on [requester] when a page opens, and keeps asking for a few frames. The page that held focus has just left
+ * composition, and Android hands focus back to the first focusable of the window (the rail) a frame or two later, which would
+ * otherwise win; this is the same retry the options panel uses.
  */
 @Composable
-fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
+internal fun PanelFocus(requester: FocusRequester, key: Any? = Unit) {
+    LaunchedEffect(key) {
+        repeat(4) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { requester.requestFocus(androidx.compose.ui.focus.FocusDirection.Enter) }
+            kotlinx.coroutines.delay(Tokens.Motion.focusMs.toLong())
+        }
+    }
+}
+
+/** True inside the TV's side panel ([TvSettingsPanel]): narrower margins, smaller page title. */
+internal val LocalSettingsPanel = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * Settings: a short grouped list (Watching, Sources, Devices, App), each row showing where it
+ * stands, opening a page of its own. Back (button on the phone, remote on TV) goes up a level
+ * and puts focus back on the row you came from. [onClose] set = shown in the TV's side panel ([TvSettingsPanel]):
+ * Back on the root list closes the panel, and the panel's own surface shows (this screen draws no background).
+ */
+@Composable
+fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList(), onClose: (() -> Unit)? = null) {
     // Pages open on top of each other (Addons → Addon store); saved as names so rotation keeps them.
     var stackNames by rememberSaveable { mutableStateOf(start.map { it.name }) }
     val stack = stackNames.map { SettingsPage.valueOf(it) }
@@ -153,7 +172,8 @@ fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
         cameFrom = stackNames.lastOrNull()
         stackNames = stackNames.dropLast(1)
     }
-    BackHandler(enabled = stack.isNotEmpty()) { back() }
+    // One handler for both levels: two handlers would depend on which one registered last.
+    BackHandler(enabled = stack.isNotEmpty() || onClose != null) { if (stack.isNotEmpty()) back() else onClose?.invoke() }
     // Opened from elsewhere (the Download-where sheet, adb): jump straight to that page.
     val link = SettingsLink.pending
     androidx.compose.runtime.LaunchedEffect(link) {
@@ -171,7 +191,8 @@ fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
             else -> SettingsDetail(page, isTv, onOpen = ::open, onBack = ::back)
         }
     }
-    Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalSettingsPanel provides (onClose != null)) {
+    Box(Modifier.fillMaxSize().then(if (onClose != null) Modifier else Modifier.background(Tokens.Colors.canvas))) {
         if (isTv) {
             // TV: pages swap at once (a slide + fade of a full page is lag on the weak chip, and AnimatedContent would
             // keep the old page composed for a frame); the whole screen's own fade-in is TvApp's.
@@ -188,6 +209,7 @@ fun SettingsScreen(isTv: Boolean, start: List<SettingsPage> = emptyList()) {
                 label = "settingsPage",
             ) { page -> pageContent(page) }
         }
+    }
     }
 }
 
@@ -234,7 +256,9 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
 
     val requesters = remember { SettingsPage.entries.associateWith { FocusRequester() } }
     // Coming back up a level on TV: the remote lands on the row you opened.
-    if (isTv && focusOn != null) RequestFocusOnce(requesters.getValue(focusOn), key = focusOn)
+    if (isTv && focusOn != null) PanelFocus(requesters.getValue(focusOn), key = focusOn)
+    // In the side panel the remote starts on the first row.
+    if (isTv && focusOn == null && LocalSettingsPanel.current) PanelFocus(requesters.getValue(GROUPS.first().second.first()))
 
     PageList(isTv) {
         item { PageTitle("Settings", null, isTv, onBack = null) }
@@ -309,13 +333,14 @@ private fun IconTile(icon: ImageVector) {
 /** The scrolling column every settings page uses (phone clears the bottom bar; TV keeps safe margins). */
 @Composable
 internal fun PageList(isTv: Boolean, modifier: Modifier = Modifier, content: LazyListScope.() -> Unit) {
-    val side = if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
+    val panel = LocalSettingsPanel.current
+    val side = if (panel) Tokens.Space.xl else if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
     val list: @Composable () -> Unit = {
         LazyColumn(
             modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = side, end = side,
-                top = if (isTv) Tokens.Space.l else 0.dp,
+                top = if (isTv) (if (panel) Tokens.Space.tvSafeV else Tokens.Space.l) else 0.dp,
                 bottom = if (isTv) Tokens.Space.tvSafeV else Tokens.Space.bottomBarClearance + Tokens.Space.xl,
             ),
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
@@ -341,7 +366,7 @@ internal fun PageTitle(title: String, subtitle: String?, isTv: Boolean, onBack: 
         Column(Modifier.weight(1f)) {
             if (onBack != null && isTv) Text("Settings  ›", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
             // TV: the page name is the hero line, like a Netflix / Hotstar settings page.
-            Text(title, style = if (isTv && onBack == null) Tokens.Type.hero else if (onBack == null) Tokens.Type.display else Tokens.Type.title, color = Tokens.Colors.text)
+            Text(title, style = if (isTv && onBack == null && !LocalSettingsPanel.current) Tokens.Type.hero else if (onBack == null) Tokens.Type.display else Tokens.Type.title, color = Tokens.Colors.text)
             if (subtitle != null) Text(subtitle, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
         }
     }
@@ -393,7 +418,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
 
     // TV: the remote starts on the page's first control.
     val first = remember { FocusRequester() }
-    if (isTv) RequestFocusOnce(first)
+    if (isTv) PanelFocus(first, key = page)
 
     val subtitle = when (page) {
         SettingsPage.Appearance -> "Light or dark, and the app's colour."

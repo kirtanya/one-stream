@@ -24,13 +24,16 @@ import com.kirtanya.reel.ui.home.HeroSource
 import com.kirtanya.reel.ui.home.HomeLayout
 import com.kirtanya.reel.ui.home.PosterStyle
 import com.kirtanya.reel.ui.home.RowIds
+import com.kirtanya.reel.ui.home.TvCardShape
+import com.kirtanya.reel.ui.home.TvCardSize
 import com.kirtanya.reel.ui.home.TvStart
 import com.kirtanya.reel.ui.theme.Tokens
 
 /** Settings → Home screen: the hero, poster look, and which rows show in what order. */
 internal fun homeLayoutSummary(isTv: Boolean): String = listOfNotNull(
     if (isTv) null else "Hero: ${HomeLayout.hero.label}",
-    HomeLayout.posterStyle.label.lowercase() + " rows",
+    if (isTv) "${HomeLayout.tvCardShape.label.lowercase()} · ${HomeLayout.tvCardSize.label.lowercase()} cards"
+    else HomeLayout.posterStyle.label.lowercase() + " rows",
     HomeLayout.hidden.size.takeIf { it > 0 }?.let { "$it hidden" },
     if (isTv && HomeLayout.tvStart != TvStart.Home) "opens on ${HomeLayout.tvStart.label}" else null,
 ).joinToString(" · ")
@@ -46,10 +49,18 @@ internal fun LazyListScope.homeLayoutItems(isTv: Boolean) {
         }
     }
     item(key = "look") {
-        Section("Rows") {
-            Text("Look", style = Tokens.Type.label, color = Tokens.Colors.text)
-            Choices(PosterStyle.entries, HomeLayout.posterStyle, { it.label }, HomeLayout::choosePosterStyle)
-            if (!isTv) {
+        if (isTv) {
+            // The screen behind the panel redraws as you choose.
+            Section("Cards", note = "Landscape cards show backdrops, portrait ones posters.") {
+                Text("Shape", style = Tokens.Type.label, color = Tokens.Colors.text)
+                Choices(TvCardShape.entries, HomeLayout.tvCardShape, { it.label }, HomeLayout::chooseTvCardShape)
+                Text("Size", style = Tokens.Type.label, color = Tokens.Colors.text)
+                Choices(TvCardSize.entries, HomeLayout.tvCardSize, { it.label }, HomeLayout::chooseTvCardSize)
+            }
+        } else {
+            Section("Rows") {
+                Text("Look", style = Tokens.Type.label, color = Tokens.Colors.text)
+                Choices(PosterStyle.entries, HomeLayout.posterStyle, { it.label }, HomeLayout::choosePosterStyle)
                 Text("Size", style = Tokens.Type.label, color = Tokens.Colors.text)
                 Choices(Density.entries, HomeLayout.density, { "${it.label} · ${it.across} across" }, HomeLayout::chooseDensity)
             }

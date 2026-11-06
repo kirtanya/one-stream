@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,12 +18,28 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.focus.onFocusChanged
+import com.kirtanya.reel.ui.settings.TvSettingsPanel
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +55,6 @@ import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.nav.Navigator
 import com.kirtanya.reel.ui.nav.Tab
 import com.kirtanya.reel.ui.nav.rememberNavigator
-import com.kirtanya.reel.ui.settings.SettingsScreen
 import com.kirtanya.reel.ui.sources.SourcesScreen
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
@@ -51,10 +67,16 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import com.kirtanya.reel.ui.theme.Tokens
 
-/** Height reserved at the top of every TV tab for the tab bar (it sits inside the overscan-safe area). */
-val TvTopBarHeight = Tokens.Space.tvSafeV + Tokens.Size.button + Tokens.Space.s
+/** The left rail's width: an icon button with room for the selected marker on its left and breathing space on its right. */
+val TvRailWidth = 88.dp
 
-/** TV root: remote-first. A glass tab bar across the top; title, sources and collections full screen. */
+/**
+ * Left inset for tab pages that pad their own content by [Tokens.Space.tvSafeH] (Search, Downloads): their first
+ * item then lands at the same x as Home's first card (the rail's width + [TvHomeSide]).
+ */
+internal val TvPageInset = TvRailWidth + TvHomeSide - Tokens.Space.tvSafeH
+
+/** TV root: remote-first. A slim icon rail on the left; title, sources and collections full screen; Settings as a side panel. */
 @Composable
 fun TvApp(
     incomingMagnet: String?,
@@ -74,6 +96,33 @@ fun TvApp(
     }
     LaunchedEffect(openTab) {
         openTab?.let { nav.select(it); onTabHandled() }
+    }
+    // Settings is a panel over the current screen, not a page: whatever selects the Settings tab (the rail, an
+    // intent, a render) opens the panel and leaves the tab it was on in place.
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var tabBehind by remember { mutableStateOf(Tab.Home) }
+    LaunchedEffect(nav.tab) {
+        if (nav.tab == Tab.Settings) {
+            settingsOpen = true
+            nav.tab = tabBehind
+        } else {
+            tabBehind = nav.tab
+        }
+    }
+    val settingsFocus = remember { FocusRequester() }
+    val contentFocus = remember { FocusRequester() }
+    // Closing the panel: the remote goes back to the rail's Settings icon (its own node left with the panel).
+    var wasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(settingsOpen) {
+        if (settingsOpen) {
+            wasOpen = true
+        } else if (wasOpen) {
+            wasOpen = false
+            repeat(10) {
+                withFrameNanos { }
+                if (runCatching { settingsFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+            }
+        }
     }
     LaunchedEffect(openSearch) {
         openSearch?.let { nav.openSearch(it); onSearchHandled() }
@@ -95,7 +144,8 @@ fun TvApp(
     // False until the first frame is composed: the screen the app opens on appears at once, later screens fade in.
     val appeared = remember { booleanArrayOf(false) }
     val activity = LocalContext.current as? Activity
-    BackHandler { if (!nav.back()) activity?.finish() }
+    // While the settings panel is open it owns Back (a sub-page, then the panel).
+    BackHandler(enabled = !settingsOpen) { if (!nav.back()) activity?.finish() }
     val openTitle: (com.kirtanya.reel.core.tmdb.TitleSummary) -> Unit = { nav.open(Dest.Title(it.ref)) }
 
     // Remote only: no 48 dp touch padding around controls (it would only push layouts apart).
@@ -112,7 +162,7 @@ fun TvApp(
         // Screen to screen: the old one goes at once, the new one fades in over [TvMotion.pageEnterMs]. A plain `when`
         // keyed on the screen (not AnimatedContent): no second screen composed during the fade, no transition scope; each
         // screen still saves its state (SaveableStateProvider) when it leaves, and gets it back on Back.
-        val screen = nav.top ?: nav.tab
+        val screen = nav.top ?: if (nav.tab == Tab.Settings) tabBehind else nav.tab
         androidx.compose.runtime.key(screen) {
         PageEnter(animate = appeared[0]) {
             when (screen) {
@@ -129,19 +179,37 @@ fun TvApp(
                     onOpenSources = { nav.replace(screen, Dest.Sources(screen.request.ref, screen.request.season, screen.request.episode)) },
                 )
                 is Tab -> saveable.SaveableStateProvider(if (screen == Tab.Search) nav.searchStateKey else screen.name) {
-                    when (screen) {
-                        Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = open)
-                        Tab.Search -> TvSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery)
-                        Tab.Downloads -> Box(Modifier.padding(top = TvTopBarHeight)) { DownloadsScreen(isTv = true, onAdd = {}, onOpenDest = open) }
-                        Tab.Settings -> Box(Modifier.padding(top = TvTopBarHeight)) { SettingsScreen(isTv = true) }
+                    // ► from the rail comes back to the card you left (focusRestorer).
+                    // While the settings panel is open the screen behind is only to look at: the remote is held in the
+                    // panel (its focus trap), and semantics say so (a modal's background is disabled).
+                    Box(
+                        Modifier.fillMaxSize()
+                            .then(if (settingsOpen) Modifier.semantics { disabled() } else Modifier)
+                            .focusRequester(contentFocus).focusRestorer(),
+                    ) {
+                        when (screen) {
+                            Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = open, onShowDownloads = { nav.select(Tab.Downloads) })
+                            Tab.Search -> Box(Modifier.padding(start = TvPageInset)) { TvSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery) }
+                            Tab.Downloads -> Box(Modifier.padding(start = TvPageInset, top = Tokens.Space.tvSafeV)) { DownloadsScreen(isTv = true, onAdd = {}, onOpenDest = open) }
+                            // Never shown: selecting it opens the panel (above) and the screen behind stays.
+                            Tab.Settings -> Unit
+                        }
                     }
                 }
             }
         }
         }
         SideEffect { appeared[0] = true }
-        // The tab bar stays put while tabs change under it.
-        if (nav.top == null) TvTopBar(nav)
+        // The rail stays put while tabs change under it.
+        if (nav.top == null) {
+            TvRail(
+                selected = if (settingsOpen) Tab.Settings else nav.tab,
+                onSelect = { tab -> if (tab == Tab.Settings) settingsOpen = true else { settingsOpen = false; nav.select(tab) } },
+                settingsFocus = settingsFocus, contentFocus = contentFocus,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
+        }
+        if (settingsOpen) TvSettingsPanel(onClose = { settingsOpen = false }, Modifier.align(Alignment.CenterEnd))
         com.kirtanya.reel.ui.common.UndoSnackbarHost(
             undo, isTv = true,
             Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.tvSafeH, vertical = Tokens.Space.tvSafeV),
@@ -156,24 +224,70 @@ fun TvApp(
 }
 
 /**
- * The TV's top bar, like Netflix's TV app: plain text tabs from the left edge, the selected one white
- * and underlined, the rest grey. No pill behind them and no logo: the bar is only for getting around.
+ * The TV's left rail: four icons (Search, Home, Downloads, Settings), vertically centred, no labels. Selected = white
+ * icon + a small marker on its left, the rest grey; focus = a ring and a white icon. It's one focus group: ◄ from a
+ * screen's first item enters on the selected icon, ► leaves to the screen ([contentFocus], which remembers where you
+ * were), ▲ / ▼ past the ends stay put. Nothing animates (the ring fade is the shared focus fade).
  */
 @Composable
-internal fun TvTopBar(nav: Navigator) {
-    Row(
-        Modifier.fillMaxWidth().height(TvTopBarHeight).padding(horizontal = Tokens.Space.tvSafeH).padding(top = Tokens.Space.tvSafeV, bottom = Tokens.Space.s),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs),
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+internal fun TvRail(
+    selected: Tab,
+    onSelect: (Tab) -> Unit,
+    modifier: Modifier = Modifier,
+    settingsFocus: FocusRequester = remember { FocusRequester() },
+    contentFocus: FocusRequester? = null,
+) {
+    val items = remember { listOf(Tab.Search to Icons.Rounded.Search, Tab.Home to Icons.Rounded.Home, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings) }
+    val requesters = remember { items.associate { (tab, _) -> tab to (if (tab == Tab.Settings) settingsFocus else FocusRequester()) } }
+    Column(
+        modifier
+            .width(TvRailWidth)
+            .focusProperties {
+                enter = { requesters.getValue(selected) }
+                // Only the four arrows are held in or sent on; a programmatic focus change (Exit) must pass, or a page that
+                // lost focus could never hand it back.
+                exit = { dir ->
+                    when (dir) {
+                        FocusDirection.Right -> contentFocus ?: FocusRequester.Cancel
+                        FocusDirection.Left, FocusDirection.Up, FocusDirection.Down -> FocusRequester.Cancel
+                        else -> FocusRequester.Default
+                    }
+                }
+            }
+            .focusGroup()
+            .padding(start = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
     ) {
-        TvTab("Search", Icons.Rounded.Search, selected = nav.tab == Tab.Search) { nav.select(Tab.Search) }
-        listOf(Tab.Home, Tab.Downloads, Tab.Settings).forEach { tab -> TvTab(tab.label, null, selected = nav.tab == tab) { nav.select(tab) } }
+        items.forEach { (tab, icon) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // The selected marker: 3 × 16 dp, drawn only for the selected icon.
+                Box(Modifier.width(3.dp).height(16.dp).then(if (tab == selected) Modifier.clip(CircleShape).background(Tokens.Colors.text) else Modifier))
+                Spacer(Modifier.width(9.dp))
+                RailIcon(icon, tab.label, selected = tab == selected, Modifier.focusRequester(requesters.getValue(tab))) { onSelect(tab) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    // Read here only: four small composables redraw on a focus move, nothing else.
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier
+            .size(Tokens.Size.iconButton)
+            .onFocusChanged { focused = it.isFocused }
+            .focusCard(shape = CircleShape, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, label, tint = if (selected || focused) Tokens.Colors.text else Tokens.Colors.textSecondary, modifier = Modifier.size(22.dp))
     }
 }
 
 /**
- * A text tab (top bar, a title's seasons): text only, an optional icon; selected = white with a
- * short underline, the rest grey; focus = the ring.
+ * A text tab (a title's seasons, Search's All / Films / Shows, "See all"): text only, an optional icon; selected =
+ * white with a short underline, the rest grey; focus = the ring.
  */
 @Composable
 internal fun TvTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {

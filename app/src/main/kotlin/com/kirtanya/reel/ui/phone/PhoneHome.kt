@@ -60,7 +60,6 @@ import com.kirtanya.reel.ui.common.Load
 import com.kirtanya.reel.ui.common.MetaLine
 import com.kirtanya.reel.ui.common.PosterRow
 import com.kirtanya.reel.ui.common.ReelButton
-import com.kirtanya.reel.ui.common.ServicesRow
 import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.rememberCatalog
 import com.kirtanya.reel.ui.common.rememberContinueWatching
@@ -145,10 +144,7 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd:
                     if (newEpisodes.isNotEmpty()) add(RowIds.NEW_EPISODES)
                     if (myList.isNotEmpty()) add(RowIds.MY_LIST)
                     if (because != null) add(RowIds.BECAUSE)
-                    rows.forEachIndexed { i, r ->
-                        add(RowIds.tmdb(r.title))
-                        if (i == 0) add(RowIds.SERVICES)
-                    }
+                    rows.forEach { r -> add(RowIds.tmdb(r.title)) }
                 }
                 HomeLayout.arrange(available).forEach { id ->
                     item(key = id) {
@@ -157,7 +153,6 @@ fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd:
                             RowIds.MY_LIST -> TitleRow("My list", myList, gutter, onOpen, isTv = false, onSeeAll = { onOpenDest(Dest.Collection("My list", items = myList)) })
                             RowIds.BECAUSE -> because?.let { (title, items) -> TitleRow(title, items.withoutHidden(hidden), gutter, onOpen, isTv = false, onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) }) }
                             RowIds.NEW_EPISODES -> com.kirtanya.reel.ui.home.NewEpisodesRow(newEpisodes, gutter, onOpen, isTv = false)
-                            RowIds.SERVICES -> ServicesRow(gutter, 52.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
                             else -> rows.firstOrNull { RowIds.tmdb(it.title) == id }?.let { row ->
                                 TitleRow(row.title, row.items, gutter, onOpen, isTv = false, onSeeAll = { onOpenDest(Dest.Collection(row.title, items = row.items)) })
                             }

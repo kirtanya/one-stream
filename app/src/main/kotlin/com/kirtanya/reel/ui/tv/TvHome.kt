@@ -28,7 +28,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.foundation.layout.Row as RowLayout
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,7 +67,6 @@ import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.PosterRow
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RequestFocusOnce
-import com.kirtanya.reel.ui.common.ServicesRow
 import com.kirtanya.reel.ui.common.TitleLogo
 import com.kirtanya.reel.ui.common.continueDetail
 import com.kirtanya.reel.ui.common.rememberCatalog
@@ -76,6 +78,7 @@ import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.home.HomeLayout
 import com.kirtanya.reel.ui.home.RowIds
 import com.kirtanya.reel.ui.home.TitleRow
+import com.kirtanya.reel.ui.home.TvCards
 import com.kirtanya.reel.ui.theme.Tokens
 import kotlinx.coroutines.delay
 
@@ -104,12 +107,15 @@ private fun ContinueItem.info(): HomeInfo {
     )
 }
 
+/** Side padding of Home's rows and info block: the first card sits [TvHomeSide] right of the rail ([TvRailWidth]). */
+internal val TvHomeSide = Tokens.Space.l
+
 /**
  * Cinematic home: the focused card's backdrop fills the screen, its logo and details sit top-left,
  * Continue watching, My list and rows of posters below.
  */
 @Composable
-fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
+fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onShowDownloads: () -> Unit = {}) {
     val catalog = rememberCatalog()
     val (load, retry) = rememberLoad(Unit) { catalog.home() }
     val continueItems = rememberContinueWatching()
@@ -120,24 +126,34 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
     val followed = (myList.map { it.ref } + com.kirtanya.reel.ui.home.continueTitles(continueItems).map { it.ref }).filter { it.type == com.kirtanya.reel.core.tmdb.MediaType.TV }
     val newEpisodes = com.kirtanya.reel.ui.home.rememberNewEpisodes(followed)
     when (load) {
-        Load.Loading -> LoadingBox(Modifier.padding(top = TvTopBarHeight))
-        is Load.Failed -> TvHomeProblem("Couldn't load today's titles", load.message) { retry() }
+        Load.Loading -> LoadingBox(Modifier.padding(start = TvRailWidth))
+        is Load.Failed -> TvHomeProblem("Couldn't load today's titles", load.message, { retry() }, onShowDownloads)
         is Load.Ready -> {
             // TMDB answered but with nothing to show (e.g. a regional hiccup): say so instead of crashing.
             val rows = load.value.map { it.copy(items = it.items.withoutHidden(hidden)) }.filter { it.items.isNotEmpty() }
-            if (rows.isEmpty()) TvHomeProblem("Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.") { retry() }
+            if (rows.isEmpty()) TvHomeProblem("Nothing to show right now", "Couldn't get today's titles. Check your connection and try again.", { retry() }, onShowDownloads)
             else TvHomeContent(rows.map { it.title to it.items }, continueItems, myList, because?.let { it.first to it.second.withoutHidden(hidden) }?.takeIf { it.second.isNotEmpty() }, newEpisodes, onOpen, onOpenDest)
         }
     }
 }
 
+/** Home couldn't load (offline, or TMDB said nothing): Retry, or the Downloads tab, which works without a connection. */
 @Composable
-private fun TvHomeProblem(title: String, body: String, onRetry: () -> Unit) {
+private fun TvHomeProblem(title: String, body: String, onRetry: () -> Unit, onShowDownloads: () -> Unit) {
+    val offline = com.kirtanya.reel.ui.common.rememberOffline()
     val focus = remember { FocusRequester() }
     RequestFocusOnce(focus)
-    Box(Modifier.fillMaxSize().padding(top = TvTopBarHeight), contentAlignment = Alignment.Center) {
-        EmptyState(Icons.Rounded.Refresh, title, body, Modifier.fillMaxWidth(0.6f)) {
-            ReelButton("Try again", onRetry, Modifier.focusRequester(focus), kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
+    Box(Modifier.fillMaxSize().padding(start = TvRailWidth), contentAlignment = Alignment.Center) {
+        EmptyState(
+            if (offline) Icons.Rounded.CloudOff else Icons.Rounded.Refresh,
+            if (offline) "You're offline" else title,
+            if (offline) "Downloads still play. Home comes back when you're connected." else body,
+            Modifier.fillMaxWidth(0.6f),
+        ) {
+            RowLayout(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                ReelButton("Retry", onRetry, Modifier.focusRequester(focus), kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
+                ReelButton("View downloads", onShowDownloads, kind = ButtonKind.Ghost, icon = Icons.Rounded.Download)
+            }
         }
     }
 }
@@ -203,8 +219,9 @@ private fun TvHomeContent(
         // The focused title fills the room: its backdrop over pure black, black behind the text.
         HomeBackdrop(settledState)
 
-        Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.height(TvTopBarHeight))
+        // Right of the rail; the backdrop above runs under it.
+        Column(Modifier.fillMaxSize().padding(start = TvRailWidth)) {
+            Spacer(Modifier.height(Tokens.Space.tvSafeV))
             HomeInfoBlock(infoState)
             // Netflix-style: the focused row glides to a fixed line just under the info block (columnSpec) and its
             // cards slide under a fixed focus (each row's own spec).
@@ -221,35 +238,31 @@ private fun TvHomeContent(
                         if (newEpisodes.isNotEmpty()) add(RowIds.NEW_EPISODES)
                         if (myList.isNotEmpty()) add(RowIds.MY_LIST)
                         if (because != null) add(RowIds.BECAUSE)
-                        rows.forEachIndexed { i, r ->
-                            add(RowIds.tmdb(r.first))
-                            if (i == 0) add(RowIds.SERVICES)
-                        }
+                        rows.forEach { r -> add(RowIds.tmdb(r.first)) }
                     }
                     val arranged = HomeLayout.arrange(available)
-                    // The remote starts on the first row that has cards (services are avatars, not a start point).
-                    val firstRow = arranged.firstOrNull { it != RowIds.SERVICES }
+                    // The remote starts on the first row.
+                    val firstRow = arranged.firstOrNull()
                     val firstTmdb = arranged.firstOrNull { it.startsWith("tmdb:") }
                     arranged.forEach { id ->
-                        item(key = id, contentType = when (id) { RowIds.CONTINUE -> "continue"; RowIds.SERVICES -> "services"; else -> "titles" }) {
+                        item(key = id, contentType = if (id == RowIds.CONTINUE) "continue" else "titles") {
                             val first = if (id == firstRow) firstCard else null
                             when (id) {
                                 RowIds.CONTINUE -> ContinueRow(
-                                    continueItems, cardWidth = Tokens.Cinema.wideCardTv, sidePadding = Tokens.Space.tvSafeH, onOpenDest = onOpenDest,
+                                    continueItems, cardWidth = TvCards.stillWidth, sidePadding = TvHomeSide, onOpenDest = onOpenDest,
                                     onFocus = { focused = it.info() }, firstFocus = first, listState = continueState,
                                 )
                                 RowIds.MY_LIST -> TitleRow(
-                                    "My list", myList, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first,
+                                    "My list", myList, TvHomeSide, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first,
                                     onSeeAll = { onOpenDest(Dest.Collection("My list", items = myList)) },
                                 )
                                 RowIds.BECAUSE -> because?.let { (title, items) ->
-                                    TitleRow(title, items, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first, onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) })
+                                    TitleRow(title, items, TvHomeSide, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first, onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) })
                                 }
-                                RowIds.NEW_EPISODES -> com.kirtanya.reel.ui.home.NewEpisodesRow(newEpisodes, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first)
-                                RowIds.SERVICES -> ServicesRow(Tokens.Space.tvSafeH, 60.dp) { p -> onOpenDest(Dest.Collection(p.name, provider = p)) }
+                                RowIds.NEW_EPISODES -> com.kirtanya.reel.ui.home.NewEpisodesRow(newEpisodes, TvHomeSide, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first)
                                 else -> rows.firstOrNull { RowIds.tmdb(it.first) == id }?.let { (title, items) ->
                                     TitleRow(
-                                        title, items, Tokens.Space.tvSafeH, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first,
+                                        title, items, TvHomeSide, onOpen, isTv = true, onFocus = { focused = it.info() }, firstFocus = first,
                                         onSeeAll = { onOpenDest(Dest.Collection(title, items = items)) },
                                         listState = if (id == firstTmdb) firstRowState else rememberLazyListState(),
                                     )
@@ -272,7 +285,7 @@ private fun HomeBackdrop(settled: State<HomeInfo>) {
     val path = settled.value.backdropPath
     Box(Modifier.fillMaxSize()) {
         HeroPicture(TmdbImages.backdrop(path), Modifier.fillMaxSize())
-        HeroScrims(top = true, start = true, topHeight = TvTopBarHeight + Tokens.Space.xxxl)
+        HeroScrims(top = true, start = true, topHeight = Tokens.Space.tvSafeV + Tokens.Space.xxxl)
     }
 }
 
@@ -311,7 +324,7 @@ private fun HomeInfoBlock(infoState: State<HomeInfo>) {
         Modifier
             .fillMaxWidth(0.5f)
             .height(Tokens.Cinema.tvInfoHeight)
-            .padding(horizontal = Tokens.Space.tvSafeH)
+            .padding(horizontal = TvHomeSide)
             .graphicsLayer {
                 alpha = shown.value
                 translationY = (1f - shown.value) * lift
