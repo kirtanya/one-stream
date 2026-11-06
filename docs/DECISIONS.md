@@ -5,6 +5,14 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-06 · TV search gets its own keyboard (0.16.1)**
+Decision (user): TV search uses an in-app D-pad keyboard laid out like Netflix / YouTube / Prime (keys left, results
+right), ported from One Launcher's TV keyboard (`ui/tv/TvKeyboard.kt`, logic in `core/browse/SearchKeys.kt`), so the
+system keyboard never opens. Same release: the TV title page always settles back to the top while its top section has
+focus (it could stick part-way on the Sony TV), and "All sources" gets a down arrow. Checked on the Sony TV.
+
+---
+
 **2026-11-06 · TV clean redesign (0.16.0): side rail, settings panel, 50/50 title page, source panel**
 Decision (user): the TV app was too busy ("everything is highlighted and nothing is in focus"). Top bar → icon-only
 left rail; Settings → right-side panel over the screen (changes show live); "On your services" removed (TV + phone);
