@@ -5,6 +5,16 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-06 · TV clean redesign (0.16.0): side rail, settings panel, 50/50 title page, source panel**
+Decision (user): the TV app was too busy ("everything is highlighted and nothing is in focus"). Top bar → icon-only
+left rail; Settings → right-side panel over the screen (changes show live); "On your services" removed (TV + phone);
+home card shape × size setting (default Landscape Small); offline state gets "View downloads"; the title page is 50/50
+(artwork right, content left) with a film's sources on the page and a series' episodes opening a source panel, so the
+Sources page is no longer a step on TV. Spec: `docs/TV_CLEAN_REDESIGN.md`. Built by two agents (shell 8668021, title
+b4dba11), merged a90504c. Cut from the TV title page: ratings/reviews rows, extras, browse by genre, per-episode story.
+
+---
+
 **2026-11-06 · Samsung phones use the posix disk backend, not mmap (0.15.3)**
 Decision: `DiskBackend.forDevice` picks POSIX on Samsung even on 64-bit. Why: on the S24, every launch resumed the two
 downloads in the app's external folder; ~3 s later Samsung's MediaProvider FUSE daemon aborted
