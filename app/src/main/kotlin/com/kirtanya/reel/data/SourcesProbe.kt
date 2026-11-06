@@ -96,7 +96,7 @@ class SourcesProbe : BroadcastReceiver() {
             return
         }
         if (intent.hasExtra("sync")) {
-            syncProbe(app, intent, goAsync())
+            syncProbe(context, app, intent, goAsync())
             return
         }
         // Rebuild a lost Continue watching entry: --es restoreHash <infohash prefix> --es type movie|tv --ei tmdb N
@@ -183,9 +183,10 @@ class SourcesProbe : BroadcastReceiver() {
      * `--es sync info` (TV: code, port, paired phones; any device: its sources), `--es sync open` (TV: open pairing),
      * `--es sync pair --es code 1234` (phone: find the first TV, pair, push),
      * `--es sync push` (phone: push to paired TVs now),
+     * `--es sync export` / `--es sync import` (all sources → / ← `files/$SOURCES_FILE` in the app's external dir),
      * `--es sync add --es link <url>` / `--es sync remove --es link <url>` (add / remove an addon or repo by link).
      */
-    private fun syncProbe(app: ReelApp, intent: Intent, pending: PendingResult) {
+    private fun syncProbe(context: Context, app: ReelApp, intent: Intent, pending: PendingResult) {
         app.appScope.launch {
             try {
                 withTimeout(60_000) {
@@ -203,6 +204,21 @@ class SourcesProbe : BroadcastReceiver() {
                         }
                         "open" -> {
                             app.tvSync.openPairing() // TV: open the pairing window (as the Phone & TV card does)
+                        }
+                        // Copy every source to another phone (no TV in between): export here, `adb pull` / `adb push` the
+                        // file, import there. The file holds addon links with their keys, so import deletes it.
+                        "export" -> {
+                            val f = java.io.File(context.getExternalFilesDir(null), SOURCES_FILE)
+                            f.writeText(kotlinx.serialization.json.Json.encodeToString(com.kirtanya.reel.core.sync.SourcesBundle.serializer(), app.sources.exportBundle("adb")))
+                            Log.i(TAG, "sync export: ${f.path}")
+                        }
+                        "import" -> {
+                            val f = java.io.File(context.getExternalFilesDir(null), SOURCES_FILE)
+                            val bundle = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                                .decodeFromString(com.kirtanya.reel.core.sync.SourcesBundle.serializer(), f.readText())
+                            f.delete()
+                            val r = app.sources.applyBundle(bundle)
+                            Log.i(TAG, "sync import: ${r.summary} failed=${r.failed}")
                         }
                         "add" -> Log.i(TAG, "sync add: ${app.sources.addFromLink(intent.getStringExtra("link").orEmpty())}")
                         "remove" -> {
@@ -410,6 +426,7 @@ class SourcesProbe : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "ReelProbe"
+        private const val SOURCES_FILE = "sources.json"
         /** 10 s of Big Buck Bunny (CC BY, Blender Foundation), 1 MB, HTTPS: stands in for a debrid "downloading" clip. */
         private const val PLACEHOLDER_CLIP = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
         /** The whole film (9:56) on archive.org: the cached source the placeholder test falls back to. */
