@@ -49,8 +49,10 @@ import com.kirtanya.reel.core.library.SourceMarks
 import com.kirtanya.reel.core.library.DownloadOrigin
 import com.kirtanya.reel.core.library.SourceSwap
 import com.kirtanya.reel.core.library.SwapKind
+import com.kirtanya.reel.core.player.TitleSources
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.sources.FilterChip
+import com.kirtanya.reel.core.sources.QuickStart
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceView
 import com.kirtanya.reel.core.sources.SourceBrowser
@@ -58,6 +60,7 @@ import com.kirtanya.reel.core.sources.SourceFilters
 import com.kirtanya.reel.core.sources.SourceRanker
 import com.kirtanya.reel.core.sources.SourceSearch
 import com.kirtanya.reel.core.sources.SourceSort
+import com.kirtanya.reel.core.sources.StartSpeed
 import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TmdbImages
@@ -121,7 +124,8 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
-    val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, isTv)
+    val languages = remember(d) { wantedLanguages(d) }
+    val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, isTv, languages)
     val (episodes, _) = rememberSeason(d.summary.ref.id, season)
     val ep = (episodes as? Load.Ready)?.value?.firstOrNull { it.number == episode }
     val epNumber = if (season != null && episode != null) EpisodeNumber(season, episode) else null
@@ -169,14 +173,28 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val ranked = remember(search, marks, notReadyTick) {
         com.kirtanya.reel.core.player.NotReadySources.demote(SourceMarks.order(search?.sources.orEmpty(), marks, req), com.kirtanya.reel.player.NotReadyMemory::isNotReady)
     }
-    // Playing: recommend one this device can stream; downloading: size doesn't matter. The user's favourite wins if it came back.
-    val best = remember(ranked, action, marks) {
-        val canUse = { s: Source -> (action != SourceAction.PLAY || SourceRanker.fits(s, prefs)) && !com.kirtanya.reel.player.NotReadyMemory.isNotReady(s.key) }
-        SourceMarks.favourite(ranked, marks, req)?.takeIf(canUse) ?: SourceBrowser.recommended(search?.sources.orEmpty(), canUse)
+    // Playing: recommend one this device can stream; downloading: size doesn't matter.
+    val canUse = { s: Source -> (action != SourceAction.PLAY || SourceRanker.fits(s, prefs)) && !com.kirtanya.reel.player.NotReadyMemory.isNotReady(s.key) }
+    // Quick start: probe the direct links at the top as the list settles; recommend once the search is done (no reshuffling per answer).
+    val runtimeMin = ep?.runtimeMin ?: d.runtimeMin
+    val candidates = remember(ranked, action) { TitleSources.quickCandidates(ranked, canUse) }
+    val probes by rememberStartProbes(candidates)
+    val searchDone = search?.done == true
+    val quick = remember(candidates, probes, searchDone) {
+        if (searchDone) QuickStart.recommend(candidates, probes, runtimeMin, languages) else emptyList()
+    }
+    fun speedOf(s: Source) = QuickStart.speed(s, probes[QuickStart.key(s)], runtimeMin)
+    // The user's favourite wins if it came back; else the best Quick start source; else the ranker's pick.
+    val best = remember(ranked, action, marks, quick) {
+        SourceMarks.favourite(ranked, marks, req)?.takeIf(canUse) ?: quick.firstOrNull() ?: SourceBrowser.recommended(search?.sources.orEmpty(), canUse)
     }
     val bestView = remember(best, marks, last, downloads, notReadyTick) { best?.let(::viewOf) }
+    // The rest of the Quick start group sits under the pick; filters, chips and counts cover everything else.
+    val quickRest = remember(quick, best) { quick.filter { it.key != best?.key } }
+    val quickKeys = remember(quickRest) { quickRest.mapTo(HashSet()) { it.key } }
+    val quickViews = remember(quickRest, marks, last, downloads) { quickRest.map(::viewOf) }
     // Trailers, teasers and other extras get their own section at the end; filters and counts cover the real thing only.
-    val rows = remember(ranked, best, marks, last, downloads) { ranked.filter { it.key != best?.key && !it.isExtra }.map(::viewOf) }
+    val rows = remember(ranked, best, quickKeys, marks, last, downloads) { ranked.filter { it.key != best?.key && it.key !in quickKeys && !it.isExtra }.map(::viewOf) }
     val extras = remember(ranked, marks, last, downloads) { ranked.filter { it.isExtra }.map(::viewOf) }
     val facets = remember(rows) { SourceBrowser.facets(rows) }
     LaunchedEffect(facets) { filters = SourceBrowser.prune(filters, facets) }
@@ -240,12 +258,27 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                         bestView != null -> RecommendedCard(
                             bestView, SourceRanker.fits(bestView.source, prefs), action, isTv, mainFocus,
                             onClick = { choose(bestView.source) }, modifier = Modifier.widthIn(max = maxWidth),
-                            onMore = { options = bestView },
+                            onMore = { options = bestView }, speed = speedOf(bestView.source),
                         )
                         search?.done == true -> NothingFound(search, rescan, Modifier.widthIn(max = maxWidth))
                         // Providers are still answering and nothing has come back: the pick's shape, not a hole.
                         !isTv -> PickSkeleton()
                     }
+                }
+            }
+            if (quickViews.isNotEmpty()) {
+                item(key = "quick-title") {
+                    Text(
+                        "Quick start · ${quickViews.size}", style = Tokens.Type.label, color = Tokens.Colors.textSecondary,
+                        modifier = Modifier.padding(horizontal = side),
+                    )
+                }
+                items(quickViews, key = { "quick:" + it.source.key }) { v ->
+                    SourceRow(
+                        v, fits = SourceRanker.fits(v.source, prefs), action = action, onClick = { choose(v.source) },
+                        modifier = Modifier.padding(horizontal = side).widthIn(max = maxWidth),
+                        onLongClick = { options = v }, speed = speedOf(v.source),
+                    )
                 }
             }
             if (rows.isNotEmpty()) {
@@ -265,7 +298,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                 SourceRow(
                     v, fits = SourceRanker.fits(v.source, prefs), action = action, onClick = { choose(v.source) },
                     modifier = Modifier.padding(horizontal = side).widthIn(max = maxWidth),
-                    onLongClick = { options = v },
+                    onLongClick = { options = v }, speed = speedOf(v.source),
                 )
             }
             if (rows.isNotEmpty() && shown.isEmpty()) {

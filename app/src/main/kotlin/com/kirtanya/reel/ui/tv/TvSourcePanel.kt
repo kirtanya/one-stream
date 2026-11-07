@@ -27,6 +27,8 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,7 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +53,7 @@ import com.kirtanya.reel.core.player.TitleSourceRow
 import com.kirtanya.reel.core.player.TitleSources
 import com.kirtanya.reel.core.playback.ContinueWatching
 import com.kirtanya.reel.core.playback.EpisodeNumber
+import com.kirtanya.reel.core.sources.QuickStart
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceKind
 import com.kirtanya.reel.core.sources.SourceRanker
@@ -58,9 +63,12 @@ import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.common.focusCard
+import com.kirtanya.reel.ui.sources.StartMark
 import com.kirtanya.reel.ui.sources.rankPrefs
 import com.kirtanya.reel.ui.sources.rememberSourceSearch
+import com.kirtanya.reel.ui.sources.rememberStartProbes
 import com.kirtanya.reel.ui.sources.requestFor
+import com.kirtanya.reel.ui.sources.wantedLanguages
 import com.kirtanya.reel.ui.theme.Tokens
 
 /**
@@ -81,14 +89,19 @@ class TvSourcePick(
  * Searches for [season] × [episode] (null for a film) and ranks the answers the way the Sources page does: the user's
  * stars first, debrid "still downloading" ones last, services after everything that plays here. Playing hands over
  * exactly like the Sources page ([com.kirtanya.reel.ui.sources.play]): the player resumes from history.
+ *
+ * Quick start: once the search is done, up to five sources that should start fast (a direct link probed over HTTP,
+ * or a healthy torrent) in the title's language go first, marked; [episodeRuntimeMin] (else the title's) tells how
+ * fast a file has to arrive.
  */
 @Composable
-fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeName: String?, stillPath: String?): TvSourcePick {
+fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeName: String?, stillPath: String?, episodeRuntimeMin: Int? = null): TvSourcePick {
     val context = LocalContext.current
     val app = ReelApp.get(context)
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
-    val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, true)
+    val languages = remember(d) { wantedLanguages(d) }
+    val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, true, languages)
     // Renders pin the data, and a Mac sandbox has no free space to measure: no size cap there.
     val prefs = remember { if (fixed != null) com.kirtanya.reel.core.sources.RankPrefs() else rankPrefs(context, true) }
     val marks by app.sourceMarks.marks.collectAsState()
@@ -103,8 +116,20 @@ fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeNa
     val resume = remember(entries, req) {
         entries.firstOrNull { it.playback.key == req.key }?.takeIf { ContinueWatching.resumePositionMs(it) > 0 }?.let { TitleSources.resumeLabel(it.positionMs) }
     }
-    val page = remember(search, ordered, expanded, resume) {
-        TitleSources.page(search, ordered, expanded, fits = { SourceRanker.fits(it, prefs) }, resume = resume)
+    // Quick start: probe the direct links at the top as the list settles; recommend once the search is done, so the
+    // group doesn't reshuffle with every answer that arrives.
+    val runtimeMin = episodeRuntimeMin ?: d.runtimeMin
+    val candidates = remember(ordered, prefs) { TitleSources.quickCandidates(ordered) { SourceRanker.fits(it, prefs) } }
+    val probes by rememberStartProbes(candidates)
+    val searchDone = search?.done == true
+    val quick = remember(candidates, probes, searchDone) {
+        if (searchDone) QuickStart.recommend(candidates, probes, runtimeMin, languages) else emptyList()
+    }
+    val page = remember(search, ordered, expanded, resume, quick, probes) {
+        TitleSources.page(
+            search, ordered, expanded, fits = { SourceRanker.fits(it, prefs) }, resume = resume,
+            quick = quick, speed = { QuickStart.speed(it, probes[QuickStart.key(it)], runtimeMin) },
+        )
     }
 
     val epNumber = if (season != null && episode != null) EpisodeNumber(season, episode) else null
@@ -143,15 +168,33 @@ internal fun TvSourceRows(
     val extra = remember { FocusRequester() }
     if (page.rows.isNotEmpty()) RequestFocusOnce(first) else RequestFocusOnce(empty)
     if (pick.expanded) RequestFocusOnce(extra)
+    // The Quick start group arrives after the first rows (when the search is done) and pushes them down. Focus that
+    // was still on the old first row goes to the new first row; a user who has moved on (or is elsewhere on the page) keeps theirs.
+    val focused = remember { arrayOfNulls<String>(1) }
+    val firstBefore = remember { arrayOfNulls<String>(1) }
+    val hasQuick = page.quick > 0
+    LaunchedEffect(hasQuick) {
+        val before = firstBefore[0]
+        if (hasQuick && before != null && focused[0] == before) {
+            repeat(10) {
+                withFrameNanos { }
+                if (runCatching { first.requestFocus(FocusDirection.Enter) }.getOrDefault(false)) return@LaunchedEffect
+            }
+        }
+    }
+    firstBefore[0] = if (hasQuick) firstBefore[0] else page.rows.firstOrNull()?.key
     com.kirtanya.reel.ui.common.WithBringIntoView(com.kirtanya.reel.ui.common.MinimalBringIntoView) {
         LazyColumn(modifier, state = state, contentPadding = PaddingValues(vertical = Tokens.Space.xs), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
-            itemsIndexed(page.rows, key = { _, r -> r.key }, contentType = { _, _ -> "source" }) { i, r ->
-                val focus = when {
-                    i == 0 -> Modifier.focusRequester(first)
-                    pick.expanded && i == TitleSources.TOP -> Modifier.focusRequester(extra)
-                    else -> Modifier
-                }
-                TvSourceRow(r, focus, onClick = { onPick(r.source) }, onLongClick = { pick.download(r.source) })
+            // Quick start rows, a heading over each group when both exist; row 0 is still the first one on screen.
+            val quickRows = page.rows.take(page.quick)
+            val restRows = page.rows.drop(page.quick)
+            if (quickRows.isNotEmpty()) item(key = "quick-title", contentType = "heading") { SourceGroupHeading("Quick start") }
+            itemsIndexed(quickRows, key = { _, r -> r.key }, contentType = { _, _ -> "source" }) { i, r ->
+                SourceItem(r, i, page, pick, first, extra, focused, onPick)
+            }
+            if (quickRows.isNotEmpty() && restRows.isNotEmpty()) item(key = "rest-title", contentType = "heading") { SourceGroupHeading("Other sources") }
+            itemsIndexed(restRows, key = { _, r -> r.key }, contentType = { _, _ -> "source" }) { i, r ->
+                SourceItem(r, i + quickRows.size, page, pick, first, extra, focused, onPick)
             }
             if (page.more > 0) item(key = "all", contentType = "all") { TvAllSourcesRow(page.more, pick.expand) }
             val empty0 = page.empty
@@ -184,6 +227,32 @@ internal fun TvSourceRows(
     }
 }
 
+@Composable
+private fun SourceGroupHeading(text: String) {
+    Text(
+        text, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1,
+        modifier = Modifier.padding(horizontal = Tokens.Space.m).padding(top = Tokens.Space.xs),
+    )
+}
+
+/** Row [i] of the page (counting across both groups): the first takes the initial focus, the first one behind "All sources…" the focus after it. */
+@Composable
+private fun SourceItem(
+    r: TitleSourceRow, i: Int, page: TitleSourcePage, pick: TvSourcePick, first: FocusRequester, extra: FocusRequester,
+    focused: Array<String?>, onPick: (Source) -> Unit,
+) {
+    val focus = when {
+        i == 0 -> Modifier.focusRequester(first)
+        pick.expanded && i == page.firstExtra -> Modifier.focusRequester(extra)
+        else -> Modifier
+    }
+    val key = r.key
+    TvSourceRow(
+        r, focus.onFocusChanged { if (it.hasFocus) focused[0] = key else if (focused[0] == key) focused[0] = null },
+        onClick = { onPick(r.source) }, onLongClick = { pick.download(r.source) },
+    )
+}
+
 /** One source: "1080p · 4.2 GB · HDR" over "Torrentio · 142 seeders · Hindi, English"; "Resume 42:10" on the right when it applies. */
 @Composable
 private fun TvSourceRow(r: TitleSourceRow, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
@@ -196,7 +265,11 @@ private fun TvSourceRow(r: TitleSourceRow, modifier: Modifier, onClick: () -> Un
     ) {
         Column(Modifier.weight(1f)) {
             Text(r.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(r.detail, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // "Fast start" / "May buffer" leads the detail line: the detail is what gives way when the row is narrow.
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                StartMark(r.speed)
+                Text(r.detail, Modifier.weight(1f, fill = false), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             if (r.tooBig) Text("Too big for this device", style = Tokens.Type.caption, color = Tokens.Colors.warn, maxLines = 1)
         }
         r.resume?.let { resume ->
@@ -228,19 +301,35 @@ private fun TvAllSourcesRow(more: Int, onClick: () -> Unit) {
 /**
  * The sources of one episode as a panel over the title page (docs/TV_CLEAN_REDESIGN.md §5): ~40 % of the width on the right,
  * a solid surface. OK plays (or, with [download], downloads); hold OK downloads; Back closes. Focus can't leave it while it's
- * open ([focusProperties] onExit cancels every move), and the title page puts it back on the episode afterwards.
+ * open ([focusProperties] onExit cancels every move; focus that drops out is taken back), and the title page puts it
+ * back on the episode afterwards.
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun TvSourcePanel(d: TitleDetails, episode: Episode, download: Boolean, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
-    val pick = rememberTvSourcePick(d, episode.season, episode.number, episode.name, episode.stillPath)
+    val pick = rememberTvSourcePick(d, episode.season, episode.number, episode.name, episode.stillPath, episode.runtimeMin)
     val first = remember { FocusRequester() }
+    // Focus belongs inside while the panel is open. It drops out by itself when the content swaps under it: the
+    // focused "Close" under "Searching…" (or "Search again") goes away as the first sources arrive, and the next press
+    // would land on the title page behind. So for a moment after each swap (and on opening), a panel without focus
+    // takes it back; the group hands it to its first row or button.
+    val panel = remember { FocusRequester() }
+    var inside by remember { mutableStateOf(false) }
+    val swap = pick.page.rows.isEmpty() to (pick.page.empty != null)
+    LaunchedEffect(swap) {
+        repeat(30) {
+            withFrameNanos { }
+            if (!inside) runCatching { panel.requestFocus(FocusDirection.Enter) }
+        }
+    }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.scrim)) {
         Column(
             Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(PANEL_SHARE)
                 .background(Tokens.Colors.surface1)
                 .border(Tokens.Size.hairline, Tokens.Colors.hairline)
+                .focusRequester(panel)
+                .onFocusChanged { inside = it.hasFocus }
                 .focusProperties { onExit = { cancelFocusChange() } }
                 .focusGroup()
                 .padding(start = Tokens.Space.xl, end = Tokens.Space.m, top = Tokens.Space.tvSafeV, bottom = Tokens.Space.tvSafeV),

@@ -1,5 +1,6 @@
 package com.kirtanya.reel.ui.common
 
+import kotlinx.coroutines.async
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -111,6 +112,28 @@ fun PosterImdbBadge(ref: TitleRef, modifier: Modifier = Modifier) {
         rating?.let { ImdbPill(it, onPoster = true) }
     }
 }
+
+/**
+ * The IMDb ratings of a TV row or grid's titles, for the rating on each card: the cached ones at once, the rest fetched
+ * by the row or grid itself, a few at a time (one effect for all the cards, none per card: SMOOTH_UI_PLAN §2.5).
+ */
+@Composable
+fun rememberImdbRatings(items: List<com.kirtanya.reel.core.tmdb.TitleSummary>): androidx.compose.runtime.State<Map<TitleRef, Double>> {
+    val catalog = rememberCatalog()
+    val ratings = remember(items) { mutableStateOf(items.mapNotNull { i -> catalog.cachedImdb(i.ref)?.let { i.ref to it } }.toMap()) }
+    LaunchedEffect(items) {
+        items.filter { it.ref !in ratings.value }.chunked(IMDB_AT_ONCE).forEach { batch ->
+            val found = kotlinx.coroutines.coroutineScope {
+                batch.map { i -> async { runCatching { catalog.posterImdb(i.ref) }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it; null }?.let { i.ref to it } } }
+                    .mapNotNull { it.await() }
+            }
+            if (found.isNotEmpty()) ratings.value = ratings.value + found
+        }
+    }
+    return ratings
+}
+
+private const val IMDB_AT_ONCE = 4
 
 /** The title page's ratings, or null while loading / unknown. Never blocks the page. */
 @Composable

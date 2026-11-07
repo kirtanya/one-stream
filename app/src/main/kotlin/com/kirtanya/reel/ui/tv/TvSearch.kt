@@ -37,6 +37,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusGroup
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,9 +71,10 @@ private val SuggestionHeight = 36.dp
 /**
  * TV search with its own on-screen keyboard (Netflix / YouTube / Prime Video style), so typing never opens the system
  * keyboard and everything is D-pad. Left column: the query, [TvKeyboard], a few suggestions (what was searched before,
- * then titles the search already found; no request per key). Right column: All · Films · Shows, the focused title named
- * in one line, and the poster grid (no text under the posters), genres to browse until you type. Results follow the
- * typing after a short pause. ► off the keyboard's right edge goes to the results, ◄ from their first column comes back.
+ * then titles the search already found; no request per key). Right column: All · Films · Shows and the poster grid
+ * (each poster with its IMDb rating, no text), genres to browse until you type. While a result has focus, its facts
+ * replace the suggestions under the keys ([TvFocusedDetails]). Results follow the typing after a short pause. ► off the
+ * keyboard's right edge goes to the results, ◄ from their first column comes back; Back from the results goes to the keys, and on the keys it's the app's (twice to exit).
  */
 @Composable
 fun TvSearch(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit = {}, initialQuery: String = "") {
@@ -108,13 +113,25 @@ fun TvSearch(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit = {}, in
         }
     }
     val exitRight = remember { { toResults() } }
+    val keyboard = remember { FocusRequester() }
+    var keysFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(keysFocused) { if (keysFocused) focused.value = null }
+    fun toKeyboard() { runCatching { keyboard.requestFocus() } }
+    // Back from anywhere but the keys goes to the keys first; on the keys, the app's Back (press twice to exit) runs.
+    BackHandler(enabled = !keysFocused) { toKeyboard() }
     val side = Tokens.Space.tvSafeH
 
     Row(Modifier.fillMaxSize().background(Tokens.Colors.canvas).padding(horizontal = side)) {
         Column(Modifier.width(TvKeyboardWidth).padding(top = Tokens.Space.tvSafeV), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
             QueryLine(query, onVoice = { query = it; debounced = it.trim(); saveRecent(it) })
-            TvKeyboard(page, hints, onKey, exitRight, startKey, searchKey)
-            Column(Modifier.height(SuggestionHeight * SearchSuggest.MAX + Tokens.Space.xs * (SearchSuggest.MAX - 1)), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+            // One group that remembers its last key: ◄ off the results' first column and Back from the results land there.
+            TvKeyboard(
+                page, hints, onKey, exitRight, startKey, searchKey,
+                Modifier.focusRequester(keyboard).focusRestorer(startKey).focusGroup().onFocusChanged { keysFocused = it.hasFocus },
+            )
+            // Under the keys: the focused result's facts while you browse the results, the suggestions while you type.
+            if (focused.value != null) TvFocusedDetails(focused, Modifier.fillMaxWidth().padding(horizontal = Tokens.Space.xs))
+            else Column(Modifier.height(SuggestionHeight * SearchSuggest.MAX + Tokens.Space.xs * (SearchSuggest.MAX - 1)), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                 suggestions.forEach { s ->
                     Suggestion(s, fromHistory = s in recents) {
                         query = s; debounced = s.trim(); saveRecent(s)
@@ -130,11 +147,10 @@ fun TvSearch(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit = {}, in
             Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
                 SearchKind.entries.forEach { k -> TvTab(k.label, null, selected = kind == k) { kind = k } }
             }
-            FocusedTitleLine(focused, Modifier.padding(top = Tokens.Space.s))
             SearchResults(
                 debounced, kind, GridCells.Fixed(COLUMNS), 0.dp, Tokens.Space.tvSafeV,
                 onOpen = { item -> saveRecent(debounced); onOpen(item) },
-                focusFirst = firstResult, rowStartOnDown = COLUMNS,
+                focusFirst = firstResult, tvColumns = COLUMNS, onExitLeft = ::toKeyboard,
                 showText = false, onFocusItem = { focused.value = it },
                 onResults = { list -> titles = list.map { it.title } },
                 browse = { TvRowPivot(0.dp) { GenreBrowser(kind, rows = 1, onOpen = { g, type -> onOpenDest(Dest.Collection(g.name, genre = g, genreType = type)) }) } },

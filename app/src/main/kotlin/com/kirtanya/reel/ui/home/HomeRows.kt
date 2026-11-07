@@ -19,12 +19,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Row
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import com.kirtanya.reel.ui.theme.BrandColors
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -114,6 +123,7 @@ fun TitleRow(
     }
     val width = if (isTv) TvCards.landscapeWidth(HomeLayout.tvCardSize) else Tokens.Cinema.wideCardPhone
     val toggleSaved = rememberWatchlistToggler()
+    val imdb = if (isTv) com.kirtanya.reel.ui.common.rememberImdbRatings(items) else null
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         RowHeader(title, sidePadding, onSeeAll)
         FixedFocusRow(sidePadding) {
@@ -127,6 +137,7 @@ fun TitleRow(
                     WideCard(
                         item, width, if (i == 0) firstFocus else null,
                         onFocus = onFocus?.let { { it(item) } }, onLongClick = { toggleSaved(item) }, onClick = { onOpen(item) },
+                        imdb = { imdb?.value?.get(item.ref) },
                     )
                 }
             }
@@ -135,8 +146,8 @@ fun TitleRow(
 }
 
 /**
- * A 16:9 backdrop card. Phone: scrim, the title inside, IMDb pill, "Film · 2024" underneath. TV: the picture alone
- * (the info block names the focused title), so a card is two draw ops plus the focus ring.
+ * A 16:9 backdrop card. Phone: scrim, the title inside, IMDb pill, "Film · 2024" underneath. TV: one line above the
+ * picture, the name and its IMDb rating (two texts; the user wanted every card named, not only the focused one).
  */
 @Composable
 private fun WideCard(
@@ -146,6 +157,8 @@ private fun WideCard(
     onFocus: (() -> Unit)?,
     onLongClick: () -> Unit,
     onClick: () -> Unit,
+    /** TV: the title's IMDb rating once known (read only by the line above the card). */
+    imdb: () -> Double? = { null },
 ) {
     val tv = LocalIsTv.current
     val shape = RoundedCornerShape(Tokens.Radius.media)
@@ -156,7 +169,10 @@ private fun WideCard(
         .focusCard(shape = shape, onFocus = onFocus, onLongClick = onLongClick, outset = tv, onClick = onClick)
         .then(if (tv) Modifier else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairline, shape))
     if (tv) {
-        Box(frame) { RemoteImage(TmdbImages.backdrop(item.backdropPath, "w500") ?: TmdbImages.poster(item.posterPath, "w342"), Modifier.fillMaxSize()) }
+        Box(frame) {
+            RemoteImage(TmdbImages.backdrop(item.backdropPath, "w500") ?: TmdbImages.poster(item.posterPath, "w342"), Modifier.fillMaxSize())
+            TvCardOverlay(item.title, imdb)
+        }
         return
     }
     Column(Modifier.width(width), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
@@ -170,6 +186,52 @@ private fun WideCard(
             com.kirtanya.reel.ui.common.PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
         }
         Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * On a TV card's picture: the name in the bottom-left corner over a short fade, the IMDb rating (just the number) in a
+ * small yellow pill top-left. Two texts and one baked-per-size gradient, no effects (SMOOTH_UI_PLAN §2.5).
+ */
+@Composable
+private fun BoxScope.TvCardOverlay(title: String, imdb: () -> Double?) {
+    val fade = rememberCardFade()
+    Box(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.55f)
+            .drawBehind { drawImage(fade, dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()), filterQuality = androidx.compose.ui.graphics.FilterQuality.Low) },
+    )
+    Text(
+        title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.s, vertical = Tokens.Space.xs),
+    )
+    imdb()?.let { r ->
+        val radius = Tokens.Radius.xs
+        Text(
+            com.kirtanya.reel.core.ratings.RatingRules.imdbLabel(r), style = Tokens.Type.caption, color = BrandColors.imdbBlack, maxLines = 1,
+            modifier = Modifier.align(Alignment.TopStart).padding(Tokens.Space.xs)
+                // A filled rounded rect, no clip layer.
+                .drawBehind { drawRoundRect(BrandColors.imdbYellow, cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius.toPx())) }
+                .padding(horizontal = Tokens.Space.xs),
+        )
+    }
+}
+
+/**
+ * The fade under a card's name, baked once into a 1×32 bitmap and stretched on every card: a live gradient per card
+ * cost the TV's GPU (home went from 21 % to 27 % janky frames, tool/tv_jank.sh). Rebaked only if the canvas colour changes.
+ */
+@Composable
+private fun rememberCardFade(): androidx.compose.ui.graphics.ImageBitmap {
+    val canvas = Tokens.Colors.canvas
+    return remember(canvas) {
+        val bitmap = androidx.compose.ui.graphics.ImageBitmap(1, 32)
+        // Dark enough under the name for 4.5:1 on any picture (the name sits in the lower half, where it's ≥ 80 %).
+        val brush = Brush.verticalGradient(0f to Color.Transparent, 0.45f to canvas.copy(alpha = 0.8f), 1f to canvas.copy(alpha = 0.95f))
+        androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+            androidx.compose.ui.unit.Density(1f), androidx.compose.ui.unit.LayoutDirection.Ltr,
+            androidx.compose.ui.graphics.Canvas(bitmap), androidx.compose.ui.geometry.Size(1f, 32f),
+        ) { drawRect(brush) }
+        bitmap
     }
 }
 

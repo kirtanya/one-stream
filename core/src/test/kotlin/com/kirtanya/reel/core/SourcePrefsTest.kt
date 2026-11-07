@@ -46,11 +46,32 @@ class EnglishFirstTest {
         Source(SourceKind.TORRENT, title, "Torrentio", Quality(resolution = 1080), infoHash = title.hashCode().toString().padEnd(40, '0'), seeders = seeds)
 
     @Test fun englishBeatsDubbedAmongEquals(): Unit {
-        val hindi = t("Movie 2024 1080p Hindi", seeds = 300)
+        val hindi = t("Movie 2024 1080p Hindi", seeds = 100)
         val plain = t("Movie 2024 1080p WEB", seeds = 100)
         val eng = t("Movie 2024 1080p English ESub", seeds = 100)
         val multi = t("Movie 2024 1080p Multi", seeds = 100)
-        assertEquals(listOf(eng, multi, plain, hindi), SourceRanker.rank(listOf(hindi, plain, eng, multi)))
+        assertEquals(listOf(eng, hindi, multi, plain), SourceRanker.rank(listOf(hindi, plain, eng, multi)))
+    }
+
+    @Test fun hindiIsAcceptableButOtherLanguagesAreNot(): Unit {
+        val hindi = t("Movie 2024 1080p Hindi", seeds = 100)
+        val french = t("Movie 2024 1080p French", seeds = 100)
+        val plain = t("Movie 2024 1080p WEB", seeds = 100)
+        assertEquals(20.0, SourceRanker.languageScore(hindi, "English", listOf("Hindi")))
+        assertEquals(-80.0, SourceRanker.languageScore(french, "English", listOf("Hindi")))
+        assertEquals(-80.0, SourceRanker.languageScore(hindi, "English"))
+        assertEquals(listOf(hindi, plain, french), SourceRanker.rank(listOf(french, hindi, plain)))
+        assertEquals(listOf(plain, french, hindi), SourceRanker.rank(listOf(french, hindi, plain), RankPrefs(alsoLanguages = emptyList())))
+    }
+
+    @Test fun veryFewSeedersRankBelowASmallHealthySwarm(): Unit {
+        val three = t("Movie 2024 1080p WEB", seeds = 3)
+        val ten = t("Movie 2024 1080p WEB x", seeds = 10)
+        val none = t("Movie 2024 1080p WEB y", seeds = 0)
+        assertEquals(listOf(ten, three, none), SourceRanker.rank(listOf(none, three, ten)))
+        // 4 seeders is now clearly below 5 (the old log curve gave 4 -> 5 only +3).
+        val gap = SourceRanker.score(t("a 1080p", seeds = 5), RankPrefs()) - SourceRanker.score(t("a 1080p", seeds = 4), RankPrefs())
+        assertEquals(true, gap > 40.0)
     }
 
     @Test fun hindiPlusEnglishCountsAsEnglish(): Unit {

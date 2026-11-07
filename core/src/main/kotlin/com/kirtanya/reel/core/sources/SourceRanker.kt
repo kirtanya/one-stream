@@ -17,6 +17,8 @@ data class RankPrefs(
     val blocked: Set<String> = emptySet(),
     /** Spoken language to put first (SourceFacts.languages names, e.g. "English"). Null = no preference. */
     val language: String? = "English",
+    /** Also fine to hear (SourceFacts.languages names): a release naming one of these, not [language], scores +20 instead of -80. */
+    val alsoLanguages: List<String> = listOf("Hindi"),
 )
 
 /**
@@ -43,14 +45,16 @@ object SourceRanker {
     /**
      * The user hears the wrong language too often (dubbed releases ranked first). A release that names
      * the wanted language wins among equals; "Multi" / "Dual audio" usually carry it too; one that names
-     * only other languages drops below the rest. Unnamed (most English releases) stays neutral.
+     * only other languages drops below the rest, unless it names one of [also] (e.g. Hindi): that is fine, +20.
+     * Unnamed (most English releases) stays neutral.
      */
-    fun languageScore(s: Source, language: String?): Double {
+    fun languageScore(s: Source, language: String?, also: List<String> = emptyList()): Double {
         if (language == null) return 0.0
         val langs = SourceFacts.languages(s)
         return when {
             langs.isEmpty() -> 0.0
             language in langs -> 30.0
+            langs.any { it in also } -> 20.0
             langs.all { it == "Multi" || it == "Dual audio" } -> 10.0
             else -> -80.0
         }
@@ -74,7 +78,7 @@ object SourceRanker {
         val r = s.quality.resolution
         if (prefs.maxResolution != null && r != null && r > prefs.maxResolution) score -= 400
         if (prefs.pinned.isNotEmpty() && SourceFacts.providerLabel(s.provider) in prefs.pinned) score += 120
-        score += languageScore(s, prefs.language)
+        score += languageScore(s, prefs.language, prefs.alsoLanguages)
 
         // Resolution: exact match best, one step either side next, unknown in the middle.
         score += when {
@@ -89,7 +93,8 @@ object SourceRanker {
             SourceKind.TORRENT -> when (val seeds = s.seeders) {
                 null -> 20.0
                 0 -> -150.0
-                else -> 20.0 * kotlin.math.ln(1.0 + seeds)
+                // 1..4 seeders rarely start (buffers forever): a clear step below the log curve.
+                else -> 20.0 * kotlin.math.ln(1.0 + seeds) - (if (seeds < 5) 40.0 else 0.0)
             }
             else -> 60.0
         }

@@ -213,7 +213,8 @@ private fun TvHomeContent(
         }
     }
 
-    val columnTop = Tokens.Space.s
+    // Room between the story and the focused row's heading, so the heading never sits tight under (or behind) the text.
+    val columnTop = Tokens.Space.l
     val columnSpec = rememberHomeColumnSpec(columnTop)
     Box(Modifier.fillMaxSize()) {
         // The focused title fills the room: its backdrop over pure black, black behind the text.

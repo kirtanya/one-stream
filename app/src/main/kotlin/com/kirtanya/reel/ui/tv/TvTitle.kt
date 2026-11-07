@@ -25,6 +25,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
@@ -43,6 +53,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -92,6 +106,9 @@ import com.kirtanya.reel.ui.title.PlayAction
 import com.kirtanya.reel.ui.title.heroBackdrops
 import com.kirtanya.reel.ui.title.rememberEpisodeProgress
 import com.kirtanya.reel.ui.title.rememberPlayAction
+import com.kirtanya.reel.ui.title.runPlayAction
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import com.kirtanya.reel.ui.title.rememberSeason
 import com.kirtanya.reel.ui.title.rememberTitle
 import kotlinx.coroutines.launch
@@ -148,11 +165,38 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
     val scope = rememberCoroutineScope()
 
     var panel by remember { mutableStateOf<PanelFor?>(null) }
+    // The right half follows the focused episode: its still, once focus has rested on it for a moment (moving
+    // through the list doesn't fetch a picture per row); the show's backdrop again when focus leaves the episodes.
+    var focusedEpisode by remember { mutableStateOf<Episode?>(null) }
+    var shownStill by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(focusedEpisode) {
+        if (focusedEpisode != null) delay(STILL_REST_MS)
+        shownStill = focusedEpisode?.stillPath
+    }
     var options by remember { mutableStateOf<Episode?>(null) }
     // The episode to put focus back on once the panel closes; the list's own requester sits on it.
     var restoreNumber by remember { mutableStateOf<Int?>(null) }
     val episodeFocus = remember { FocusRequester() }
     var autoFocus by remember { mutableStateOf(true) }
+    // ◄ / ► on an episode, or the "Season 3" row at a season's end: the previous / next season, focus on its first
+    // episode (or the up-next one there). False when there's no season that way.
+    fun stepSeason(delta: Int): Boolean {
+        val i = d.seasons.indexOfFirst { it.number == season }
+        val to = d.seasons.getOrNull(i + delta) ?: return false
+        season = to.number
+        restoreNumber = null
+        autoFocus = true
+        return true
+    }
+    // Top of the page: Resume / Play next opens the source panel for that episode (or goes straight back into the
+    // player with the saved source, as everywhere else).
+    fun runAction() = runPlayAction(context, action) { ep ->
+        val number = ep ?: return@runPlayAction
+        val e = (episodes as? Load.Ready)?.value?.firstOrNull { it.season == number.season && it.number == number.episode }
+            ?: Episode(number.season, number.episode, "", "", null, null, null)
+        restoreNumber = e.number
+        panel = PanelFor(e, download = false)
+    }
     fun closePanel() {
         panel = null
         scope.launch {
@@ -173,7 +217,11 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
 
     Box(Modifier.fillMaxSize()) {
         TvColumnGlide(reveal = RowReveal) {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
+            // Under the source panel the page is only to look at: semantics say so (a modal's background is disabled).
+            LazyColumn(
+                Modifier.fillMaxSize().then(if (panel != null) Modifier.semantics { disabled() } else Modifier),
+                state = listState, verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
+            ) {
                 item(key = "hero", contentType = "hero") {
                     // Back up from the rows below: the whole top section shows again. Gliding once on focus entry wasn't enough on the
                     // TV: the focused row's own bring-into-view scroll could land after the glide and leave the page stuck part-way
@@ -181,12 +229,21 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                     var heroFocused by remember { mutableStateOf(false) }
                     if (heroFocused) LaunchedEffect(Unit) {
                         snapshotFlow { Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, listState.isScrollInProgress) }
-                            .collect { (index, offset, moving) -> if (!moving && (index > 0 || offset > 0)) listState.glideToTop() }
+                            .collect { (index, offset, moving) ->
+                                // A focus move's own scroll can interrupt the glide; that cancels only the glide, never
+                                // this watcher (it used to end here and leave the page stuck below the top for good).
+                                if (!moving && (index > 0 || offset > 0)) {
+                                    try { listState.glideToTop() } catch (e: kotlinx.coroutines.CancellationException) { if (!isActive) throw e }
+                                }
+                            }
                     }
                     Box(
                         Modifier.fillParentMaxSize().onFocusChanged { f -> heroFocused = f.hasFocus },
                     ) {
-                        Backdrop(heroBackdrops(d).firstOrNull(), Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.5f))
+                        Backdrop(
+                            shownStill?.let { TmdbImages.still(it, "w780") } ?: heroBackdrops(d).firstOrNull(),
+                            Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.5f),
+                        )
                         Column(
                             Modifier.fillMaxHeight().fillMaxWidth(0.5f).padding(start = side - INSET, end = Tokens.Space.l, top = Tokens.Space.tvSafeV, bottom = Tokens.Space.tvSafeV),
                         ) {
@@ -195,10 +252,20 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                                 // One line: ★ rating · year · runtime or seasons · certificate · genres.
                                 MetaLine(d.summary.rating, detailsParts(d) + listOfNotNull(d.genres.take(2).joinToString(", ").ifBlank { null }), maxLines = 1)
                                 if (d.summary.overview.isNotBlank()) {
-                                    Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                    Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                             Spacer(Modifier.height(Tokens.Space.m))
+                            // The page's actions, on top: Resume / Play next (shows), Trailer, My list, Watched.
+                            Row(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                                if (isShow) ReelButton(action.label, ::runAction, kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow)
+                                // Round icons beside it, so a long "Resume S2 E8 · 30 min left" still fits on the half page.
+                                d.trailer?.let { t -> RoundAction(Icons.Rounded.Movie, "Trailer") { openVideo(context, t) } }
+                                RoundAction(watchlistIcon(saved), if (saved) "In My list" else "Add to My list", toggleSaved)
+                                // The whole film or show (every aired episode).
+                                RoundAction(if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility, if (watchedAll) "Watched" else "Mark watched", toggleWatched)
+                            }
+                            Spacer(Modifier.height(Tokens.Space.s))
                             if (isShow) {
                                 Series(
                                     d, season, { season = it }, episodes, { retryEpisodes() }, progress,
@@ -206,6 +273,8 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                                     autoFocus = autoFocus, onAutoFocused = { autoFocus = false }, episodeFocus = episodeFocus,
                                     onPick = { e -> restoreNumber = e.number; panel = PanelFor(e, download = false) },
                                     onOptions = { e -> restoreNumber = e.number; options = e },
+                                    onFocusEpisode = { focusedEpisode = it },
+                                    onStepSeason = ::stepSeason,
                                     modifier = Modifier.weight(1f).fillMaxWidth(),
                                 )
                             } else {
@@ -215,21 +284,7 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                         }
                     }
                 }
-                // Below the fold, quiet: what used to be buttons on the hero, then the people, then more titles.
-                item(key = "actions", contentType = "actions") {
-                    EnterRowAtStart {
-                        Row(Modifier.padding(horizontal = side - INSET).focusRestorer(), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                            var first = true
-                            d.trailer?.let { t ->
-                                ReelButton("Trailer", { openVideo(context, t) }, Modifier.rowStart(true), kind = ButtonKind.Ghost, icon = Icons.Rounded.Movie)
-                                first = false
-                            }
-                            ReelButton(if (saved) "In My list" else "My list", toggleSaved, Modifier.rowStart(first), kind = ButtonKind.Ghost, icon = watchlistIcon(saved))
-                            // The whole film or show (every aired episode).
-                            ReelButton(if (watchedAll) "Watched" else "Mark watched", toggleWatched, kind = ButtonKind.Ghost, icon = if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility)
-                        }
-                    }
-                }
+                // Below the fold, quiet: the people, then more titles.
                 if (d.cast.isNotEmpty()) {
                     item(key = "cast", contentType = "cast") {
                         EnterRowAtStart {
@@ -270,6 +325,9 @@ private val LOGO_HEIGHT = 64.dp
 
 /** Under a focused item the page also shows its caption (a cast member's role): scroll that far into view too. */
 private val RowReveal = 28.dp
+
+/** How long focus rests on an episode before the right half shows its still. */
+private const val STILL_REST_MS = 250L
 
 /** Back to the top over the page glide time (a fixed-length tween, not the list's default spring). */
 private suspend fun LazyListState.glideToTop() {
@@ -329,18 +387,37 @@ private fun Series(
     episodeFocus: FocusRequester,
     onPick: (Episode) -> Unit,
     onOptions: (Episode) -> Unit,
+    onFocusEpisode: (Episode?) -> Unit,
+    onStepSeason: (Int) -> Boolean,
     modifier: Modifier,
 ) {
+    val tabs = rememberLazyListState()
+    // The selected tab stays in view when the season changes from the episodes (◄ / ►, the next-season row).
+    LaunchedEffect(season) {
+        val i = d.seasons.indexOfFirst { it.number == season }
+        if (i >= 0 && tabs.layoutInfo.visibleItemsInfo.none { it.index == i && it.offset >= 0 && it.offset + it.size <= tabs.layoutInfo.viewportEndOffset }) tabs.animateScrollToItem(i)
+    }
+    val next = d.seasons.getOrNull(d.seasons.indexOfFirst { it.number == season } + 1)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-        LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-            itemsIndexed(d.seasons, key = { _, s -> s.number }, contentType = { _, _ -> "tab" }) { _, s ->
-                TvTab(s.name, null, selected = s.number == season) { onSeason(s.number) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+            LazyRow(Modifier.weight(1f, fill = false).focusRestorer(), state = tabs, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                itemsIndexed(d.seasons, key = { _, s -> s.number }, contentType = { _, _ -> "tab" }) { _, s ->
+                    TvTab(s.name, null, selected = s.number == season) { onSeason(s.number) }
+                }
+            }
+            // How far into this season you are: "2 of 8 watched".
+            (episodes as? Load.Ready)?.value?.takeIf { it.isNotEmpty() }?.let { list ->
+                val seen = list.count { e -> progress[EpisodeNumber(e.season, e.number)]?.finished == true }
+                if (seen > 0) Text("$seen of ${list.size} watched", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
             }
         }
         when (episodes) {
             Load.Loading -> LoadingBox(Modifier.weight(1f))
             is Load.Failed -> ReelButton("Couldn't load episodes · Try again", { retry() }, kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh)
-            is Load.Ready -> EpisodeRows(episodes.value, progress, focusNumber, autoFocus, onAutoFocused, episodeFocus, onPick, onOptions, Modifier.weight(1f).fillMaxWidth())
+            is Load.Ready -> EpisodeRows(
+                episodes.value, progress, focusNumber, autoFocus, onAutoFocused, episodeFocus, onPick, onOptions, onFocusEpisode,
+                multiSeason = d.seasons.size > 1, next = next, onStepSeason = onStepSeason, modifier = Modifier.weight(1f).fillMaxWidth(),
+            )
         }
     }
 }
@@ -355,9 +432,18 @@ private fun EpisodeRows(
     focus: FocusRequester,
     onPick: (Episode) -> Unit,
     onOptions: (Episode) -> Unit,
+    onFocusEpisode: (Episode?) -> Unit,
+    multiSeason: Boolean,
+    next: com.kirtanya.reel.core.tmdb.SeasonSummary?,
+    onStepSeason: (Int) -> Boolean,
     modifier: Modifier,
 ) {
     val state = rememberLazyListState()
+    // ◄ / ► jump a season (long anime lists): only with more than one season, and only on the key press.
+    val seasonKeys = if (!multiSeason) Modifier else Modifier.onPreviewKeyEvent { k ->
+        val delta = when (k.key) { Key.DirectionLeft -> -1; Key.DirectionRight -> 1; else -> return@onPreviewKeyEvent false }
+        if (k.type == KeyEventType.KeyDown) onStepSeason(delta) else true
+    }
     // The row that holds the requester: the one to pre-focus (up next) or to come back to after the panel; else the first.
     val target = episodes.firstOrNull { it.number == focusNumber }?.number ?: episodes.firstOrNull()?.number
     if (autoFocus && episodes.isNotEmpty()) {
@@ -375,14 +461,16 @@ private fun EpisodeRows(
         }
     }
     com.kirtanya.reel.ui.common.WithBringIntoView(com.kirtanya.reel.ui.common.MinimalBringIntoView) {
-        LazyColumn(modifier, state = state, contentPadding = PaddingValues(vertical = Tokens.Space.xs), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
+        LazyColumn(modifier.onFocusChanged { if (!it.hasFocus) onFocusEpisode(null) }, state = state, contentPadding = PaddingValues(vertical = Tokens.Space.xs), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
             itemsIndexed(episodes, key = { _, e -> "${e.season}x${e.number}" }, contentType = { _, _ -> "episode" }) { _, e ->
                 EpisodeRow(
                     e, progress[EpisodeNumber(e.season, e.number)],
-                    if (e.number == target) Modifier.focusRequester(focus) else Modifier,
-                    onClick = { onPick(e) }, onLongClick = { onOptions(e) },
+                    (if (e.number == target) Modifier.focusRequester(focus) else Modifier).then(seasonKeys),
+                    onClick = { onPick(e) }, onLongClick = { onOptions(e) }, onFocus = { onFocusEpisode(e) },
                 )
             }
+            // The season's end: straight on to the next one.
+            if (next != null) item(key = "next", contentType = "next") { NextSeasonRow(next.name, seasonKeys) { onStepSeason(1) } }
         }
     }
 }
@@ -390,37 +478,78 @@ private fun EpisodeRows(
 private val ROW_SHAPE = RoundedCornerShape(Tokens.Radius.media)
 
 /**
- * An episode: its number, name, runtime and what you did with it (a tick when watched, "Resume 42:10" part-way, a thin
- * line under the row). No picture and no effects per row: a list of these stays light.
+ * An episode: a small still (watched ones dimmed with a tick, part-watched ones with a progress bar along its bottom),
+ * its number and name, the runtime, and "Resume 42:10" when part-way. One small image per row (w185), no effects.
  */
 @Composable
-private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val inProgress = watched != null && !watched.finished && ContinueWatching.resumePositionMs(watched) > 0
+private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: () -> Unit) {
+    val finished = watched?.finished == true
+    val inProgress = watched != null && !finished && ContinueWatching.resumePositionMs(watched) > 0
     val line = Tokens.Colors.hairlineStrong
-    val fill = Tokens.Colors.text
+    val fill = Tokens.Colors.accentBright
     val share = if (inProgress) watched.progress else 0f
     Row(
-        modifier.fillMaxWidth().heightIn(min = 44.dp)
-            .focusCard(shape = ROW_SHAPE, onLongClick = onLongClick, onClick = onClick)
-            .drawBehind {
-                if (share > 0f) {
-                    val inset = Tokens.Space.m.toPx()
-                    val w = size.width - 2 * inset
-                    val h = 2.dp.toPx()
-                    drawRect(line, Offset(inset, size.height - h - 3.dp.toPx()), Size(w, h))
-                    drawRect(fill, Offset(inset, size.height - h - 3.dp.toPx()), Size(w * share, h))
-                }
-            }
-            .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.s),
+        modifier.fillMaxWidth()
+            .focusCard(shape = ROW_SHAPE, onLongClick = onLongClick, onClick = onClick, onFocus = onFocus)
+            .padding(horizontal = Tokens.Space.s, vertical = Tokens.Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("${e.number}", style = Tokens.Type.label, color = Tokens.Colors.textSecondary, modifier = Modifier.width(24.dp), textAlign = TextAlign.End, maxLines = 1)
-        Text(e.name.ifBlank { "Episode ${e.number}" }, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        e.runtimeMin?.takeIf { it > 0 }?.let { Text("${it}m", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1) }
+        Box(
+            Modifier.width(THUMB_WIDTH).aspectRatio(16f / 9f).clip(THUMB_SHAPE).background(Tokens.Colors.surface2)
+                .drawWithContent {
+                    drawContent()
+                    if (finished) drawRect(Tokens.Colors.canvas.copy(alpha = 0.55f))
+                    if (share > 0f) {
+                        val h = 3.dp.toPx()
+                        drawRect(line, Offset(0f, size.height - h), Size(size.width, h))
+                        drawRect(fill, Offset(0f, size.height - h), Size(size.width * share, h))
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            RemoteImage(TmdbImages.still(e.stillPath, "w185"), Modifier.fillMaxSize())
+            if (finished) Icon(Icons.Rounded.Check, "Watched", tint = Tokens.Colors.text, modifier = Modifier.size(20.dp))
+        }
+        Text("${e.number}", style = Tokens.Type.label, color = Tokens.Colors.textSecondary, maxLines = 1)
+        Text(
+            e.name.ifBlank { "Episode ${e.number}" }, style = Tokens.Type.label,
+            color = if (finished) Tokens.Colors.textSecondary else Tokens.Colors.text,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        )
         when {
-            watched?.finished == true -> Icon(Icons.Rounded.Check, "Watched", tint = Tokens.Colors.textSecondary, modifier = Modifier.size(16.dp))
-            inProgress -> Text(TitleSources.resumeLabel(watched.positionMs), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1)
+            inProgress -> Text(TitleSources.resumeLabel(watched.positionMs), style = Tokens.Type.label, color = Tokens.Colors.accentBright, maxLines = 1)
+            else -> e.runtimeMin?.takeIf { it > 0 }?.let { Text("${it}m", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1) }
         }
     }
 }
+
+/** A round icon-only action beside the title page's main button (Trailer, My list, Watched); the ring is the focus. */
+@Composable
+private fun RoundAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(Tokens.Radius.pill)
+    Box(
+        Modifier.size(Tokens.Size.button).clip(shape).background(Tokens.Colors.surface2).focusCard(shape = shape, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, null, tint = Tokens.Colors.text, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** "Season 3  →" after a season's last episode: OK opens that season's tab, focus on its first episode. */
+@Composable
+private fun NextSeasonRow(name: String, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.fillMaxWidth().heightIn(min = 44.dp).focusCard(shape = ROW_SHAPE, onClick = onClick)
+            .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.s),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(name, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = Tokens.Colors.textSecondary, modifier = Modifier.size(18.dp))
+    }
+}
+
+private val THUMB_WIDTH = 80.dp
+private val THUMB_SHAPE = RoundedCornerShape(Tokens.Radius.xs)

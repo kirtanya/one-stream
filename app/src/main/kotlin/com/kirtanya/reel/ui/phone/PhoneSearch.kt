@@ -247,14 +247,16 @@ fun SearchResults(
     onOpen: (TitleSummary) -> Unit,
     focusFirst: FocusRequester? = null,
     browse: (@Composable () -> Unit)? = null,
-    /** TV: cards per row. Down from any card lands on the first card of the next row (not the one below). */
-    rowStartOnDown: Int? = null,
+    /** TV: cards per row. ▲ / ▼ go to the card straight above / below, ► off a row's end to the next row's first card. */
+    tvColumns: Int? = null,
     /** TV: posters without the name and meta line under them (the focused one is named elsewhere, see [onFocusItem]). */
     showText: Boolean = true,
     /** TV: the poster that just took focus. */
     onFocusItem: ((TitleSummary) -> Unit)? = null,
     /** TV: the titles shown, whenever the load changes (the keyboard's suggestions read them: nothing extra is fetched). */
     onResults: ((List<TitleSummary>) -> Unit)? = null,
+    /** TV: ◄ off a row's first card (to the keyboard beside the grid). */
+    onExitLeft: (() -> Unit)? = null,
 ) {
     val catalog = rememberCatalog()
     val (load, retry) = rememberLoad(query) {
@@ -270,12 +272,14 @@ fun SearchResults(
     }
     if (onResults != null) LaunchedEffect(load, kind, hidden) { onResults(results) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    // TV: every result shows its IMDb rating (fetched by the grid, a few at a time).
+    val imdb = if (tvColumns != null) com.kirtanya.reel.ui.common.rememberImdbRatings(results) else null
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val cardFocus = remember(results) { results.map { FocusRequester() } }
     // Grid items before the first card: the genre browser (no query) and the heading.
     val lead = (if (query.isEmpty() && browse != null) 1 else 0) + 1
-    // TV (rowStartOnDown is TV's): the grid glides to the focused row over the page glide time, not Compose's spring.
-    val tv = rowStartOnDown != null
+    // TV (tvColumns is TV's): the grid glides to the focused row over the page glide time, not Compose's spring.
+    val tv = tvColumns != null
     val grid: @Composable () -> Unit = {
     LazyVerticalGrid(
         columns = columns,
@@ -299,26 +303,44 @@ fun SearchResults(
         }
         itemsIndexed(results, key = { _, it -> it.ref.toString() }, contentType = { _, _ -> "poster" }) { i, item ->
             val first = if (i == 0 && focusFirst != null) Modifier.focusRequester(focusFirst) else Modifier
-            val rowJump = rowStartOnDown?.let { cols ->
+            val gridMove = tvColumns?.let { cols ->
                 Modifier.focusRequester(cardFocus[i]).onPreviewKeyEvent { e ->
-                    val next = (i / cols + 1) * cols
-                    if (e.key != Key.DirectionDown || next >= results.size) return@onPreviewKeyEvent false
+                    if (e.key == Key.DirectionLeft && i % cols == 0 && onExitLeft != null) {
+                        if (e.type == KeyEventType.KeyDown) onExitLeft()
+                        return@onPreviewKeyEvent true
+                    }
+                    val next = SearchGridMoves.target(i, cols, results.size, e.key) ?: return@onPreviewKeyEvent false
                     if (e.type == KeyEventType.KeyDown) scope.launch {
-                        // The row may not be composed yet: bring it in, then focus its first card.
+                        // The card may not be composed yet: bring it in, then focus it.
                         if (gridState.layoutInfo.visibleItemsInfo.none { it.index == lead + next }) gridState.scrollToItem(lead + next)
                         repeat(5) {
                             androidx.compose.runtime.withFrameNanos { }
-                            if (runCatching { cardFocus[next].requestFocus(androidx.compose.ui.focus.FocusDirection.Down) }.getOrDefault(false)) return@launch
+                            if (runCatching { cardFocus[next].requestFocus() }.getOrDefault(false)) return@launch
                         }
                     }
                     true
                 }
             } ?: Modifier
-            PosterCard(item, width = null, onClick = { onOpen(item) }, modifier = first.then(rowJump), showText = showText, onFocus = onFocusItem?.let { f -> { f(item) } })
+            PosterCard(
+                item, width = null, onClick = { onOpen(item) }, modifier = first.then(gridMove), showText = showText, onFocus = onFocusItem?.let { f -> { f(item) } },
+                imdb = imdb?.let { m -> { m.value[item.ref] } },
+            )
         }
     }
     }
     if (tv) com.kirtanya.reel.ui.tv.TvColumnGlide(reveal = Tokens.Space.s, content = grid) else grid()
+}
+
+/** TV results grid: where a D-pad press from card [i] goes, or null to let focus leave the grid (▲ off the top row, ◄ off a row's start). */
+internal object SearchGridMoves {
+    fun target(i: Int, cols: Int, size: Int, key: Key): Int? = when (key) {
+        // Straight below; into a short last row, its last card.
+        Key.DirectionDown -> if ((i / cols + 1) * cols < size) minOf(i + cols, size - 1) else i
+        Key.DirectionUp -> (i - cols).takeIf { it >= 0 }
+        // Off a row's end onto the next row's first card; the very last card stays put.
+        Key.DirectionRight -> if (i % cols == cols - 1 || i == size - 1) (i + 1).takeIf { it < size } ?: i else null
+        else -> null
+    }
 }
 
 /** Last 8 searches, newest first. */

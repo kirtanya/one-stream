@@ -140,6 +140,8 @@ data class TitleDetails(
     val lastAiredEpisode: AiringEpisode? = null,
     /** TMDB status: "Released", "Returning Series", "Ended"… */
     val status: String? = null,
+    /** TMDB `original_language` (ISO 639-1: "en", "hi"…), e.g. to prefer Hindi audio for a Hindi film. */
+    val originalLanguage: String? = null,
 ) {
     val trailer: Video? get() = videos.firstOrNull { it.isTrailer }
 }

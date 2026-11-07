@@ -54,10 +54,12 @@ fun PosterCard(
     onFocus: (() -> Unit)? = null,
     /** The IMDb pill in the corner (TV: only when the rating is already cached). */
     badge: Boolean = true,
+    /** TV grids: the rating the grid fetched for this card (see [rememberImdbRatings]); shown instead of [badge]. */
+    imdb: (() -> Double?)? = null,
 ) {
     var options by remember { mutableStateOf(false) }
     if (options) PosterOptions(item, onOpen = onClick, onDismiss = { options = false })
-    PosterCardBody(item, width, onClick, { options = true }, modifier, showText, onFocus, badge)
+    PosterCardBody(item, width, onClick, { options = true }, modifier, showText, onFocus, badge, imdb = imdb)
 }
 
 /** [PosterCard] without its own options state: a row that owns one dialog for all its cards passes [onLongClick]. */
@@ -72,6 +74,7 @@ internal fun PosterCardBody(
     onFocus: (() -> Unit)?,
     badge: Boolean,
     outset: Boolean = false,
+    imdb: (() -> Double?)? = null,
 ) {
     val shape = RoundedCornerShape(Tokens.Radius.m)
     val tv = LocalIsTv.current
@@ -92,7 +95,9 @@ internal fun PosterCardBody(
                 Text(item.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (badge) PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
+        val corner = Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs)
+        if (imdb != null) imdb()?.let { ImdbPill(it, corner, onPoster = true) }
+        else if (badge) PosterImdbBadge(item.ref, corner)
     }
     if (!showText) {
         Box(frame) { image() }

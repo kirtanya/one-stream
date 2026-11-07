@@ -5,6 +5,7 @@ import com.kirtanya.reel.core.sources.Quality
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceKind
 import com.kirtanya.reel.core.sources.SourceSearch
+import com.kirtanya.reel.core.sources.StartSpeed
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -25,6 +26,39 @@ class TitleSourcesTest {
 
     private fun done(vararg s: Source, total: Int = 4, failed: Map<String, String> = emptyMap()) =
         SourceSearch(s.toList(), pending = emptyList(), failed = failed, total = total)
+
+    @Test fun quickStartRowsComeFirstOnceAndKeepTheirMarks() {
+        val all = (1..8).map { torrent(it) }
+        val quick = listOf(all[6], all[3])
+        val page = TitleSources.page(done(*all.toTypedArray()), all, expanded = false, quick = quick, speed = { if (it.key == all[6].key) StartSpeed.FAST else StartSpeed.UNKNOWN })
+        assertEquals(listOf(all[6], all[3], all[0], all[1], all[2]).map { it.key }, page.rows.map { it.key })
+        assertEquals(2, page.quick)
+        assertEquals(StartSpeed.FAST, page.rows[0].speed)
+        assertEquals(StartSpeed.UNKNOWN, page.rows[1].speed)
+        assertEquals(3, page.more)
+        assertEquals(5, page.firstExtra)
+    }
+
+    @Test fun aFullQuickStartGroupIsNeverCutAndExpandingStillHasNoDuplicates() {
+        val all = (1..9).map { torrent(it) }
+        val quick = all.takeLast(6)
+        val collapsed = TitleSources.page(done(*all.toTypedArray()), all, expanded = false, quick = quick)
+        assertEquals(5, collapsed.rows.size)
+        assertEquals(5, collapsed.quick)
+        assertEquals(4, collapsed.more)
+        val open = TitleSources.page(done(*all.toTypedArray()), all, expanded = true, quick = quick)
+        assertEquals(9, open.rows.map { it.key }.distinct().size)
+        assertEquals(5, open.firstExtra)
+    }
+
+    @Test fun quickStartSkipsWhatThePageWouldNotList() {
+        val a = torrent(1)
+        val page = TitleSources.page(done(a, external()), listOf(a, external()), expanded = false, quick = listOf(external(), trailer(), a))
+        assertEquals(listOf(a.key, external().key), page.rows.map { it.key })
+        assertEquals(1, page.quick)
+        assertEquals(listOf(a), TitleSources.quickCandidates(listOf(external(), trailer(), a)))
+        assertEquals(emptyList(), TitleSources.quickCandidates(listOf(a), fits = { false }))
+    }
 
     @Test fun showsTheBestFiveThenCountsTheRest() {
         val all = (1..8).map { torrent(it) }

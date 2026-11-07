@@ -54,14 +54,14 @@ fun cacheSearch(key: String, search: SourceSearch) { searchCache[key] = search }
  * [rescan] forgets the cached answer and searches again.
  */
 @Composable
-fun rememberSourceSearch(req: SourceRequest, isTv: Boolean): Pair<SourceSearch?, () -> Unit> {
+fun rememberSourceSearch(req: SourceRequest, isTv: Boolean, languages: List<String>? = null): Pair<SourceSearch?, () -> Unit> {
     val app = ReelApp.get(LocalContext.current)
     var state by remember(req.key) { mutableStateOf(searchCache[req.key]) }
     var attempt by remember(req.key) { mutableStateOf(0) }
     LaunchedEffect(req.key, attempt) {
         if (attempt == 0 && searchCache[req.key]?.done == true) return@LaunchedEffect
         app.sources.ensureReady()
-        app.aggregator.search(req, app.sources.providers(), rankPrefs(app, isTv)).collect {
+        app.aggregator.search(req, app.sources.providers(), rankPrefs(app, isTv, languages)).collect {
             state = it
             if (it.done) searchCache[req.key] = it
         }
@@ -73,10 +73,15 @@ fun rememberSourceSearch(req: SourceRequest, isTv: Boolean): Pair<SourceSearch?,
  * TVs have little storage: torrents bigger than the free space can't be streamed there. On top: the
  * user's source preferences for this device (quality cap, never CAM, pinned / blocked providers).
  */
-fun rankPrefs(context: Context, isTv: Boolean): RankPrefs {
+fun rankPrefs(context: Context, isTv: Boolean, languages: List<String>? = null): RankPrefs {
     val base = if (!isTv) RankPrefs() else RankPrefs(maxBytes = (StatFs(context.filesDir.path).availableBytes - (1L shl 30)).coerceAtLeast(0))
-    return com.kirtanya.reel.ReelApp.get(context).sourcePrefs.applyTo(base)
+    // Quick start's wanted languages for this title (QuickStart.wantedLanguages): the first one leads, the rest are fine to hear.
+    val withLanguages = if (languages.isNullOrEmpty()) base else base.copy(language = languages.first(), alsoLanguages = languages.drop(1))
+    return com.kirtanya.reel.ReelApp.get(context).sourcePrefs.applyTo(withLanguages)
 }
+
+/** The languages to prefer for [d] (English, Hindi first for a Hindi-language title); also what Quick start recommends in. */
+fun wantedLanguages(d: TitleDetails): List<String> = com.kirtanya.reel.core.sources.QuickStart.wantedLanguages(d.originalLanguage)
 
 /** Best source to start straight away: first non-external one. */
 fun bestOf(search: SourceSearch?): Source? = search?.sources?.let(com.kirtanya.reel.core.sources.SourceBrowser::recommended)

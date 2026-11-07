@@ -39,6 +39,7 @@ import com.kirtanya.reel.core.sources.SeedHealth
 import com.kirtanya.reel.core.sources.SourceKind
 import com.kirtanya.reel.core.sources.SourceType
 import com.kirtanya.reel.core.sources.SourceView
+import com.kirtanya.reel.core.sources.StartSpeed
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.Pill
 import com.kirtanya.reel.ui.common.ReelButton
@@ -72,6 +73,8 @@ fun SourceRow(
     modifier: Modifier = Modifier,
     /** Long-press (touch) / hold OK (remote): the source's options. */
     onLongClick: (() -> Unit)? = null,
+    /** Quick start's verdict: "Fast start" / "May buffer" under the facts. */
+    speed: StartSpeed = StartSpeed.UNKNOWN,
 ) {
     val shape = RoundedCornerShape(Tokens.Radius.media)
     val (label, icon) = actionFor(v, action)
@@ -92,6 +95,7 @@ fun SourceRow(
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
             Facts(v)
+            StartMark(speed)
             Text(
                 listOf(v.provider).plus(v.languages).joinToString(" · "),
                 style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -124,6 +128,7 @@ fun RecommendedCard(
     modifier: Modifier = Modifier,
     /** The ⋯ button next to the main one: the source's options (download, favourite, share…). */
     onMore: (() -> Unit)? = null,
+    speed: StartSpeed = StartSpeed.UNKNOWN,
 ) {
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val (label, icon) = actionFor(v, action)
@@ -144,6 +149,7 @@ fun RecommendedCard(
             Pill(typeLabel(v.type))
         }
         Facts(v, large = true)
+        StartMark(speed)
         Text(
             listOf(v.provider).plus(v.languages).joinToString(" · "),
             style = Tokens.Type.label, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis,

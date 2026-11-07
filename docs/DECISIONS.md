@@ -5,6 +5,27 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-07 · Quick start sources, TV search grid and details, series page, home card overlay (0.16.3–0.16.6)**
+Decision (user):
+- Sources: up to 5 "Quick start" sources sit on top. Direct links are probed (first 1 MB: time to first byte and
+  speed against what the file needs); torrents are judged by seeders and size (`core/sources/QuickStart.kt`). English
+  first, Hindi first for a Hindi-language title; Hindi releases also rank higher everywhere.
+- TV search: Right at a row's end wraps to the next row, Up/Down go straight above/below, Left from the first column
+  goes to the keyboard, and Back goes to the keyboard before the exit chip. The focused title's details (type, year,
+  length, seasons/episodes, airing status, genres, overview) show under the keyboard in place of suggestions
+  (`core/browse/TitleFacts.kt`). Every result shows its IMDb rating.
+- Episode source panel takes focus when it opens (keys moved the page behind it).
+- Series page: episode thumbnails, watched / progress marks, the backdrop follows the focused episode, Resume and
+  icon actions on top, Left/Right switch season, a "Season N →" row ends each season, and scrolling up reaches the top.
+- TV home cards: the title sits on the picture bottom-left and the rating number (no "IMDb") top-left. The fade under
+  the title is a baked bitmap, not a live gradient. The rows start a little lower, so headings aren't cut off.
+Why: the user's requests; picked sources often never started; the search overlay covered results; season jumps were slow.
+Evidence: checked on the TV (search moves, details, panel focus, series page, home layout, "Fast start" on Oppenheimer).
+Open: the probe guard (short replies under 256 KB no longer count as fast) and home smoothness of 0.16.6 are not yet
+measured on the TV.
+
+---
+
 **2026-11-07 · TV Back: Home → Search → press twice to exit; search ranks everything (0.16.2)**
 Decision (user): on the TV, Back on Home opens Search, and Back on Search shows "Press Back again to exit" (as in the
 player); a second Back within 3 s closes the app. Pages and the Downloads tab go back as before. Search no longer shows

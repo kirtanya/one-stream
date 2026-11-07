@@ -119,6 +119,7 @@ object TmdbParser {
             },
             nextAiring = o.obj("next_episode_to_air")?.let(::airing),
             lastAiredEpisode = o.obj("last_episode_to_air")?.let(::airing),
+            originalLanguage = o.str("original_language")?.takeIf { it.isNotBlank() },
             backdrops = (o.obj("images")?.get("backdrops") as? JsonArray).orEmpty()
                 .mapNotNull { it as? JsonObject }
                 .filter { it.str("iso_639_1") == null } // textless
