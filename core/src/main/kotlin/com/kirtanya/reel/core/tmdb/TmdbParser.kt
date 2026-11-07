@@ -31,6 +31,36 @@ object TmdbParser {
     }
 
     /**
+     * A search (or discover) page as ranking hits: films and shows with popularity and genres, plus the known-for
+     * titles of any person found ("tom cruise" finds his films). [defaultType] for discover pages (no media_type).
+     */
+    fun parseSearchHits(body: String, defaultType: MediaType? = null): List<com.kirtanya.reel.core.browse.SearchRank.Hit> {
+        val results = root(body)["results"] as? JsonArray ?: return emptyList()
+        fun hit(o: JsonObject, type: MediaType, popularity: Double?): com.kirtanya.reel.core.browse.SearchRank.Hit? {
+            val s = summary(o, type) ?: return null
+            val genres = (o["genre_ids"] as? JsonArray).orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() }
+            return com.kirtanya.reel.core.browse.SearchRank.Hit(s, popularity ?: 0.0, genres)
+        }
+        fun typeOf(o: JsonObject) = when (o.str("media_type")) {
+            "movie" -> MediaType.MOVIE
+            "tv" -> MediaType.TV
+            null -> defaultType
+            else -> null
+        }
+        return results.mapNotNull { it as? JsonObject }.flatMap { o ->
+            if (o.str("media_type") == "person") {
+                // A person's titles rank on their own popularity, like any other hit.
+                (o["known_for"] as? JsonArray).orEmpty().mapNotNull { k ->
+                    val ko = k as? JsonObject ?: return@mapNotNull null
+                    hit(ko, typeOf(ko) ?: return@mapNotNull null, ko.double("popularity"))
+                }
+            } else {
+                listOfNotNull(typeOf(o)?.let { hit(o, it, o.double("popularity")) })
+            }
+        }
+    }
+
+    /**
      * A `find` response: the [type] match first, else the other kind (a launcher catalog can file a
      * mini-series as a film). Null when TMDB doesn't know the id.
      */

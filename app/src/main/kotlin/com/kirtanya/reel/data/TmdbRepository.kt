@@ -2,6 +2,7 @@ package com.kirtanya.reel.data
 
 import android.util.LruCache
 import com.kirtanya.reel.BuildConfig
+import com.kirtanya.reel.core.browse.SearchRank
 import com.kirtanya.reel.core.tmdb.Episode
 import com.kirtanya.reel.core.tmdb.Genre
 import com.kirtanya.reel.core.tmdb.MediaType
@@ -32,7 +33,7 @@ class TmdbException(message: String) : Exception(message)
  */
 class TmdbRepository(private val http: OkHttpClient, private val region: String = "IN") {
     private val token = BuildConfig.TMDB_TOKEN
-    private val cache = LruCache<String, Pair<Long, String>>(120)
+    private val cache = LruCache<String, Pair<Long, String>>(200)
 
     val hasKey: Boolean get() = token.isNotBlank()
 
@@ -60,8 +61,45 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
         (0 until maxOf(m.size, t.size)).flatMap { i -> listOfNotNull(t.getOrNull(i), m.getOrNull(i)) }
     }
 
-    suspend fun search(query: String): List<TitleSummary> =
-        if (query.isBlank()) emptyList() else list(TmdbPaths.search(query))
+    /**
+     * Everything TMDB finds for [query] (first three pages, people's known-for titles included), ranked by
+     * [SearchRank]: popular and well-matched first, nudged towards [taste] (genre weights, fetched alongside). When few titles come
+     * back and a word looks misspelt ("aben"), the corrected search ("avengers") is merged in.
+     */
+    suspend fun search(query: String, taste: suspend () -> Map<Int, Double> = { emptyMap() }): List<TitleSummary> = coroutineScope {
+        if (query.isBlank()) return@coroutineScope emptyList()
+        val liking = async { runCatching { taste() }.getOrDefault(emptyMap()) }
+        suspend fun pages(q: String, count: Int): List<SearchRank.Hit> {
+            val rest = (2..count).map { p -> async { runCatching { TmdbParser.parseSearchHits(get(TmdbPaths.search(q, p))) }.getOrDefault(emptyList()) } }
+            return TmdbParser.parseSearchHits(get(TmdbPaths.search(q, 1))) + rest.flatMap { it.await() }
+        }
+        var hits = pages(query, 3)
+        if (hits.distinctBy { it.summary.ref }.size < FEW_RESULTS && query.split(' ').any { it.length >= 4 }) {
+            val fixed = runCatching { SearchRank.correct(query, wellKnownTitles()) }.getOrNull()
+            if (fixed != null) hits = hits + runCatching { pages(fixed, 2) }.getOrDefault(emptyList())
+        }
+        SearchRank.rank(query, hits, liking.await())
+    }
+
+    @Volatile private var tasteMemo: Pair<List<TitleRef>, Map<Int, Double>>? = null
+
+    /** Genre weights from [refs] (recently watched and saved titles; details are cached), for ranking search. */
+    suspend fun taste(refs: List<TitleRef>): Map<Int, Double> = coroutineScope {
+        tasteMemo?.let { (for_, taste) -> if (for_ == refs) return@coroutineScope taste }
+        val genres = refs.map { ref -> async { runCatching { details(ref).genreList.map { it.id } }.getOrNull() } }.mapNotNull { it.await() }
+        SearchRank.taste(genres).also { if (genres.isNotEmpty()) tasteMemo = refs to it }
+    }
+
+    @Volatile private var wellKnown: Pair<Long, List<String>>? = null
+
+    /** Names of ~400 well-known films and shows, most popular first (an hour's cache): the spelling-fix dictionary. */
+    private suspend fun wellKnownTitles(): List<String> = coroutineScope {
+        wellKnown?.let { (at, names) -> if (System.currentTimeMillis() - at < WELL_KNOWN_MS) return@coroutineScope names }
+        val pages = MediaType.entries.flatMap { type -> (1..10).map { p -> async { runCatching { TmdbParser.parseSearchHits(get(TmdbPaths.wellKnown(type, p)), type) }.getOrDefault(emptyList()) } } }
+        val names = pages.flatMap { it.await() }.sortedByDescending { it.popularity }.map { it.summary.title }
+        if (names.isNotEmpty()) wellKnown = System.currentTimeMillis() to names
+        names
+    }
 
     /** Films or shows named [query] with popularity and original titles (artwork matching for raw files). */
     suspend fun matchCandidates(type: MediaType, query: String, year: Int?): List<com.kirtanya.reel.core.artmatch.MatchCandidate> =
@@ -155,6 +193,9 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
     companion object {
         private const val BASE = "https://api.themoviedb.org/3/"
         private const val CACHE_MS = 15 * 60 * 1000L
+        /** Fewer distinct titles than this and a misspelt word: also search the corrected spelling. */
+        private const val FEW_RESULTS = 10
+        private const val WELL_KNOWN_MS = 60 * 60 * 1000L
 
         fun createHttp(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)

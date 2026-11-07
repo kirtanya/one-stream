@@ -58,10 +58,10 @@ val LocalCatalog = staticCompositionLocalOf<Catalog?> { null }
 fun rememberCatalog(): Catalog {
     val override = LocalCatalog.current
     val app = ReelApp.get(LocalContext.current)
-    return override ?: remember(app) { TmdbCatalog(app.tmdb, lazy { app.ratings }) }
+    return override ?: remember(app) { TmdbCatalog(app.tmdb, lazy { app.ratings }, app) }
 }
 
-private class TmdbCatalog(private val tmdb: TmdbRepository, ratings: Lazy<com.kirtanya.reel.data.RatingsRepository>) : Catalog {
+private class TmdbCatalog(private val tmdb: TmdbRepository, ratings: Lazy<com.kirtanya.reel.data.RatingsRepository>, private val app: ReelApp) : Catalog {
     private val ratings by ratings
     override suspend fun reviews(ref: TitleRef) = tmdb.reviews(ref)
     override suspend fun titleRatings(d: TitleDetails) = ratings.titleRatings(d.summary.ref, d.imdbId)
@@ -70,7 +70,16 @@ private class TmdbCatalog(private val tmdb: TmdbRepository, ratings: Lazy<com.ki
     override suspend fun posterImdb(ref: TitleRef) = ratings.posterImdb(ref)
     override suspend fun home() = tmdb.home()
     override suspend fun onService(providerId: Int) = tmdb.onService(providerId)
-    override suspend fun search(query: String) = tmdb.search(query)
+    override suspend fun search(query: String) = tmdb.search(query) { tmdb.taste(tasteRefs()) }
+
+    /** The viewer's taste: the 15 titles most recently watched, then saved to the watchlist. */
+    private fun tasteRefs(): List<com.kirtanya.reel.core.tmdb.TitleRef> {
+        val parse = com.kirtanya.reel.core.library.Watchlist::parseRef
+        val watched = app.history.entries.value.sortedByDescending { it.updatedAt }
+            .mapNotNull { parse(it.playback.key.split(":").take(2).joinToString(":")) }
+        val saved = app.watchlist.all.value.filterNot { it.removed }.sortedByDescending { it.changedAt }.mapNotNull { it.ref }
+        return (watched + saved).distinct().take(15)
+    }
     override suspend fun details(ref: TitleRef) = tmdb.details(ref)
     override suspend fun season(tvId: Int, season: Int) = tmdb.season(tvId, season)
     override suspend fun logo(ref: TitleRef) = tmdb.logo(ref)

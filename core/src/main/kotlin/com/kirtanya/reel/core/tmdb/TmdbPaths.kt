@@ -16,7 +16,10 @@ object TmdbPaths {
     fun onService(type: MediaType, providerId: Int, region: String = "IN") =
         "discover/${type.path}?language=en-US&sort_by=popularity.desc&watch_region=$region&with_watch_providers=$providerId&include_adult=false"
 
-    fun search(query: String) = "search/multi?language=en-US&include_adult=false&query=${URLEncoder.encode(query.trim(), Charsets.UTF_8)}"
+    fun search(query: String, page: Int = 1) = "search/multi?language=en-US&include_adult=false&page=$page&query=${URLEncoder.encode(query.trim(), Charsets.UTF_8)}"
+    /** Well-known titles, most popular first (search's spelling fixes are checked against their names). */
+    fun wellKnown(type: MediaType, page: Int) =
+        "discover/${type.path}?language=en-US&include_adult=false&sort_by=popularity.desc&vote_count.gte=300&page=$page"
 
     /** Films or shows only, optionally in one year (artwork matching for raw files: core/artmatch). */
     fun searchTitle(type: MediaType, query: String, year: Int? = null): String {

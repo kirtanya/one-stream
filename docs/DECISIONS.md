@@ -5,6 +5,18 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-07 · TV Back: Home → Search → press twice to exit; search ranks everything (0.16.2)**
+Decision (user): on the TV, Back on Home opens Search, and Back on Search shows "Press Back again to exit" (as in the
+player); a second Back within 3 s closes the app. Pages and the Downloads tab go back as before. Search no longer shows
+TMDB's literal, single-page result: it fetches three pages (people's known-for titles included) and ranks them by
+popularity, a name-match boost and the viewer's taste (genres of the 15 titles most recently watched or saved);
+with fewer than 10 titles and a misspelt word ("aben"), the corrected spelling ("avengers", checked against ~400
+well-known titles) is searched too (`core/browse/SearchRank.kt`).
+Why: "ABEN" found two titles while looking for Avengers; the user wants every available result, most popular and most
+relevant to them first.
+
+---
+
 **2026-11-06 · TV search gets its own keyboard (0.16.1)**
 Decision (user): TV search uses an in-app D-pad keyboard laid out like Netflix / YouTube / Prime (keys left, results
 right), ported from One Launcher's TV keyboard (`ui/tv/TvKeyboard.kt`, logic in `core/browse/SearchKeys.kt`), so the
