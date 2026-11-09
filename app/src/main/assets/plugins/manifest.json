@@ -2,7 +2,7 @@
   "name": "Reel built-in (legal sources)",
   "version": "1.0.0",
   "author": "Reel",
-  "description": "Public-domain and openly licensed films only.",
+  "description": "Public-domain and openly licensed films, plus free full films on official rights-holder YouTube channels.",
   "scrapers": [
     {
       "id": "reel-open-movies",
@@ -23,6 +23,15 @@
       "supportedTypes": ["movie"],
       "enabled": true,
       "formats": ["mp4", "mkv"]
+    },
+    {
+      "id": "reel-youtube-official",
+      "name": "Free on YouTube",
+      "description": "Full films that official rights-holder channels (Shemaroo, Goldmines, Pen, Rajshri) upload for free. Opens the YouTube app.",
+      "version": "1.0.0",
+      "filename": "youtube-official.js",
+      "supportedTypes": ["movie"],
+      "enabled": true
     }
   ]
 }

@@ -33,6 +33,12 @@
 - **Built-in sources stay legal.** The built-in Internet Archive plugin
   (`app/src/main/assets/plugins/internet-archive.js`) only searches `collection:feature_films`.
   Never ship, add or suggest piracy addons / plugins.
+  The one other built-in web source is `youtube-official.js` ("Free on YouTube"): full films that the rights
+  holders themselves upload for free, returned only as external links that open the YouTube app (never played
+  in-app, never a stream URL). Its allow-list is exactly these channels, addressed by channel id and checked per
+  video owner: Shemaroo Movies (`@shemaroomovies`), Goldmines Bollywood (`@GoldminesBollywood`), Goldmines
+  Telefilms (`@GoldminesTelefilms`), Pen Multiplex (`@PenMultiplex`), Rajshri (`@Rajshri`). Never add another
+  uploader or channel; a test pins the id list.
 - **No BitTorrent traffic from the work Mac or the office network.** P2P tests only on the phone / TV
   at home. Mac-side work = unit tests, builds, screen renders.
 - **Never print, read out or commit `tmdb.key`** (gitignored; read by `app/build.gradle.kts`).

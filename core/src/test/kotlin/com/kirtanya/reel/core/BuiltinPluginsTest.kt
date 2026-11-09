@@ -35,9 +35,9 @@ class BuiltinPluginsTest {
     }
     private val runtime = PluginRuntime(fake)
 
-    @Test fun manifestListsBothPlugins() {
+    @Test fun manifestListsTheBuiltInPlugins() {
         val m = NuvioPlugins.parseManifest(File(dir, "manifest.json").readText())
-        assertEquals(listOf("reel-open-movies", "reel-internet-archive"), m.scrapers.map { it.id })
+        assertEquals(listOf("reel-open-movies", "reel-internet-archive", "reel-youtube-official"), m.scrapers.map { it.id })
         m.scrapers.forEach { assertTrue(File(dir, it.filename).isFile, it.filename) }
     }
 
