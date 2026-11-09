@@ -11,6 +11,7 @@ import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbParser
 import com.kirtanya.reel.core.tmdb.TmdbPaths
+import com.kirtanya.reel.core.tmdb.titlesInLanguage
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -151,6 +152,23 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
         }
         throw TmdbException("Can't reach TMDB. Check your connection.").apply { last?.let(::initCause) }
     }
+
+    /**
+     * TV Movies / Shows page: [com.kirtanya.reel.core.browse.BrowseRows] fetched together (cached like the rest).
+     * A row that fails is left out; only when every row fails does this throw, so the page can offer Retry.
+     */
+    suspend fun browseRows(type: MediaType): List<HomeRow> = coroutineScope {
+        val results = com.kirtanya.reel.core.browse.BrowseRows.forType(type, region)
+            .map { spec -> spec.title to async { runCatching { list(spec.path, type) } } }
+            .map { (title, r) -> title to r.await() }
+        val rows = results.mapNotNull { (title, r) -> r.getOrNull()?.takeIf { it.isNotEmpty() }?.let { HomeRow(title, it) } }
+        if (rows.isEmpty()) results.firstNotNullOfOrNull { it.second.exceptionOrNull() }?.let { throw it }
+        rows
+    }
+
+    /** Popular titles of [type] whose original language is [code]; [page] from 1. */
+    suspend fun titlesInLanguage(type: MediaType, code: String, page: Int = 1): List<TitleSummary> =
+        list(TmdbPaths.titlesInLanguage(type, code, page), type)
 
     companion object {
         private const val BASE = "https://api.themoviedb.org/3/"

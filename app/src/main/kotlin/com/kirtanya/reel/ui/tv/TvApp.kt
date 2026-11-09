@@ -19,7 +19,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Text
@@ -51,6 +54,7 @@ import com.kirtanya.reel.ui.common.AddLinkSheet
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.CollectionScreen
 import com.kirtanya.reel.ui.common.ReelButton
+import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.nav.Navigator
 import com.kirtanya.reel.ui.nav.Tab
@@ -171,6 +175,7 @@ fun TvApp(
                 }
                 is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs)
                 is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
+                is Dest.Category -> saveable.SaveableStateProvider("category:${screen.category.key}") { TvCategoryPage(screen, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { com.kirtanya.reel.ui.common.PersonScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = true, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
                 is Dest.Cast -> com.kirtanya.reel.ui.sources.CastScreen(
@@ -190,6 +195,9 @@ fun TvApp(
                         when (screen) {
                             Tab.Home -> TvHome(onOpen = openTitle, onOpenDest = open, onShowDownloads = { nav.select(Tab.Downloads) })
                             Tab.Search -> Box(Modifier.padding(start = TvPageInset)) { TvSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery) }
+                            Tab.Movies -> TvTypeHome(MediaType.MOVIE, onOpen = openTitle, onOpenDest = open, onShowDownloads = { nav.select(Tab.Downloads) })
+                            Tab.Shows -> TvTypeHome(MediaType.TV, onOpen = openTitle, onOpenDest = open, onShowDownloads = { nav.select(Tab.Downloads) })
+                            Tab.Categories -> Box(Modifier.padding(start = TvPageInset)) { TvCategories(onOpenDest = open) }
                             Tab.Downloads -> Box(Modifier.padding(start = TvPageInset, top = Tokens.Space.tvSafeV)) { DownloadsScreen(isTv = true, onAdd = {}, onOpenDest = open) }
                             // Never shown: selecting it opens the panel (above) and the screen behind stays.
                             Tab.Settings -> Unit
@@ -224,7 +232,7 @@ fun TvApp(
 }
 
 /**
- * The TV's left rail: four icons (Search, Home, Downloads, Settings), vertically centred, no labels. Selected = white
+ * The TV's left rail: seven icons (Search, Home, Movies, Shows, Categories, Downloads, Settings), vertically centred, no labels. Selected = white
  * icon + a small marker on its left, the rest grey; focus = a ring and a white icon. It's one focus group: ◄ from a
  * screen's first item enters on the selected icon, ► leaves to the screen ([contentFocus], which remembers where you
  * were), ▲ / ▼ past the ends stay put. Nothing animates (the ring fade is the shared focus fade).
@@ -238,7 +246,12 @@ internal fun TvRail(
     settingsFocus: FocusRequester = remember { FocusRequester() },
     contentFocus: FocusRequester? = null,
 ) {
-    val items = remember { listOf(Tab.Search to Icons.Rounded.Search, Tab.Home to Icons.Rounded.Home, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings) }
+    val items = remember {
+        listOf(
+            Tab.Search to Icons.Rounded.Search, Tab.Home to Icons.Rounded.Home, Tab.Movies to Icons.Rounded.Movie, Tab.Shows to Icons.Rounded.Tv,
+            Tab.Categories to Icons.Rounded.GridView, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings,
+        )
+    }
     val requesters = remember { items.associate { (tab, _) -> tab to (if (tab == Tab.Settings) settingsFocus else FocusRequester()) } }
     Column(
         modifier

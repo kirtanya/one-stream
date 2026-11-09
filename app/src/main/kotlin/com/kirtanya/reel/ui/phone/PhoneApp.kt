@@ -120,6 +120,8 @@ fun PhoneApp(
                 is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs)
                 is Dest.Collection -> saveable.SaveableStateProvider(collectionKey(screen)) { CollectionScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { PersonScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
+                // Categories is a TV page; the phone never opens one.
+                is Dest.Category -> Unit
                 is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = false, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
                 is Dest.Cast -> com.kirtanya.reel.ui.sources.CastScreen(
                     screen.request, isTv = false, onBack = back,
@@ -132,6 +134,8 @@ fun PhoneApp(
                         Tab.Search -> PhoneSearch(onOpen = openTitle, onOpenDest = open, initialQuery = nav.searchQuery)
                         Tab.Downloads -> DownloadsScreen(isTv = false, onAdd = { showAdd = true }, onOpenDest = open)
                         Tab.Settings -> SettingsScreen(isTv = false)
+                        // TV-only tabs: the phone's bar has no button for them.
+                        Tab.Movies, Tab.Shows, Tab.Categories -> Unit
                     }
                 }
             }
