@@ -607,6 +607,22 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvCastNone() = render("cast-none", tv = true, data = RenderData(sourceSearch = { Fake.nothingFound }), content = tvApp { open(Dest.Cast(castFilm)) })
     @Test @Config(qualifiers = TV) fun tvCollection() = render("collection-service", tv = true, content = tvApp { open(Dest.Collection("Netflix", provider = Provider.FEATURED[0])) })
     @Test @Config(qualifiers = TV) fun tvCollectionGenre() = render("collection-genre", tv = true, content = tvApp { open(Dest.Collection("Drama", genre = com.kirtanya.reel.core.tmdb.Genre(18, "Drama"), genreType = com.kirtanya.reel.core.tmdb.MediaType.TV)) })
+    // TV side nav: Movies, Shows and Categories (and the page a category tile opens).
+    @Test @Config(qualifiers = TV) fun tvMovies() = render("movies", tv = true, content = tvApp { select(Tab.Movies) })
+    @Test @Config(qualifiers = TV) fun tvShows() = render("shows", tv = true, content = tvApp { select(Tab.Shows) })
+    @Test @Config(qualifiers = TV) fun tvMoviesError() = render("movies-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp { select(Tab.Movies) })
+    @Test @Config(qualifiers = TV) fun tvCategories() = render("categories", tv = true, content = tvApp { select(Tab.Categories) })
+    /** Down twice and right once from the first tile: the remote moves through the grid (not off it). */
+    @Test @Config(qualifiers = TV) fun tvCategoriesDown() = behaviour().let { render("categories-down", tv = true, focusDown = 2, focusRight = 1, content = tvApp { select(Tab.Categories) }) }
+    /** Left from the first column: the remote goes to the side nav. */
+    @Test @Config(qualifiers = TV) fun tvCategoriesRail() = behaviour().let { render("categories-rail", tv = true, focusLeft = 1, content = tvApp { select(Tab.Categories) }) }
+    @Test @Config(qualifiers = TV) fun tvCategoryGenre() = render("category-genre", tv = true, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.FALLBACK_GENRES[0])) })
+    @Test @Config(qualifiers = TV) fun tvCategoryLanguage() = render("category-language", tv = true, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.LANGUAGES[0])) })
+    /** Horror has films only: no All / Films / Shows tabs. */
+    @Test @Config(qualifiers = TV) fun tvCategoryOneKind() = render("category-one-kind", tv = true, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.FALLBACK_GENRES.first { it.label == "Horror" })) })
+    /** Right twice, then down from the first row of posters: the same column of the next row. */
+    @Test @Config(qualifiers = TV) fun tvCategoryDown() = behaviour().let { render("category-down", tv = true, focusRight = 2, focusDown = 1, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.FALLBACK_GENRES[0])) }) }
+    @Test @Config(qualifiers = TV) fun tvCategoryError() = render("category-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.LANGUAGES[2])) })
     @Test @Config(qualifiers = TV) fun tvPerson() = render("person", tv = true, content = tvApp { open(Dest.Person(1, "Timothée Chalamet")) })
     @Test @Config(qualifiers = TV) fun tvDownloads() = render("downloads", tv = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvDownloadsCache() = render("downloads-cache", tv = true, data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })

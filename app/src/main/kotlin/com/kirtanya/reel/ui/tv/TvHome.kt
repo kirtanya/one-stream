@@ -139,7 +139,7 @@ fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onShowDow
 
 /** Home couldn't load (offline, or TMDB said nothing): Retry, or the Downloads tab, which works without a connection. */
 @Composable
-private fun TvHomeProblem(title: String, body: String, onRetry: () -> Unit, onShowDownloads: () -> Unit) {
+internal fun TvHomeProblem(title: String, body: String, onRetry: () -> Unit, onShowDownloads: () -> Unit) {
     val offline = com.kirtanya.reel.ui.common.rememberOffline()
     val focus = remember { FocusRequester() }
     RequestFocusOnce(focus)
@@ -159,7 +159,7 @@ private fun TvHomeProblem(title: String, body: String, onRetry: () -> Unit, onSh
 }
 
 @Composable
-private fun TvHomeContent(
+internal fun TvHomeContent(
     rows: List<Pair<String, List<TitleSummary>>>,
     continueItems: List<ContinueItem>,
     myList: List<TitleSummary>,
@@ -167,6 +167,8 @@ private fun TvHomeContent(
     newEpisodes: List<com.kirtanya.reel.core.tmdb.CalendarEntry>,
     onOpen: (TitleSummary) -> Unit,
     onOpenDest: (Dest) -> Unit,
+    /** False on the Movies / Shows pages: their rows keep their own order and ignore Settings → Home screen (that is Home's). */
+    customLayout: Boolean = true,
 ) {
     val initial = continueItems.firstOrNull()?.info() ?: rows.first().second.first().info()
     // Read only inside HomeBackdrop / HomeInfoBlock: a read here would recompose every row on each move.
@@ -241,7 +243,7 @@ private fun TvHomeContent(
                         if (because != null) add(RowIds.BECAUSE)
                         rows.forEach { r -> add(RowIds.tmdb(r.first)) }
                     }
-                    val arranged = HomeLayout.arrange(available)
+                    val arranged = if (customLayout) HomeLayout.arrange(available) else available
                     // The remote starts on the first row.
                     val firstRow = arranged.firstOrNull()
                     val firstTmdb = arranged.firstOrNull { it.startsWith("tmdb:") }

@@ -8,7 +8,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.kirtanya.reel.core.tmdb.TitleRef
 
-enum class Tab(val label: String) { Home("Home"), Search("Search"), Downloads("Downloads"), Settings("Settings") }
+/**
+ * [Movies], [Shows] and [Categories] exist only on the TV's side nav; the phone's tab bar lists its own four tabs, so adding
+ * a tab here never changes it.
+ */
+enum class Tab(val label: String) {
+    Home("Home"), Search("Search"), Movies("Movies"), Shows("Shows"), Categories("Categories"), Downloads("Downloads"), Settings("Settings")
+}
 
 sealed interface Dest {
     /** [season] preselects that season of a show (Continue watching lands on the episode's season). */
@@ -42,6 +48,9 @@ sealed interface Dest {
         val genre: com.kirtanya.reel.core.tmdb.Genre? = null,
         val genreType: com.kirtanya.reel.core.tmdb.MediaType? = null,
     ) : Dest
+
+    /** TV: the films and shows of one Categories tile (a genre of both kinds, or an original language). */
+    data class Category(val category: com.kirtanya.reel.core.browse.Category) : Dest
 
     /** A cast member: photo, bio, what they've been in. */
     data class Person(val id: Int, val name: String) : Dest

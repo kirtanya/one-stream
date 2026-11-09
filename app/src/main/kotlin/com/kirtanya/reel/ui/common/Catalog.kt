@@ -37,6 +37,10 @@ interface Catalog {
     suspend fun collection(id: Int): com.kirtanya.reel.core.tmdb.CollectionDetails = throw UnsupportedOperationException()
     /** Discover with filters (genre grids with sort / rating / decade chips); 20 a page. */
     suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int = 1): List<TitleSummary> = byGenre(filter.type, filter.genres.first(), page)
+    /** TV Movies / Shows pages: the rows for films or for shows. Empty by default so render fakes stay short. */
+    suspend fun browseRows(type: MediaType): List<HomeRow> = emptyList()
+    /** Popular titles of [type] whose original language is [code] (TV Categories → Languages). */
+    suspend fun byLanguage(type: MediaType, code: String, page: Int = 1): List<TitleSummary> = emptyList()
     /** Episodes of [shows] airing (or aired) between [from] and [to]. */
     suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate): List<com.kirtanya.reel.core.tmdb.CalendarEntry> = emptyList()
     /** TMDB user reviews (first page + total). */
@@ -89,5 +93,7 @@ private class TmdbCatalog(private val tmdb: TmdbRepository, ratings: Lazy<com.ki
     override suspend fun findByImdb(imdbId: String, type: MediaType) = tmdb.findByImdb(imdbId, type)
     override suspend fun collection(id: Int) = tmdb.collection(id)
     override suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int) = tmdb.discover(filter, page)
+    override suspend fun browseRows(type: MediaType) = tmdb.browseRows(type)
+    override suspend fun byLanguage(type: MediaType, code: String, page: Int) = tmdb.titlesInLanguage(type, code, page)
     override suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate) = tmdb.calendar(shows, from, to)
 }

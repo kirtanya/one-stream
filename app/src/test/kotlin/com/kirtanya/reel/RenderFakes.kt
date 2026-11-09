@@ -69,6 +69,8 @@ class FakeCatalog(private val answer: Answer = Answer.Data, private val logos: B
     override suspend fun logo(ref: TitleRef) = if (!logos || answer != Answer.Data) null else Fake.logoFor(ref)
     override suspend fun genres(type: MediaType) = give(if (type == MediaType.MOVIE) Fake.movieGenres else Fake.tvGenres, emptyList())
     override suspend fun byGenre(type: MediaType, genreId: Int, page: Int) = give(Fake.titles(20, seed = genreId * 31 + page), emptyList())
+    override suspend fun browseRows(type: MediaType) = give(Fake.browseRows(type), emptyList())
+    override suspend fun byLanguage(type: MediaType, code: String, page: Int) = give(Fake.titles(20, seed = 40 + (code.hashCode().absoluteValue % 30) + page, type = type), emptyList())
     override suspend fun person(id: Int) = give(Fake.person, Fake.person.copy(biography = "", credits = emptyList()))
     override suspend fun findByImdb(imdbId: String, type: MediaType) = give(Fake.details(if (type == MediaType.TV) Fake.show else Fake.film).summary, null)
     override suspend fun collection(id: Int) = give(
@@ -162,6 +164,10 @@ object Fake {
         HomeRow("Popular in India", titles(10, seed = 12)),
         HomeRow("Top rated shows", titles(1, seed = 20, type = MediaType.TV)),
     )
+
+    /** The TV's Movies / Shows pages: every row of [com.kirtanya.reel.core.browse.BrowseRows], one kind only. */
+    fun browseRows(type: MediaType): List<HomeRow> =
+        com.kirtanya.reel.core.browse.BrowseRows.forType(type).mapIndexed { i, spec -> HomeRow(spec.title, titles(12, seed = 60 + i * 5, type = type)) }
 
     fun logoFor(ref: TitleRef): String? = (ref.id % 4).takeIf { it != 2 }?.let { "/logo_${(names.getOrNull((ref.id - 10_000).absoluteValue % names.size) ?: "Title").replace(' ', '_')}.png" }
 
