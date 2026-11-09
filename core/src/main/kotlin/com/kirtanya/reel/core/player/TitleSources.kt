@@ -13,6 +13,8 @@ import com.kirtanya.reel.core.sources.StartSpeed
 data class TitleSourceRow(
     val source: Source, val title: String, val detail: String, val resume: String?, val tooBig: Boolean,
     val speed: StartSpeed = StartSpeed.UNKNOWN,
+    /** The release names Hindi: the row carries a "Hindi" tag, and [detail] leaves the word out. */
+    val hindi: Boolean = false,
 ) {
     val key: String get() = source.key
 }
@@ -88,8 +90,10 @@ object TitleSources {
             val provider = com.kirtanya.reel.core.sources.SourceFacts.providerLabel(s.provider)
             return TitleSourceRow(s, "Streaming service", listOf(provider, "Opens in its app").joinToString(" · "), null, tooBig = false)
         }
-        val r = PlayerSources.row(s, current = false)
-        return TitleSourceRow(s, r.title, r.detail, resume, tooBig = !fits, speed = speed)
+        // The tag says "Hindi"; the detail line then only lists the other languages.
+        val hindi = com.kirtanya.reel.core.sources.SourceBrowser.HINDI in com.kirtanya.reel.core.sources.SourceFacts.languages(s)
+        val r = PlayerSources.row(s, current = false, omitLanguage = com.kirtanya.reel.core.sources.SourceBrowser.HINDI.takeIf { hindi })
+        return TitleSourceRow(s, r.title, r.detail, resume, tooBig = !fits, speed = speed, hindi = hindi)
     }
 
     /** "Resume 42:10", "Resume 1:05:09": the way the title page words a saved position. */

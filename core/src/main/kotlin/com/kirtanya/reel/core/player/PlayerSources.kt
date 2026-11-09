@@ -48,7 +48,8 @@ object PlayerSources {
         return PlayerSourcePage(rows, searching, empty = if (searching == null && !others) NONE_FOUND else null)
     }
 
-    fun row(s: Source, current: Boolean): PlayerSourceRow {
+    /** [omitLanguage]: a language the row shows another way (the TV's "Hindi" tag), so the detail doesn't say it twice. */
+    fun row(s: Source, current: Boolean, omitLanguage: String? = null): PlayerSourceRow {
         // Quality, size and the two tags that matter most (HDR / Dolby Vision / Atmos…).
         val title = (listOfNotNull(s.quality.label, s.sizeBytes?.let(ByteSize::format)) + SourceFacts.tags(s).filterNot { s.quality.label.contains(it) }.take(2)).joinToString(" · ")
         val peers = when (s.kind) {
@@ -56,7 +57,7 @@ object PlayerSources {
             // The real count when the addon gives it (easier to compare than Strong / OK), else the health word.
             else -> s.seeders?.takeIf { it > 0 }?.let { if (it == 1) "1 seeder" else "$it seeders" } ?: SeedHealth.of(s)?.label
         }
-        val languages = SourceFacts.languages(s).take(3).joinToString(", ").ifEmpty { null }
+        val languages = SourceFacts.languages(s).filter { it != omitLanguage }.take(3).joinToString(", ").ifEmpty { null }
         val detail = listOfNotNull(SourceFacts.providerLabel(s.provider), peers, languages).joinToString(" · ")
         return PlayerSourceRow(s, title, detail, current)
     }

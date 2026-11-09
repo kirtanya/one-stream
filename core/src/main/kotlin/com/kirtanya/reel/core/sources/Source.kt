@@ -17,6 +17,8 @@ data class SourceRequest(
     val year: Int?,
     val season: Int? = null,
     val episode: Int? = null,
+    /** TMDB `original_title` (as `REEL.originalTitle` for plugins): old Indian films sit on archive.org under it. */
+    val originalTitle: String? = null,
 ) {
     /** Cache / dedupe key, e.g. "tv:1399:s1e3". */
     val key: String get() = "${type.path}:$tmdbId" + if (season != null) ":s${season}e$episode" else ""

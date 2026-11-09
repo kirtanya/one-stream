@@ -52,6 +52,15 @@ class TmdbParserTest {
         assertEquals(8 to 6, d.lastAired)
     }
 
+    @Test fun originalTitleComesFromTheOriginalFields() {
+        val movie = TmdbParser.parseDetails("""{"id":1,"title":"Mughal-E-Azam: The Great Mughal","original_title":"Mughal-E-Azam","original_language":"hi"}""", MediaType.MOVIE)
+        assertEquals("Mughal-E-Azam", movie.originalTitle)
+        assertEquals("hi", movie.originalLanguage)
+        val show = TmdbParser.parseDetails("""{"id":2,"name":"Panchayat","original_name":"पंचायत"}""", MediaType.TV)
+        assertEquals("पंचायत", show.originalTitle)
+        assertNull(TmdbParser.parseDetails("""{"id":3,"title":"X","original_title":""}""", MediaType.MOVIE).originalTitle)
+    }
+
     @Test fun missingRegionMeansNoProviders() {
         assertTrue(TmdbParser.parseDetails(fixture("tv.json"), MediaType.TV, region = "ZZ").providers.isEmpty)
     }

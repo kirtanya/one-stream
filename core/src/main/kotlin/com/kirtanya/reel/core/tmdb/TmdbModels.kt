@@ -142,6 +142,8 @@ data class TitleDetails(
     val status: String? = null,
     /** TMDB `original_language` (ISO 639-1: "en", "hi"…), e.g. to prefer Hindi audio for a Hindi film. */
     val originalLanguage: String? = null,
+    /** TMDB `original_title` / `original_name`, as written in the original language (maybe not Latin script). */
+    val originalTitle: String? = null,
 ) {
     val trailer: Video? get() = videos.firstOrNull { it.isTrailer }
 }

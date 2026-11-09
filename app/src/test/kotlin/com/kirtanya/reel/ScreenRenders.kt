@@ -553,6 +553,37 @@ open class ScreenRenders(protected val variant: Variant) {
     /** Typing "du": the suggestions are what was searched before (nothing is fetched per key), next letters outlined. */
     @Test @Config(qualifiers = TV) fun tvSearchSuggest() = tvSearchRecents().let { render("search-suggest", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "du") } } }
     /** ► off the keyboard's right edge lands on the results; focus then sits on a poster (named above the grid). */
+    /** A Hindi film: "Free on …" rows above the pick (the paid "Standard with Ads" tier is left out), Hindi tags on rows. */
+    @Test fun sourcesHindi() = render("sources-hindi", data = RenderData(sourceSearch = { Fake.manySources }), content = phone { open(Dest.Sources(Fake.hindi)) })
+    /** The Hindi chip (first among the languages for this title) picked: only releases that name Hindi. */
+    @Test fun sourcesHindiFiltered() = render(
+        "sources-hindi-filtered",
+        data = RenderData(sourceSearch = { Fake.manySources }, sourceFilters = com.kirtanya.reel.core.sources.SourceFilters(languages = setOf("Hindi"))),
+        content = phone { open(Dest.Sources(Fake.hindi)) },
+    )
+    /** The chips of a Hindi title: Hindi leads the languages (then English); "Multi audio" is its own chip, last. */
+    @Test fun sourcesHindiChips() = render("sources-hindi-chips") {
+        val rows = Fake.sources(26).filter { it.kind != com.kirtanya.reel.core.sources.SourceKind.EXTERNAL }.map(com.kirtanya.reel.core.sources.SourceBrowser::view)
+        androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().padding(vertical = 24.dp)) {
+            com.kirtanya.reel.ui.sources.Chips(com.kirtanya.reel.core.sources.SourceBrowser.facets(rows, listOf("Hindi", "English")), com.kirtanya.reel.core.sources.SourceFilters(languages = setOf("Hindi")), {}, 16.dp)
+        }
+    }
+    /** The TV's source rows for a Hindi film: free options on top, a Hindi mark leading the detail line of each Hindi release. */
+    @Test @Config(qualifiers = TV) fun tvSourceRowsHindi() = render("source-rows-hindi", tv = true) {
+        TvScene {
+            val s = Fake.sources(26)
+            val ordered = listOf(s[0], s[1], s[2], s[11], s[3], s[16])
+            val page = com.kirtanya.reel.core.player.TitleSources.page(Fake.manySources, ordered, expanded = true)
+            val free = com.kirtanya.reel.core.sources.FreeOptions.of(Fake.details(Fake.hindi).providers, max = 2)
+            val pick = com.kirtanya.reel.ui.tv.TvSourcePick(page, expanded = true, expand = {}, rescan = {}, play = {}, download = {}, free = free)
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 24.dp)) {
+                com.kirtanya.reel.ui.tv.TvSourceRows(pick, Modifier.fillMaxSize(), androidx.compose.ui.focus.FocusRequester(), onPick = {})
+            }
+        }
+    }
+    @Test @Config(qualifiers = TV) fun tvSourcesHindi() = render("sources-hindi", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.hindi)) })
+    /** The TV title page of a Hindi film: "Free to watch" over the source rows, Hindi marks in their detail lines. */
+    @Test @Config(qualifiers = TV) fun tvTitleFilmHindi() = render("title-film-hindi", tv = true, data = manySources, content = tvApp { open(Dest.Title(Fake.hindi)) })
     @Test @Config(qualifiers = TV) fun tvSearchResultsFocus() = behaviour().let { render("search-results-focus", tv = true, focusRight = 6) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
     /** ↓ from a card in the middle of the first row lands on the next row’s first card (not the one below it). */
     @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusRight = 8, keyDown = 1) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }

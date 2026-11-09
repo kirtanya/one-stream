@@ -41,7 +41,10 @@ data class SourceView(
     val provider: String,
     val languages: List<String>,
     val tags: List<String>,
-)
+) {
+    /** The release itself names Hindi: not "Multi audio", which may or may not include it. */
+    val hindi: Boolean get() = SourceBrowser.HINDI in languages
+}
 
 /** Progress line for a search that fills in as providers answer. */
 data class SearchStatus(val headline: String, val detail: String?, val progress: Float?)
@@ -51,6 +54,18 @@ data class SearchStatus(val headline: String, val detail: String?, val progress:
  * The input list is already ranked best-first (SourceRanker), so "Best" keeps its order.
  */
 object SourceBrowser {
+    const val HINDI = "Hindi"
+
+    /**
+     * One chip for "Multi" and "Dual audio" releases that name no language. Kept apart from every real language chip:
+     * such a release may or may not carry Hindi, so it must never count towards (or hide behind) the Hindi chip.
+     */
+    const val MULTI_AUDIO = "Multi audio"
+
+    /** The languages a row shows and filters on: [SourceFacts.languages] with its "Multi" / "Dual audio" folded into [MULTI_AUDIO]. */
+    fun languagesOf(s: Source): List<String> =
+        SourceFacts.languages(s).map { if (it == "Multi" || it == "Dual audio") MULTI_AUDIO else it }.distinct()
+
     /** [personal]: the user's own tags first ("Last played", "Favourite"…), see SourceMarks.tags. */
     fun view(s: Source, personal: List<String> = emptyList()) = SourceView(
         source = s,
@@ -58,7 +73,7 @@ object SourceBrowser {
         health = SeedHealth.of(s),
         type = SourceType.of(s),
         provider = SourceFacts.providerLabel(s.provider),
-        languages = SourceFacts.languages(s),
+        languages = languagesOf(s),
         // A trailer's row says so first; an uncached debrid link says "Not cached" before the release facts.
         tags = personal + listOfNotNull(s.extra, DebridCache.tag(s)) + SourceFacts.tags(s),
     )
@@ -77,8 +92,10 @@ object SourceBrowser {
     /**
      * Chips over [rows] (the list under the Recommended card). Quality chips appear for every
      * quality present; provider, language and type only when there's more than one value to choose.
+     * [wanted] (the languages the user wants for this title, e.g. Hindi) lead the language chips in that order, whatever
+     * their counts; "Multi audio" comes last; the rest go by count.
      */
-    fun facets(rows: List<SourceView>): SourceFacets {
+    fun facets(rows: List<SourceView>, wanted: List<String> = emptyList()): SourceFacets {
         val qualities = QualityBucket.entries.mapNotNull { b ->
             rows.count { it.bucket == b }.takeIf { it > 0 }?.let { FilterChip(b, b.label, it) }
         }
@@ -86,7 +103,12 @@ object SourceBrowser {
             .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key.lowercase() })
             .map { FilterChip(it.key, it.key, it.value) }
         val languages = rows.flatMap { it.languages }.groupingBy { it }.eachCount()
-            .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+            .entries.sortedWith(
+                compareBy<Map.Entry<String, Int>> { e -> wanted.indexOf(e.key).let { if (it < 0) wanted.size else it } }
+                    .thenBy { it.key == MULTI_AUDIO }
+                    .thenByDescending { it.value }
+                    .thenBy { it.key },
+            )
             .map { FilterChip(it.key, it.key, it.value) }
         val types = SourceType.entries.mapNotNull { t ->
             rows.count { it.type == t }.takeIf { it > 0 }?.let { FilterChip(t, t.label, it) }

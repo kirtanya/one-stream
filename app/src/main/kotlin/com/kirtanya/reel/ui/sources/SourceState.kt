@@ -39,6 +39,7 @@ fun requestFor(d: TitleDetails, season: Int?, episode: Int?) = SourceRequest(
     year = d.summary.year,
     season = season,
     episode = episode,
+    originalTitle = d.originalTitle,
 )
 
 /** Last results per title/episode, so going back and forth doesn't search again. */

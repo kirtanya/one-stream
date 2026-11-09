@@ -140,6 +140,42 @@ class SourceBrowserTest {
         assertTrue(SourceBrowser.facets(listOf(ranked[0]).map(SourceBrowser::view)).languages.isEmpty())
     }
 
+    private val hindiMix = listOf(
+        src("Film 1080p [English]", n = 11),
+        src("Film 1080p [English]", n = 12),
+        src("Film 1080p [English]", n = 13),
+        src("Film 1080p MULTi", n = 14),
+        src("Film 1080p Dual Audio", n = 15),
+        src("Film 720p [Hindi + English]", n = 16),
+        src("Film 720p HIN", n = 17),
+    ).map(SourceBrowser::view)
+
+    @Test fun wantedLanguagesLeadTheChipsWhateverTheirCounts() {
+        // English has 4 rows, Hindi 2: by count English would lead; a Hindi title wants Hindi first.
+        assertEquals(listOf("English", "Hindi", "Multi audio"), SourceBrowser.facets(hindiMix).languages.map { it.value })
+        assertEquals(listOf("Hindi", "English", "Multi audio"), SourceBrowser.facets(hindiMix, wanted = listOf("Hindi", "English")).languages.map { it.value })
+        // A wanted language nobody names gets no empty chip.
+        assertEquals(listOf("English", "Multi audio"), SourceBrowser.facets(hindiMix.take(5), wanted = listOf("Hindi", "English")).languages.map { it.value })
+        assertFalse("Hindi" in SourceBrowser.facets(hindiMix.take(5), wanted = listOf("Hindi")).languages.map { it.value })
+    }
+
+    @Test fun hindiChipIsHonestMultiAudioIsItsOwnChip() {
+        val f = SourceBrowser.facets(hindiMix, wanted = listOf("Hindi", "English"))
+        assertEquals(2, f.languages.first { it.value == "Hindi" }.count, "only releases that name Hindi")
+        assertEquals(2, f.languages.first { it.value == "Multi audio" }.count, "Multi and Dual audio share one chip")
+        assertEquals(listOf("Multi audio"), hindiMix[3].languages)
+        assertEquals(listOf("Multi audio"), hindiMix[4].languages)
+
+        val hindiOnly = SourceBrowser.apply(hindiMix, SourceFilters(languages = setOf("Hindi")))
+        assertEquals(listOf(16, 17), hindiOnly.map { hindiMix.indexOf(it) + 11 })
+        val multi = SourceBrowser.apply(hindiMix, SourceFilters(languages = setOf("Multi audio")))
+        assertEquals(listOf(14, 15), multi.map { hindiMix.indexOf(it) + 11 })
+    }
+
+    @Test fun hindiBadgeOnlyForReleasesThatNameHindi() {
+        assertEquals(listOf(false, false, false, false, false, true, true), hindiMix.map { it.hindi })
+    }
+
     @Test fun filtersOrWithinAGroupAndAcrossGroups() {
         val rows = ranked.map(SourceBrowser::view)
         fun titles(f: SourceFilters) = SourceBrowser.apply(rows, f).map { it.source.title }

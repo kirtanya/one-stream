@@ -127,6 +127,8 @@ object Fake {
     val film = TitleRef(MediaType.MOVIE, FILM_ID)
     val show = TitleRef(MediaType.TV, SHOW_ID)
     val long = TitleRef(MediaType.MOVIE, LONG_ID)
+    const val HINDI_ID = 1005
+    val hindi = TitleRef(MediaType.MOVIE, HINDI_ID)
 
     private val names = listOf(
         "Dune: Part Two", "The Night Manager", "Ran", "Kalki 2898 AD", "Interstellar", "The Long Monsoon Nights of Kalimpong and the Tea Garden Ghosts",
@@ -221,6 +223,18 @@ object Fake {
             recommendations = titles(10, seed = 40, type = MediaType.TV),
             genreList = listOf(Genre(18, "Drama"), Genre(80, "Crime"), Genre(9648, "Mystery")),
             backdrops = listOf("/backdrop_1.jpg", "/backdrop_8.jpg"),
+        )
+        // A Hindi film with free options in India: Hindi chip first, "Free on …" rows above the sources.
+        HINDI_ID -> bare(ref).copy(
+            summary = TitleSummary(ref, "Laapataa Ladies", 2024, "/poster_12.jpg", "/backdrop_2.jpg", 7.9, overviews[0]),
+            runtimeMin = 122, originalLanguage = "hi", originalTitle = "Laapataa Ladies",
+            backdrops = listOf("/backdrop_2.jpg"),
+            providers = WatchProviders(
+                link = "https://www.themoviedb.org/movie/1005/watch?locale=IN",
+                stream = listOf(Provider.FEATURED[0]),
+                free = listOf(Provider(2336, "JioHotstar", Provider.FEATURED[2].logoPath)),
+                ads = listOf(Provider(515, "MX Player", "/provider_mx.png"), Provider(8, "Netflix Standard with Ads", "/provider_nf.png")),
+            ),
         )
         LONG_ID -> bare(ref).copy(
             summary = TitleSummary(ref, "The Extraordinarily Long and Winding Story of the Monsoon Nights of Kalimpong: Part Two", null, null, null, null, ""),
