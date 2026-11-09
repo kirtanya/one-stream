@@ -43,8 +43,14 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
         val shows = async { list(TmdbPaths.trending(MediaType.TV), MediaType.TV) }
         val indian = async { list(TmdbPaths.discoverFromCountry(MediaType.MOVIE, region), MediaType.MOVIE) }
         val topShows = async { list(TmdbPaths.topRated(MediaType.TV, region), MediaType.TV) }
+        val hindiFilms = async { list(TmdbPaths.discoverByLanguage(MediaType.MOVIE), MediaType.MOVIE) }
+        val hindiShows = async { list(TmdbPaths.discoverByLanguage(MediaType.TV), MediaType.TV) }
+        val hindiNew = async { list(TmdbPaths.newReleasesByLanguage(java.time.LocalDate.now()), MediaType.MOVIE) }
         listOf(
             HomeRow("Trending this week", trending.await()),
+            HomeRow("New Hindi releases", hindiNew.await()),
+            HomeRow("Popular Hindi films", hindiFilms.await()),
+            HomeRow("Hindi shows", hindiShows.await()),
             HomeRow("Popular movies", movies.await()),
             HomeRow("Trending shows", shows.await()),
             HomeRow("Popular in India", indian.await()),

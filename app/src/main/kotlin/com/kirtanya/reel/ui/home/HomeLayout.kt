@@ -132,6 +132,7 @@ object RowIds {
 
     val DEFAULT = listOf(
         CONTINUE, NEW_EPISODES, MY_LIST, BECAUSE, tmdb("Trending this week"),
+        tmdb("New Hindi releases"), tmdb("Popular Hindi films"), tmdb("Hindi shows"),
         tmdb("Popular movies"), tmdb("Trending shows"), tmdb("Popular in India"), tmdb("Top rated shows"),
     )
 

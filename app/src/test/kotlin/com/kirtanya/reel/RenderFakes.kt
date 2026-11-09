@@ -154,6 +154,9 @@ object Fake {
 
     val home: List<HomeRow> = listOf(
         HomeRow("Trending this week", titles(14, seed = 0)),
+        HomeRow("New Hindi releases", titles(8, seed = 7, type = MediaType.MOVIE)),
+        HomeRow("Popular Hindi films", titles(12, seed = 9, type = MediaType.MOVIE)),
+        HomeRow("Hindi shows", titles(10, seed = 11, type = MediaType.TV)),
         HomeRow("Popular movies", titles(12, seed = 3, type = MediaType.MOVIE)),
         HomeRow("Trending shows", titles(12, seed = 5, type = MediaType.TV)),
         HomeRow("Popular in India", titles(10, seed = 12)),
