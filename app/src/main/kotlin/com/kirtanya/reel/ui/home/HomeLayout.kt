@@ -73,16 +73,17 @@ object HomeLayout {
     }
 
     /** [available] row ids in the user's order (new ones where they'd naturally be), hidden ones left out. */
-    fun arrange(available: List<String>): List<String> {
-        val known = order.filter { it in available }
-        val fresh = available.filter { it !in order }
-        val merged = known.toMutableList()
-        fresh.forEach { id -> merged.add(available.indexOf(id).coerceAtMost(merged.size), id) }
-        return merged.filter { it !in hidden }
-    }
+    fun arrange(available: List<String>): List<String> = all(available).filter { it !in hidden }
 
-    /** Every row the user can arrange, in their order (including hidden ones). */
-    fun all(available: List<String> = RowIds.DEFAULT): List<String> = order.filter { it in available } + available.filter { it !in order }
+    /**
+     * Every row the user can arrange, in their order (including hidden ones). Rows added since the layout was saved
+     * (the Hindi rows) go where the default puts them, so Settings lists them where the home screen shows them.
+     */
+    fun all(available: List<String> = RowIds.DEFAULT): List<String> {
+        val merged = order.filter { it in available }.toMutableList()
+        available.filter { it !in order }.forEach { id -> merged.add(available.indexOf(id).coerceAtMost(merged.size), id) }
+        return merged
+    }
 
     fun move(id: String, by: Int, available: List<String> = RowIds.DEFAULT) {
         val list = all(available).toMutableList()

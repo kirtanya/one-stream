@@ -102,7 +102,3 @@ object TmdbPaths {
 
     private const val EXTRAS = "images,videos,recommendations,similar"
 }
-
-/** Popular titles whose original language is [code] ("hi", "ko"): the Languages of the TV Categories page and the Hindi rows of Movies / Shows. */
-fun TmdbPaths.titlesInLanguage(type: MediaType, code: String, page: Int = 1) =
-    "discover/${type.path}?language=en-US&sort_by=popularity.desc&with_original_language=$code&include_adult=false&vote_count.gte=20&page=$page"

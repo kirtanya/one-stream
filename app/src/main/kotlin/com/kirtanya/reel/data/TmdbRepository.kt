@@ -12,7 +12,6 @@ import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbParser
 import com.kirtanya.reel.core.tmdb.TmdbPaths
-import com.kirtanya.reel.core.tmdb.titlesInLanguage
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -212,7 +211,7 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
 
     /** Popular titles of [type] whose original language is [code]; [page] from 1. */
     suspend fun titlesInLanguage(type: MediaType, code: String, page: Int = 1): List<TitleSummary> =
-        list(TmdbPaths.titlesInLanguage(type, code, page), type)
+        list(TmdbPaths.discoverByLanguage(type, code, minVotes = 20, page = page), type)
 
     companion object {
         private const val BASE = "https://api.themoviedb.org/3/"

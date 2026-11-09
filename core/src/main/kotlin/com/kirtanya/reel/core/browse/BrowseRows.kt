@@ -4,7 +4,6 @@ import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbPaths
-import com.kirtanya.reel.core.tmdb.titlesInLanguage
 
 /** One row of the Movies / Shows pages: its heading and the TMDB path that fills it. */
 data class RowSpec(val title: String, val path: String)
@@ -19,7 +18,7 @@ object BrowseRows {
             RowSpec("Trending $noun this week", TmdbPaths.trending(type)),
             RowSpec("Popular $noun", TmdbPaths.popular(type, region)),
             RowSpec("Top rated $noun", TmdbPaths.topRated(type, region)),
-            RowSpec("Popular Hindi $noun", TmdbPaths.titlesInLanguage(type, "hi")),
+            RowSpec("Popular Hindi $noun", TmdbPaths.discoverByLanguage(type, "hi")),
         ) + if (films) listOf(
             genre("Action films", 28), genre("Comedy films", 35), genre("Thriller films", 53), genre("Romance films", 10749), genre("Sci-Fi films", 878),
         ) else listOf(

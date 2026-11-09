@@ -11,7 +11,6 @@ import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbPaths
-import com.kirtanya.reel.core.tmdb.titlesInLanguage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -75,7 +74,7 @@ class CategoriesTest {
     }
 
     @Test fun languagePathFiltersOnOriginalLanguage() {
-        val p = TmdbPaths.titlesInLanguage(MediaType.TV, "ko", 3)
+        val p = TmdbPaths.discoverByLanguage(MediaType.TV, "ko", minVotes = 20, page = 3)
         assertTrue(p.startsWith("discover/tv?"))
         assertTrue("with_original_language=ko" in p && p.endsWith("page=3"))
     }
