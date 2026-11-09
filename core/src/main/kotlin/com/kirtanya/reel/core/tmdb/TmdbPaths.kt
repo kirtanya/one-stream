@@ -12,6 +12,22 @@ object TmdbPaths {
     fun discoverFromCountry(type: MediaType, country: String = "IN") =
         "discover/${type.path}?language=en-US&sort_by=popularity.desc&with_origin_country=$country&include_adult=false"
 
+    /** Popular titles by original language (not country), so Hindi shows up whatever it was co-produced with. The vote floor keeps unrated junk out. */
+    fun discoverByLanguage(type: MediaType, language: String = "hi", minVotes: Int = 30, page: Int = 1) =
+        "discover/${type.path}?language=en-US&sort_by=popularity.desc&with_original_language=$language&vote_count.gte=$minVotes&include_adult=false&page=$page"
+
+    /**
+     * Films in [language] released in the last [days] days, up to [today] (no announced titles).
+     * A low vote floor: new films have few votes, but zero-vote entries are mostly junk.
+     */
+    fun newReleasesByLanguage(
+        today: java.time.LocalDate,
+        language: String = "hi",
+        days: Long = NEW_RELEASE_DAYS,
+        minVotes: Int = 5,
+    ) = "discover/movie?language=en-US&sort_by=popularity.desc&with_original_language=$language&vote_count.gte=$minVotes&include_adult=false" +
+        "&primary_release_date.gte=${today.minusDays(days)}&primary_release_date.lte=$today"
+
     /** Popular titles streaming on one service in [region] (TMDB provider id, e.g. 8 = Netflix). */
     fun onService(type: MediaType, providerId: Int, region: String = "IN") =
         "discover/${type.path}?language=en-US&sort_by=popularity.desc&watch_region=$region&with_watch_providers=$providerId&include_adult=false"
@@ -78,6 +94,8 @@ object TmdbPaths {
     fun reviews(ref: TitleRef) = "${ref.type.path}/${ref.id}/reviews?language=en-US&page=1"
 
     fun person(id: Int) = "person/$id?language=en-US&append_to_response=combined_credits"
+
+    const val NEW_RELEASE_DAYS = 60L
 
     private const val EXTRAS = "images,videos,recommendations,similar"
 }
