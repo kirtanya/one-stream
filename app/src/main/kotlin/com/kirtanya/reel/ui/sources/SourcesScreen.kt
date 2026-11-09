@@ -124,7 +124,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
-    val languages = remember(d) { wantedLanguages(d) }
+    val languages = remember(d) { wantedLanguages(context, d) }
     val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, isTv, languages)
     val (episodes, _) = rememberSeason(d.summary.ref.id, season)
     val ep = (episodes as? Load.Ready)?.value?.firstOrNull { it.number == episode }

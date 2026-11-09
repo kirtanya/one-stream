@@ -94,7 +94,7 @@ private fun CastSearchBody(d: TitleDetails, request: CastRequest, isTv: Boolean,
     val req = remember(d, request) { requestFor(d, request.season, request.episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
     val fixed = LocalRenderData.current
-    val search: SourceSearch? = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() else rememberSourceSearch(req, isTv).first
+    val search: SourceSearch? = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() else rememberSourceSearch(req, isTv, remember(d) { wantedLanguages(context, d) }).first
     // Slow addons can take 30 s each: after the launcher's own wait, choose from what has arrived.
     var timedOut by remember(req.key) { mutableStateOf(false) }
     if (fixed == null) LaunchedEffect(req.key) {

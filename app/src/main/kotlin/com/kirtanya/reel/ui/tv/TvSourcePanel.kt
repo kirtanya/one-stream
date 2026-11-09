@@ -100,10 +100,10 @@ fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeNa
     val app = ReelApp.get(context)
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
-    val languages = remember(d) { wantedLanguages(d) }
+    val languages = remember(d) { wantedLanguages(context, d) }
     val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, true, languages)
     // Renders pin the data, and a Mac sandbox has no free space to measure: no size cap there.
-    val prefs = remember { if (fixed != null) com.kirtanya.reel.core.sources.RankPrefs() else rankPrefs(context, true) }
+    val prefs = remember { if (fixed != null) com.kirtanya.reel.core.sources.RankPrefs() else rankPrefs(context, true, languages) }
     val marks by app.sourceMarks.marks.collectAsState()
     val notReadyTick by com.kirtanya.reel.player.NotReadyMemory.changes.collectAsState()
     val entries by app.history.entries.collectAsState()

@@ -91,11 +91,12 @@ object QuickStart {
     }
 
     /**
-     * The languages to prefer, best first: English, or Hindi then English when the title's original language is
-     * Hindi ([originalLanguage] is TMDB's ISO 639-1 code, e.g. "hi", "en"). Names are SourceFacts.languages() names.
+     * The languages to prefer, best first, as SourceFacts.languages() names, from the Settings choice ([choice];
+     * "Original language" = Hindi then English for a Hindi-original title, else English then Hindi).
+     * [originalLanguage] is TMDB's ISO 639-1 code, e.g. "hi", "en".
      */
-    fun wantedLanguages(originalLanguage: String?): List<String> =
-        if (originalLanguage.equals("hi", ignoreCase = true)) listOf("Hindi", "English") else listOf("English", "Hindi")
+    fun wantedLanguages(originalLanguage: String?, choice: com.kirtanya.reel.core.player.AudioLanguage = com.kirtanya.reel.core.player.AudioLanguage.ORIGINAL): List<String> =
+        choice.names(originalLanguage)
 
     /**
      * Up to [RECOMMENDED] sources from [ranked] that should start fast, in a wanted language first, best first.

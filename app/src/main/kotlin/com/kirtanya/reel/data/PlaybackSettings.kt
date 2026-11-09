@@ -15,6 +15,8 @@ data class PlaybackPrefs(
      * (stored through SubtitleLanguagePref, where Off is its own value).
      */
     val subtitleLanguage: String? = SubtitleLanguagePref.DEFAULT,
+    /** Which spoken language to look for first: source ranking, Quick start and the audio track that starts (Settings). */
+    val audioLanguage: com.kirtanya.reel.core.player.AudioLanguage = com.kirtanya.reel.core.player.AudioLanguage.ORIGINAL,
     /** Size, colours, outline, font and position of subtitles (Settings → Subtitles). */
     val caption: CaptionStyle = CaptionStyle(),
     /** Cinema mode: how strongly the bars around a video glow with its colours (player/AmbientGlow). */
@@ -42,6 +44,7 @@ class PlaybackSettings(context: Context) {
         prefs.edit {
             putBoolean("autoplayNext", next.autoplayNext)
             putString("subtitleLanguage", SubtitleLanguagePref.encode(next.subtitleLanguage))
+            putString("audioLanguage", next.audioLanguage.name)
             putString("caption", next.caption.encode())
             putString("cinemaGlow", next.cinemaGlow.name)
             putString("picture", next.picture.name)
@@ -53,6 +56,7 @@ class PlaybackSettings(context: Context) {
     private fun read() = PlaybackPrefs(
         autoplayNext = prefs.getBoolean("autoplayNext", true),
         subtitleLanguage = SubtitleLanguagePref.decode(prefs.getString("subtitleLanguage", null)),
+        audioLanguage = com.kirtanya.reel.core.player.AudioLanguage.of(prefs.getString("audioLanguage", null)),
         caption = CaptionStyle.decode(prefs.getString("caption", null), legacySize = prefs.getString("subtitleSize", null)),
         cinemaGlow = com.kirtanya.reel.core.playback.Ambient.Level.of(prefs.getString("cinemaGlow", null)),
         picture = com.kirtanya.reel.core.playback.PictureMode.of(prefs.getString("picture", null)),

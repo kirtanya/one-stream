@@ -34,6 +34,11 @@ data class Playback(
     /** The episode after this one, if there is one. */
     val next: EpisodeNumber? = null,
     val source: Source,
+    /**
+     * TMDB's `original_language` ("hi", "ko"…): the player needs it for the "Original language" audio setting
+     * (AudioLanguage). Null for entries saved before this existed and raw files: those count as non-Hindi.
+     */
+    val originalLanguage: String? = null,
 ) {
     /** "Game of Thrones · S1 E3" — what the player shows. */
     val displayTitle: String get() = listOfNotNull(title, episode?.label).joinToString(" · ")

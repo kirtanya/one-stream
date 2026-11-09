@@ -32,6 +32,7 @@ import com.kirtanya.reel.ui.sources.download
 import com.kirtanya.reel.ui.sources.playbackFor
 import com.kirtanya.reel.ui.sources.rankPrefs
 import com.kirtanya.reel.ui.sources.requestFor
+import com.kirtanya.reel.ui.sources.wantedLanguages
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.async
@@ -130,7 +131,7 @@ class LauncherProvider : ContentProvider() {
                     }
                 }
                 app.sources.ensureReady()
-                app.aggregator.search(requestFor(d, season, episode), app.sources.providers(), rankPrefs(app, app.isTv)).collect {
+                app.aggregator.search(requestFor(d, season, episode), app.sources.providers(), rankPrefs(app, app.isTv, wantedLanguages(app, d))).collect {
                     latest.set(d to it)
                     if (it.done) cancel()
                 }

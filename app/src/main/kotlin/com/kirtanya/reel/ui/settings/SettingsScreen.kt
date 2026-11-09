@@ -110,7 +110,7 @@ private const val OPENSUBTITLES = com.kirtanya.reel.core.store.BuiltInAddons.OPE
 enum class SettingsPage(val title: String, val icon: ImageVector) {
     Appearance("Appearance", Icons.Rounded.Palette),
     Playback("Playback", Icons.Rounded.PlayCircle),
-    Subtitles("Subtitles", Icons.Rounded.Subtitles),
+    Subtitles("Audio & subtitles", Icons.Rounded.Subtitles),
     History("History", Icons.Rounded.History),
     SourcePrefs("Source preferences", Icons.Rounded.Tune),
     Addons("Addons", Icons.Rounded.Hub),
@@ -237,7 +237,8 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
             AccentState.preset.label + " colour",
         ).joinToString(" · ")
         SettingsPage.Playback -> if (playback.autoplayNext) "Next episode plays by itself" else "Next episode: ask first"
-        SettingsPage.Subtitles -> listOf(
+        SettingsPage.Subtitles -> listOfNotNull(
+            "Audio: ${playback.audioLanguage.label}".takeIf { playback.audioLanguage != com.kirtanya.reel.core.player.AudioLanguage.ORIGINAL },
             PlaybackSettings.LANGUAGES.firstOrNull { it.first == playback.subtitleLanguage }?.second ?: "Off",
             playback.caption.size.label,
             if (playback.caption.system) "Android style" else com.kirtanya.reel.core.playback.CaptionStyle.Preset.of(playback.caption)?.label ?: "Custom style",
@@ -464,7 +465,16 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
 
             SettingsPage.Subtitles -> {
                 item {
-                    Section("Language") {
+                    Section("Audio language", note = "Used to rank sources and to pick the sound track. Original language: Hindi for a Hindi film, English for the rest.") {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                            com.kirtanya.reel.core.player.AudioLanguage.entries.forEach { choice ->
+                                ReelButton(choice.label, { app.playbackSettings.update { it.copy(audioLanguage = choice) } }, kind = if (playback.audioLanguage == choice) ButtonKind.Primary else ButtonKind.Ghost)
+                            }
+                        }
+                    }
+                }
+                item {
+                    Section("Subtitle language") {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                             (listOf<Pair<String?, String>>(null to "Off") + PlaybackSettings.LANGUAGES).forEach { (code, name) ->
                                 ReelButton(name, { app.playbackSettings.update { it.copy(subtitleLanguage = code) } }, kind = if (playback.subtitleLanguage == code) ButtonKind.Primary else ButtonKind.Ghost)
