@@ -140,8 +140,21 @@ class TitleSourcesTest {
         assertEquals("No sources for this yet", TitleSources.page(done(total = 0), emptyList(), false).empty?.title)
         val failed = TitleSources.page(done(total = 2, failed = mapOf("A" to "x", "B" to "y")), emptyList(), false).empty
         assertEquals("Your sources didn't answer", failed?.title)
+        assertEquals("A: x · B: y. Check the connection and search again.", failed?.body)
         assertNotNull(failed)
         assertEquals("Your only source didn't have this. Try again later, or add more sources in Settings.", TitleSources.noSources(done(total = 1)).body)
+    }
+
+    @Test fun namesFailedSourcesWhenSomeAnsweredWithNothing() {
+        // A friend's TV (0.16.7): six addons unreachable, one plugin empty read as "None of your 7 sources had this".
+        val failed = (1..6).associate { "Addon $it" to "Timed out" }
+        val empty = TitleSources.noSources(done(total = 7, failed = failed))
+        assertEquals("Some sources didn't answer", empty.title)
+        assertEquals(
+            "Addon 1: Timed out · Addon 2: Timed out · Addon 3: Timed out · +3 more. The others had nothing for this. Check the connection and search again.",
+            empty.body,
+        )
+        assertEquals("None of your 7 sources had this. Try again later, or add more sources in Settings.", TitleSources.noSources(done(total = 7)).body)
     }
 
     @Test fun neverMoreThanFortyRows() {

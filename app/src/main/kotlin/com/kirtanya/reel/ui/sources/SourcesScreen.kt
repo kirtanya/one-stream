@@ -428,13 +428,15 @@ private fun NothingFound(search: SourceSearch, rescan: () -> Unit, modifier: Mod
             allFailed -> "Your sources didn't answer"
             search.sources.isNotEmpty() && search.sources.all { it.isExtra } -> "Only trailers and extras found"
             search.sources.isNotEmpty() -> "Only services have this"
+            search.failed.isNotEmpty() -> "Some sources didn't answer"
             else -> "Nothing found"
         },
         when {
             search.total == 0 -> "Add addons or plugins in Settings to find places to play this."
-            allFailed -> "Check your connection and search again."
+            allFailed -> com.kirtanya.reel.core.player.TitleSources.failedNote(search.failed) + " Check the connection and search again."
             search.sources.isNotEmpty() && search.sources.all { it.isExtra } -> "Your sources only had trailers or extras for this. They're listed below."
             search.sources.isNotEmpty() -> "It's on a streaming service: open it from the list below."
+            search.failed.isNotEmpty() -> com.kirtanya.reel.core.player.TitleSources.failedNote(search.failed) + " The others had nothing for this. Check the connection and search again."
             search.total == 1 -> "Your only source didn't have this. Try again later, or add more sources in Settings."
             else -> "None of your ${search.total} sources had this. Try again later, or add more sources in Settings."
         },

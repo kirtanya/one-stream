@@ -263,4 +263,19 @@ class AggregatorTest {
         assertEquals("Timed out", last.failed["slow"])
         assertEquals(4, updates.first().pending.size)
     }
+
+    @Test fun aWebPageAnswerIsNotAnEmptyStreamList() {
+        // A block page or captive portal answers 200 with HTML; it must count as a failure, not "no streams".
+        assertFalse(StremioAddon.isStreamsAnswer("<html><body>This site is blocked</body></html>"))
+        assertTrue(StremioAddon.isStreamsAnswer("""{"streams":[]}"""))
+        assertTrue(StremioAddon.isStreamsAnswer("{}"))
+    }
+
+    @Test fun failureReasonsAreInPlainWords() {
+        val reason: (Throwable) -> String = { com.kirtanya.reel.core.sources.failureReason(it) }
+        assertEquals("Site not found (blocked by this network, or no internet)", reason(java.net.UnknownHostException("torrentio.strem.fun")))
+        assertEquals("Secure connection failed (check this device's date and time)", reason(java.io.IOException("x", javax.net.ssl.SSLHandshakeException("cert"))))
+        assertEquals("Timed out", reason(java.net.SocketTimeoutException("read")))
+        assertEquals("Addon answered 403", reason(PluginException("Addon answered 403")))
+    }
 }

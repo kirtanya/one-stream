@@ -105,14 +105,24 @@ object TitleSources {
         return "Resume " + if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
     }
 
+    /** "Torrentio: Timed out · MediaFusion: Addon answered 403", at most [max] names, then "+N more". */
+    fun failedNote(failed: Map<String, String>, max: Int = 3): String {
+        val named = failed.entries.take(max).joinToString(" · ") { (name, why) -> "$name: $why" }
+        val rest = failed.size - max
+        return (if (rest > 0) "$named · +$rest more" else named) + "."
+    }
+
     /** The same words the Sources page uses when a finished search found nothing it can offer. */
     fun noSources(search: SourceSearch): NoSources {
         val allFailed = search.total > 0 && search.failed.size == search.total
         val onlyExtras = search.sources.isNotEmpty() && search.sources.all { it.isExtra }
         return when {
             search.total == 0 -> NoSources("No sources for this yet", "Add addons or plugins in Settings to find places to play this.")
-            allFailed -> NoSources("Your sources didn't answer", "Check your connection and search again.")
+            allFailed -> NoSources("Your sources didn't answer", failedNote(search.failed) + " Check the connection and search again.")
             onlyExtras -> NoSources("Only trailers and extras found", "Your sources only had trailers or extras for this.")
+            // Some answered with nothing, the rest failed: say which failed, or it reads as "nobody has this film"
+            // when the TV simply can't reach the addons (a friend's TV, 0.16.7: every addon blocked, one plugin empty).
+            search.failed.isNotEmpty() -> NoSources("Some sources didn't answer", failedNote(search.failed) + " The others had nothing for this. Check the connection and search again.")
             search.total == 1 -> NoSources("Nothing found", "Your only source didn't have this. Try again later, or add more sources in Settings.")
             else -> NoSources("Nothing found", "None of your ${search.total} sources had this. Try again later, or add more sources in Settings.")
         }
