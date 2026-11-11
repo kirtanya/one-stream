@@ -12,6 +12,19 @@ object TmdbPaths {
     fun discoverFromCountry(type: MediaType, country: String = "IN") =
         "discover/${type.path}?language=en-US&sort_by=popularity.desc&with_origin_country=$country&include_adult=false"
 
+    /**
+     * Titles originally in [language] (ISO 639-1), ordered by [sort] (a TMDB sort_by value), within an optional
+     * release window ([from]..[to]: films by release date, shows by any episode airing). Home's single-language rows.
+     */
+    fun discoverByLanguage(type: MediaType, language: String, sort: String, minVotes: Int, from: java.time.LocalDate? = null, to: java.time.LocalDate? = null): String {
+        val dateField = if (type == MediaType.MOVIE) "primary_release_date" else "air_date"
+        return buildString {
+            append("discover/${type.path}?language=en-US&include_adult=false&with_original_language=$language&sort_by=$sort&vote_count.gte=$minVotes")
+            from?.let { append("&$dateField.gte=$it") }
+            to?.let { append("&$dateField.lte=$it") }
+        }
+    }
+
     /** Popular titles streaming on one service in [region] (TMDB provider id, e.g. 8 = Netflix). */
     fun onService(type: MediaType, providerId: Int, region: String = "IN") =
         "discover/${type.path}?language=en-US&sort_by=popularity.desc&watch_region=$region&with_watch_providers=$providerId&include_adult=false"

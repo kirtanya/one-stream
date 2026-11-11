@@ -85,7 +85,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun PhoneHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onAdd: () -> Unit) {
     val catalog = rememberCatalog()
-    val (load, retry) = rememberLoad(Unit) { catalog.home() }
+    val (load, retry) = rememberLoad(HomeLayout.content) { catalog.home(HomeLayout.content) }
     val continueItems = rememberContinueWatching()
     val myList = rememberWatchlist()
     val because = com.kirtanya.reel.ui.home.rememberBecauseYouWatched()

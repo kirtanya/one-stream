@@ -259,8 +259,9 @@ fun SearchResults(
     onExitLeft: (() -> Unit)? = null,
 ) {
     val catalog = rememberCatalog()
-    val (load, retry) = rememberLoad(query) {
-        if (query.isEmpty()) catalog.home().firstOrNull()?.items.orEmpty() else catalog.search(query)
+    val content = com.kirtanya.reel.ui.home.HomeLayout.content
+    val (load, retry) = rememberLoad(query to content) {
+        if (query.isEmpty()) catalog.home(content).firstOrNull()?.items.orEmpty() else catalog.search(query)
     }
     val hidden = com.kirtanya.reel.ui.home.rememberHiddenKeys()
     val results = (load as? Load.Ready)?.value.orEmpty().filter { it.ref.toString() !in hidden }.filter {

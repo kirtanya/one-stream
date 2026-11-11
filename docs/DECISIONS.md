@@ -5,6 +5,27 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-11 · Home suggestions follow a content preference (Hollywood / Bollywood / Both)**
+Decision (user): Settings → Home screen → Suggestions: **Hollywood (English)**, **Bollywood (Hindi)** or **Both** (default;
+exactly the old rows, so nothing changes until chosen). Saved per device with the rest of the Home layout
+(`HomeLayout.content`, key `content`; not cleared by "Reset Home": it is taste, not layout). Changing it reloads Home
+at once (the Home load is keyed on it); Continue watching, My list, New episodes and Because you watched are never filtered.
+- How rows are filtered (`core/tmdb/HomeFeed.kt`, tests `HomeFeedTest`): for one language every TMDB row becomes a
+  **discover** query with `with_original_language=en|hi` instead of a trending / popular endpoint. Trending endpoints
+  cannot filter by language, and filtering their 20 results afterwards would leave a Hindi row with 1–2 posters, so
+  filtering the answer was rejected. "Trending this week / shows" become "most popular among films released / shows
+  aired in the last 90 days" (movie + show requests interleaved for the mixed row); "Popular movies" is popularity
+  sorted; "Top rated shows" is rating sorted with a vote floor suited to the language (en 500, hi 20).
+- "Popular in India" (a country row) is replaced by "Top rated films" for a chosen language (it would be wrong under
+  English and duplicate Popular movies under Hindi). Other row titles are unchanged so a saved order / hidden set still
+  applies; a row hidden as "Popular in India" shows again under a language, and the Order list in settings still lists
+  the default names.
+- The empty Search screen's suggestions (Home's first row) follow the preference too. Genre / Browse grids are untouched.
+Evidence: `:core:test` (HomeFeedTest), renders `settings-homelayout`, `settings-homelayout-hindi` (phone, TV). Not tried
+against live TMDB (no key in the worktree): whether Hindi rows are full still needs a look on a device.
+
+---
+
 **2026-11-07 · Quick start sources, TV search grid and details, series page, home card overlay (0.16.3–0.16.6)**
 Decision (user):
 - Sources: up to 5 "Quick start" sources sit on top. Direct links are probed (first 1 MB: time to first byte and
