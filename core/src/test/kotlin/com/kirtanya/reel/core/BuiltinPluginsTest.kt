@@ -35,9 +35,9 @@ class BuiltinPluginsTest {
     }
     private val runtime = PluginRuntime(fake)
 
-    @Test fun manifestListsBothPlugins() {
+    @Test fun manifestListsTheBuiltInPlugins() {
         val m = NuvioPlugins.parseManifest(File(dir, "manifest.json").readText())
-        assertEquals(listOf("reel-open-movies", "reel-internet-archive"), m.scrapers.map { it.id })
+        assertEquals(listOf("reel-open-movies", "reel-internet-archive", "reel-youtube-official"), m.scrapers.map { it.id })
         m.scrapers.forEach { assertTrue(File(dir, it.filename).isFile, it.filename) }
     }
 
@@ -70,5 +70,44 @@ class BuiltinPluginsTest {
         assertTrue(query.contains("AND collection:feature_films"), query)
         assertTrue(!query.contains("licenseurl"), query) // uploader-set licences aren't trusted
         assertTrue(query.contains("year:[1998 TO 2000]"), query)
+    }
+
+    private fun iaQuery(req: SourceRequest): Pair<String, Int> {
+        val urls = mutableListOf<String>()
+        val spy = PluginRuntime({ r -> urls += r.url; fake.fetch(r) })
+        runBlocking { spy.getStreams(code("internet-archive.js"), "IA", req) }
+        val searches = urls.filter { it.startsWith("https://archive.org/advancedsearch.php") }
+        return java.net.URLDecoder.decode(searches.first(), "UTF-8") to searches.size
+    }
+
+    @Test fun internetArchiveAlsoSearchesTheRomanisedOriginalTitleInOneRequest() {
+        val (query, searches) = iaQuery(SourceRequest(1, null, MediaType.MOVIE, "Mughal-E-Azam: The Great Mughal", 1960, originalTitle = "Mughal-E-Azam"))
+        assertTrue(query.contains("title:(\"Mughal-E-Azam: The Great Mughal\" OR \"Mughal-E-Azam\")"), query)
+        assertTrue(query.contains("AND collection:feature_films"), "still only the curated collection: $query")
+        assertEquals(1, searches, "one search request for both titles")
+    }
+
+    @Test fun internetArchiveSkipsAnOriginalTitleThatAddsNothing() {
+        // Same as the title (ignoring case and punctuation), non-Latin, or missing: the query is the plain one.
+        listOf("night of the living dead!", "मुग़ल-ए-आज़म", "鬼滅の刃", "", null).forEach { original ->
+            val (query, _) = iaQuery(SourceRequest(2, null, MediaType.MOVIE, "Night of the Living Dead", 1968, originalTitle = original))
+            assertTrue(query.contains("title:(\"Night of the Living Dead\") AND"), "$original: $query")
+        }
+    }
+
+    @Test fun internetArchiveKeepsAFilmFoundUnderItsOriginalTitle(): Unit = runBlocking {
+        val hit = HttpFetcher { r ->
+            val body = when {
+                r.url.startsWith("https://archive.org/advancedsearch.php") -> """{"response":{"docs":[{"identifier":"mea","title":"Mughal-E-Azam","year":"1960"}]}}"""
+                r.url == "https://archive.org/metadata/mea" -> """{"files":[{"name":"mea.mp4","size":"1862510336","height":"480"}]}"""
+                else -> "{}"
+            }
+            FetchResponse(200, r.url, emptyMap(), body.toByteArray())
+        }
+        val list = PluginRuntime(hit).getStreams(code("internet-archive.js"), "IA", SourceRequest(3, null, MediaType.MOVIE, "Mughal-E-Azam: The Great Mughal", 1960, originalTitle = "Mughal-E-Azam"))
+        assertEquals(1, list.size)
+        assertEquals("https://archive.org/download/mea/mea.mp4", list[0].url)
+        // Without the original title the same answer is dropped: its title doesn't start with the English one.
+        assertTrue(PluginRuntime(hit).getStreams(code("internet-archive.js"), "IA", SourceRequest(3, null, MediaType.MOVIE, "Mughal-E-Azam: The Great Mughal", 1960)).isEmpty())
     }
 }

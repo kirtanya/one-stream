@@ -37,6 +37,10 @@ object HomeFeed {
     fun rows(pref: ContentPreference, today: LocalDate = LocalDate.now(), region: String = "IN"): List<HomeFeedRow> {
         val lang = pref.language ?: return listOf(
             HomeFeedRow("Trending this week", listOf(HomeRequest(TmdbPaths.trending(null), null))),
+            // Both keeps the Hindi rows (0.16.7); a single-language choice replaces them with its own rows below.
+            HomeFeedRow("New Hindi releases", listOf(HomeRequest(TmdbPaths.newReleasesByLanguage(today), MediaType.MOVIE))),
+            HomeFeedRow("Popular Hindi films", listOf(HomeRequest(TmdbPaths.discoverByLanguage(MediaType.MOVIE), MediaType.MOVIE))),
+            HomeFeedRow("Hindi shows", listOf(HomeRequest(TmdbPaths.discoverByLanguage(MediaType.TV), MediaType.TV))),
             HomeFeedRow("Popular movies", listOf(HomeRequest(TmdbPaths.popular(MediaType.MOVIE, region), MediaType.MOVIE))),
             HomeFeedRow("Trending shows", listOf(HomeRequest(TmdbPaths.trending(MediaType.TV), MediaType.TV))),
             HomeFeedRow("Popular in India", listOf(HomeRequest(TmdbPaths.discoverFromCountry(MediaType.MOVIE, region), MediaType.MOVIE))),

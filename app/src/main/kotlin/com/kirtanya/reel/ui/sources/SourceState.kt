@@ -39,6 +39,7 @@ fun requestFor(d: TitleDetails, season: Int?, episode: Int?) = SourceRequest(
     year = d.summary.year,
     season = season,
     episode = episode,
+    originalTitle = d.originalTitle,
 )
 
 /** Last results per title/episode, so going back and forth doesn't search again. */
@@ -80,8 +81,9 @@ fun rankPrefs(context: Context, isTv: Boolean, languages: List<String>? = null):
     return com.kirtanya.reel.ReelApp.get(context).sourcePrefs.applyTo(withLanguages)
 }
 
-/** The languages to prefer for [d] (English, Hindi first for a Hindi-language title); also what Quick start recommends in. */
-fun wantedLanguages(d: TitleDetails): List<String> = com.kirtanya.reel.core.sources.QuickStart.wantedLanguages(d.originalLanguage)
+/** The languages to prefer for [d] (Settings → Audio language; by default Hindi first for a Hindi-original title); also what Quick start recommends in. */
+fun wantedLanguages(context: Context, d: TitleDetails): List<String> =
+    com.kirtanya.reel.core.sources.QuickStart.wantedLanguages(d.originalLanguage, ReelApp.get(context).playbackSettings.state.value.audioLanguage)
 
 /** Best source to start straight away: first non-external one. */
 fun bestOf(search: SourceSearch?): Source? = search?.sources?.let(com.kirtanya.reel.core.sources.SourceBrowser::recommended)
@@ -104,6 +106,7 @@ fun playbackFor(d: TitleDetails, episode: EpisodeNumber?, episodeName: String?, 
         stillPath = stillPath,
         next = episode?.let { nextEpisode(d.seasons, it, d.lastAired) },
         source = source,
+        originalLanguage = d.originalLanguage,
     )
 }
 

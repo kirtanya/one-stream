@@ -13,6 +13,8 @@ import com.kirtanya.reel.core.sources.StartSpeed
 data class TitleSourceRow(
     val source: Source, val title: String, val detail: String, val resume: String?, val tooBig: Boolean,
     val speed: StartSpeed = StartSpeed.UNKNOWN,
+    /** The release names Hindi: the row carries a "Hindi" tag, and [detail] leaves the word out. */
+    val hindi: Boolean = false,
 ) {
     val key: String get() = source.key
 }
@@ -88,8 +90,10 @@ object TitleSources {
             val provider = com.kirtanya.reel.core.sources.SourceFacts.providerLabel(s.provider)
             return TitleSourceRow(s, "Streaming service", listOf(provider, "Opens in its app").joinToString(" · "), null, tooBig = false)
         }
-        val r = PlayerSources.row(s, current = false)
-        return TitleSourceRow(s, r.title, r.detail, resume, tooBig = !fits, speed = speed)
+        // The tag says "Hindi"; the detail line then only lists the other languages.
+        val hindi = com.kirtanya.reel.core.sources.SourceBrowser.HINDI in com.kirtanya.reel.core.sources.SourceFacts.languages(s)
+        val r = PlayerSources.row(s, current = false, omitLanguage = com.kirtanya.reel.core.sources.SourceBrowser.HINDI.takeIf { hindi })
+        return TitleSourceRow(s, r.title, r.detail, resume, tooBig = !fits, speed = speed, hindi = hindi)
     }
 
     /** "Resume 42:10", "Resume 1:05:09": the way the title page words a saved position. */
@@ -101,14 +105,24 @@ object TitleSources {
         return "Resume " + if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
     }
 
+    /** "Torrentio: Timed out · MediaFusion: Addon answered 403", at most [max] names, then "+N more". */
+    fun failedNote(failed: Map<String, String>, max: Int = 3): String {
+        val named = failed.entries.take(max).joinToString(" · ") { (name, why) -> "$name: $why" }
+        val rest = failed.size - max
+        return (if (rest > 0) "$named · +$rest more" else named) + "."
+    }
+
     /** The same words the Sources page uses when a finished search found nothing it can offer. */
     fun noSources(search: SourceSearch): NoSources {
         val allFailed = search.total > 0 && search.failed.size == search.total
         val onlyExtras = search.sources.isNotEmpty() && search.sources.all { it.isExtra }
         return when {
             search.total == 0 -> NoSources("No sources for this yet", "Add addons or plugins in Settings to find places to play this.")
-            allFailed -> NoSources("Your sources didn't answer", "Check your connection and search again.")
+            allFailed -> NoSources("Your sources didn't answer", failedNote(search.failed) + " Check the connection and search again.")
             onlyExtras -> NoSources("Only trailers and extras found", "Your sources only had trailers or extras for this.")
+            // Some answered with nothing, the rest failed: say which failed, or it reads as "nobody has this film"
+            // when the TV simply can't reach the addons (a friend's TV, 0.16.7: every addon blocked, one plugin empty).
+            search.failed.isNotEmpty() -> NoSources("Some sources didn't answer", failedNote(search.failed) + " The others had nothing for this. Check the connection and search again.")
             search.total == 1 -> NoSources("Nothing found", "Your only source didn't have this. Try again later, or add more sources in Settings.")
             else -> NoSources("Nothing found", "None of your ${search.total} sources had this. Try again later, or add more sources in Settings.")
         }

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
@@ -53,16 +54,20 @@ import com.kirtanya.reel.core.player.TitleSourceRow
 import com.kirtanya.reel.core.player.TitleSources
 import com.kirtanya.reel.core.playback.ContinueWatching
 import com.kirtanya.reel.core.playback.EpisodeNumber
+import com.kirtanya.reel.core.sources.FreeOption
+import com.kirtanya.reel.core.sources.FreeOptions
 import com.kirtanya.reel.core.sources.QuickStart
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceKind
 import com.kirtanya.reel.core.sources.SourceRanker
 import com.kirtanya.reel.core.tmdb.Episode
+import com.kirtanya.reel.core.tmdb.Provider
 import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.common.focusCard
+import com.kirtanya.reel.ui.sources.HindiMark
 import com.kirtanya.reel.ui.sources.StartMark
 import com.kirtanya.reel.ui.sources.rankPrefs
 import com.kirtanya.reel.ui.sources.rememberSourceSearch
@@ -83,6 +88,9 @@ class TvSourcePick(
     val rescan: () -> Unit,
     val play: (Source) -> Unit,
     val download: (Source) -> Unit,
+    /** "Free on <Service>" (TMDB, India): legal, external, shown above the sources. */
+    val free: List<FreeOption> = emptyList(),
+    val openFree: (Provider) -> Unit = {},
 )
 
 /**
@@ -100,10 +108,10 @@ fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeNa
     val app = ReelApp.get(context)
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
-    val languages = remember(d) { wantedLanguages(d) }
+    val languages = remember(d) { wantedLanguages(context, d) }
     val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, true, languages)
     // Renders pin the data, and a Mac sandbox has no free space to measure: no size cap there.
-    val prefs = remember { if (fixed != null) com.kirtanya.reel.core.sources.RankPrefs() else rankPrefs(context, true) }
+    val prefs = remember { if (fixed != null) com.kirtanya.reel.core.sources.RankPrefs() else rankPrefs(context, true, languages) }
     val marks by app.sourceMarks.marks.collectAsState()
     val notReadyTick by com.kirtanya.reel.player.NotReadyMemory.changes.collectAsState()
     val entries by app.history.entries.collectAsState()
@@ -135,8 +143,11 @@ fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeNa
     val epNumber = if (season != null && episode != null) EpisodeNumber(season, episode) else null
     val label = d.summary.title + if (epNumber != null) " · ${epNumber.label}" else ""
     val origin = remember(d, season, episode, label) { DownloadOrigin(d.summary.ref.type.path, d.summary.ref.id, season, episode, label) }
+    // Two at most on the TV: the sources are what the remote is here for.
+    val free = remember(d) { FreeOptions.of(d.providers, max = 2) }
+    val openFree = com.kirtanya.reel.ui.title.rememberProviderOpener(d.providers.link)
     return TvSourcePick(
-        page, expanded, expand = { expanded = true }, rescan = rescan,
+        page, expanded, expand = { expanded = true }, rescan = rescan, free = free, openFree = openFree,
         play = { s -> com.kirtanya.reel.ui.sources.play(context, com.kirtanya.reel.ui.sources.playbackFor(d, epNumber, episodeName, stillPath, s)) },
         download = { s ->
             if (s.kind == SourceKind.EXTERNAL) android.widget.Toast.makeText(context, "This source can't be downloaded", android.widget.Toast.LENGTH_SHORT).show()
@@ -188,6 +199,14 @@ internal fun TvSourceRows(
             // Quick start rows, a heading over each group when both exist; row 0 is still the first one on screen.
             val quickRows = page.rows.take(page.quick)
             val restRows = page.rows.drop(page.quick)
+            // Legal free options above everything: they open the service's app. Focus still starts on the first source.
+            if (pick.free.isNotEmpty()) {
+                item(key = "free-title", contentType = "heading") { SourceGroupHeading("Free to watch") }
+                itemsIndexed(pick.free, key = { _, o -> "free:" + o.provider.id }, contentType = { _, _ -> "free" }) { _, o ->
+                    TvFreeRow(o) { pick.openFree(o.provider) }
+                }
+                if (quickRows.isEmpty() && restRows.isNotEmpty()) item(key = "sources-title", contentType = "heading") { SourceGroupHeading("Sources") }
+            }
             if (quickRows.isNotEmpty()) item(key = "quick-title", contentType = "heading") { SourceGroupHeading("Quick start") }
             itemsIndexed(quickRows, key = { _, r -> r.key }, contentType = { _, _ -> "source" }) { i, r ->
                 SourceItem(r, i, page, pick, first, extra, focused, onPick)
@@ -268,6 +287,7 @@ private fun TvSourceRow(r: TitleSourceRow, modifier: Modifier, onClick: () -> Un
             // "Fast start" / "May buffer" leads the detail line: the detail is what gives way when the row is narrow.
             Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs), verticalAlignment = Alignment.CenterVertically) {
                 StartMark(r.speed)
+                if (r.hindi) HindiMark()
                 Text(r.detail, Modifier.weight(1f, fill = false), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (r.tooBig) Text("Too big for this device", style = Tokens.Type.caption, color = Tokens.Colors.warn, maxLines = 1)
@@ -278,6 +298,24 @@ private fun TvSourceRow(r: TitleSourceRow, modifier: Modifier, onClick: () -> Un
                 Text(resume, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1)
             }
         }
+    }
+}
+
+/** "Free on MX Player" over "Opens in its app · with ads": a service, so it never plays here; OK opens its app. */
+@Composable
+private fun TvFreeRow(o: FreeOption, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .focusCard(shape = ROW_SHAPE, onClick = onClick)
+            .padding(horizontal = Tokens.Space.m, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(o.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(o.detail, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Rounded.OpenInNew, null, tint = Tokens.Colors.textSecondary, modifier = Modifier.size(18.dp))
     }
 }
 

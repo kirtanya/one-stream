@@ -34,6 +34,7 @@ data class PluginRepoManifest(
 /** Nuvio "local scraper" plugin format: a repo manifest + one JS file per scraper. */
 object NuvioPlugins {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val WEB_LINK = Regex("""^https?://\S+$""", RegexOption.IGNORE_CASE)
 
     fun parseManifest(body: String): PluginRepoManifest {
         val o = json.parseToJsonElement(body) as? JsonObject ?: error("Not a plugin manifest")
@@ -91,6 +92,7 @@ object NuvioPlugins {
                 SubtitleTrack(so.str("url") ?: return@mapNotNull null, so.str("language") ?: so.str("lang") ?: "und", so.str("name"))
             }
             val url = r.str("url")
+            val externalUrl = r.str("externalUrl")
             val infoHash = r.str("infoHash")?.lowercase()
             val fileIdx = (r["fileIdx"] as? JsonPrimitive)?.intOrNull
             when {
@@ -100,6 +102,12 @@ object NuvioPlugins {
                     kind = SourceKind.TORRENT, title = title, provider = providerName, quality = quality,
                     infoHash = infoHash, fileIdx = fileIdx, filename = r.str("filename"), seeders = seeders, sizeBytes = size,
                     subtitles = subtitles,
+                )
+                // A page to open in another app (no stream of ours). Only web links: a third-party plugin must not
+                // be able to fire arbitrary intent schemes.
+                url == null && externalUrl != null && externalUrl.matches(WEB_LINK) -> Source(
+                    kind = SourceKind.EXTERNAL, title = title, provider = providerName, quality = quality,
+                    externalUrl = externalUrl, sizeBytes = size,
                 )
                 url != null -> Source(
                     kind = SourceKind.DIRECT, title = title, provider = providerName, quality = quality,

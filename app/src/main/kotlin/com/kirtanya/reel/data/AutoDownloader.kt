@@ -125,7 +125,7 @@ class AutoDownloader(private val app: ReelApp) {
         app.sources.ensureReady()
         val req = com.kirtanya.reel.ui.sources.requestFor(d, ep.season, ep.episode)
         val search = withTimeoutOrNull(LauncherPage.SOURCES_TIMEOUT_MS) {
-            app.aggregator.search(req, app.sources.providers(), com.kirtanya.reel.ui.sources.rankPrefs(app, app.isTv)).first { it.done }
+            app.aggregator.search(req, app.sources.providers(), com.kirtanya.reel.ui.sources.rankPrefs(app, app.isTv, com.kirtanya.reel.ui.sources.wantedLanguages(app, d))).first { it.done }
         } ?: return false
         val previous = app.history.entries.value.firstOrNull { it.playback.titleKey == "tv:${d.summary.ref.id}" && !it.playback.markedOnly }?.playback?.source
         val downloadable = search.sources.filter(LauncherPage::downloadable)

@@ -69,6 +69,8 @@ class FakeCatalog(private val answer: Answer = Answer.Data, private val logos: B
     override suspend fun logo(ref: TitleRef) = if (!logos || answer != Answer.Data) null else Fake.logoFor(ref)
     override suspend fun genres(type: MediaType) = give(if (type == MediaType.MOVIE) Fake.movieGenres else Fake.tvGenres, emptyList())
     override suspend fun byGenre(type: MediaType, genreId: Int, page: Int) = give(Fake.titles(20, seed = genreId * 31 + page), emptyList())
+    override suspend fun browseRows(type: MediaType) = give(Fake.browseRows(type), emptyList())
+    override suspend fun byLanguage(type: MediaType, code: String, page: Int) = give(Fake.titles(20, seed = 40 + (code.hashCode().absoluteValue % 30) + page, type = type), emptyList())
     override suspend fun person(id: Int) = give(Fake.person, Fake.person.copy(biography = "", credits = emptyList()))
     override suspend fun findByImdb(imdbId: String, type: MediaType) = give(Fake.details(if (type == MediaType.TV) Fake.show else Fake.film).summary, null)
     override suspend fun collection(id: Int) = give(
@@ -125,6 +127,8 @@ object Fake {
     val film = TitleRef(MediaType.MOVIE, FILM_ID)
     val show = TitleRef(MediaType.TV, SHOW_ID)
     val long = TitleRef(MediaType.MOVIE, LONG_ID)
+    const val HINDI_ID = 1005
+    val hindi = TitleRef(MediaType.MOVIE, HINDI_ID)
 
     private val names = listOf(
         "Dune: Part Two", "The Night Manager", "Ran", "Kalki 2898 AD", "Interstellar", "The Long Monsoon Nights of Kalimpong and the Tea Garden Ghosts",
@@ -154,11 +158,18 @@ object Fake {
 
     val home: List<HomeRow> = listOf(
         HomeRow("Trending this week", titles(14, seed = 0)),
+        HomeRow("New Hindi releases", titles(8, seed = 7, type = MediaType.MOVIE)),
+        HomeRow("Popular Hindi films", titles(12, seed = 9, type = MediaType.MOVIE)),
+        HomeRow("Hindi shows", titles(10, seed = 11, type = MediaType.TV)),
         HomeRow("Popular movies", titles(12, seed = 3, type = MediaType.MOVIE)),
         HomeRow("Trending shows", titles(12, seed = 5, type = MediaType.TV)),
         HomeRow("Popular in India", titles(10, seed = 12)),
         HomeRow("Top rated shows", titles(1, seed = 20, type = MediaType.TV)),
     )
+
+    /** The TV's Movies / Shows pages: every row of [com.kirtanya.reel.core.browse.BrowseRows], one kind only. */
+    fun browseRows(type: MediaType): List<HomeRow> =
+        com.kirtanya.reel.core.browse.BrowseRows.forType(type).mapIndexed { i, spec -> HomeRow(spec.title, titles(12, seed = 60 + i * 5, type = type)) }
 
     fun logoFor(ref: TitleRef): String? = (ref.id % 4).takeIf { it != 2 }?.let { "/logo_${(names.getOrNull((ref.id - 10_000).absoluteValue % names.size) ?: "Title").replace(' ', '_')}.png" }
 
@@ -212,6 +223,18 @@ object Fake {
             recommendations = titles(10, seed = 40, type = MediaType.TV),
             genreList = listOf(Genre(18, "Drama"), Genre(80, "Crime"), Genre(9648, "Mystery")),
             backdrops = listOf("/backdrop_1.jpg", "/backdrop_8.jpg"),
+        )
+        // A Hindi film with free options in India: Hindi chip first, "Free on …" rows above the sources.
+        HINDI_ID -> bare(ref).copy(
+            summary = TitleSummary(ref, "Laapataa Ladies", 2024, "/poster_12.jpg", "/backdrop_2.jpg", 7.9, overviews[0]),
+            runtimeMin = 122, originalLanguage = "hi", originalTitle = "Laapataa Ladies",
+            backdrops = listOf("/backdrop_2.jpg"),
+            providers = WatchProviders(
+                link = "https://www.themoviedb.org/movie/1005/watch?locale=IN",
+                stream = listOf(Provider.FEATURED[0]),
+                free = listOf(Provider(2336, "JioHotstar", Provider.FEATURED[2].logoPath)),
+                ads = listOf(Provider(515, "MX Player", "/provider_mx.png"), Provider(8, "Netflix Standard with Ads", "/provider_nf.png")),
+            ),
         )
         LONG_ID -> bare(ref).copy(
             summary = TitleSummary(ref, "The Extraordinarily Long and Winding Story of the Monsoon Nights of Kalimpong: Part Two", null, null, null, null, ""),

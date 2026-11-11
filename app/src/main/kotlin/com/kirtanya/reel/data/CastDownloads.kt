@@ -13,6 +13,7 @@ import com.kirtanya.reel.core.sources.SourceSearch
 import com.kirtanya.reel.ui.sources.download
 import com.kirtanya.reel.ui.sources.rankPrefs
 import com.kirtanya.reel.ui.sources.requestFor
+import com.kirtanya.reel.ui.sources.wantedLanguages
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -40,7 +41,7 @@ object CastDownloads {
         val decided = runCatching {
             app.sources.ensureReady()
             withTimeoutOrNull(LauncherPage.SOURCES_TIMEOUT_MS) {
-                app.aggregator.search(requestFor(d, request.season, request.episode), app.sources.providers(), rankPrefs(app, app.isTv))
+                app.aggregator.search(requestFor(d, request.season, request.episode), app.sources.providers(), rankPrefs(app, app.isTv, wantedLanguages(app, d)))
                     .onEach { last = it }
                     .map { CastChoice.decide(it.sources, it.done, request) { true } }
                     .first { it != Decision.Wait }

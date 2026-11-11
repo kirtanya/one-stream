@@ -52,6 +52,7 @@ import com.kirtanya.reel.core.library.SwapKind
 import com.kirtanya.reel.core.player.TitleSources
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.sources.FilterChip
+import com.kirtanya.reel.core.sources.FreeOptions
 import com.kirtanya.reel.core.sources.QuickStart
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceView
@@ -124,7 +125,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
-    val languages = remember(d) { wantedLanguages(d) }
+    val languages = remember(d) { wantedLanguages(context, d) }
     val (search, rescan) = if (fixed?.sourceSearch != null) fixed.sourceSearch.invoke() to {} else rememberSourceSearch(req, isTv, languages)
     val (episodes, _) = rememberSeason(d.summary.ref.id, season)
     val ep = (episodes as? Load.Ready)?.value?.firstOrNull { it.number == episode }
@@ -196,7 +197,10 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     // Trailers, teasers and other extras get their own section at the end; filters and counts cover the real thing only.
     val rows = remember(ranked, best, quickKeys, marks, last, downloads) { ranked.filter { it.key != best?.key && it.key !in quickKeys && !it.isExtra }.map(::viewOf) }
     val extras = remember(ranked, marks, last, downloads) { ranked.filter { it.isExtra }.map(::viewOf) }
-    val facets = remember(rows) { SourceBrowser.facets(rows) }
+    val facets = remember(rows, languages) { SourceBrowser.facets(rows, languages) }
+    // Free to watch in India per TMDB (JioHotstar's free tier, MX Player, YouTube…): external, they open the service's app.
+    val free = remember(d) { FreeOptions.of(d.providers) }
+    val openProvider = com.kirtanya.reel.ui.title.rememberProviderOpener(d.providers.link)
     LaunchedEffect(facets) { filters = SourceBrowser.prune(filters, facets) }
     val shown = remember(rows, filters) { SourceBrowser.apply(rows, filters) }
     if (fixed?.confirmReplace == true && replacing != null) LaunchedEffect(best) { confirm = best }
@@ -250,6 +254,15 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                         if (downloading) where.rememberedLine()?.let { ReelButton(it, where::change, kind = ButtonKind.Ghost, icon = Icons.Rounded.Download) }
                     }
                     Status(search)
+                }
+            }
+            // Legal free options first: they cost nothing and need no search, though they open another app.
+            // Not when downloading or replacing a download: a service can't be downloaded.
+            if (free.isNotEmpty() && action == SourceAction.PLAY) {
+                item(key = "free") {
+                    Column(Modifier.padding(horizontal = side).widthIn(max = maxWidth), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                        free.forEach { o -> FreeRow(o, onClick = { openProvider(o.provider) }) }
+                    }
                 }
             }
             item(key = "best") {
@@ -415,13 +428,15 @@ private fun NothingFound(search: SourceSearch, rescan: () -> Unit, modifier: Mod
             allFailed -> "Your sources didn't answer"
             search.sources.isNotEmpty() && search.sources.all { it.isExtra } -> "Only trailers and extras found"
             search.sources.isNotEmpty() -> "Only services have this"
+            search.failed.isNotEmpty() -> "Some sources didn't answer"
             else -> "Nothing found"
         },
         when {
             search.total == 0 -> "Add addons or plugins in Settings to find places to play this."
-            allFailed -> "Check your connection and search again."
+            allFailed -> com.kirtanya.reel.core.player.TitleSources.failedNote(search.failed) + " Check the connection and search again."
             search.sources.isNotEmpty() && search.sources.all { it.isExtra } -> "Your sources only had trailers or extras for this. They're listed below."
             search.sources.isNotEmpty() -> "It's on a streaming service: open it from the list below."
+            search.failed.isNotEmpty() -> com.kirtanya.reel.core.player.TitleSources.failedNote(search.failed) + " The others had nothing for this. Check the connection and search again."
             search.total == 1 -> "Your only source didn't have this. Try again later, or add more sources in Settings."
             else -> "None of your ${search.total} sources had this. Try again later, or add more sources in Settings."
         },
@@ -435,7 +450,7 @@ private fun NothingFound(search: SourceSearch, rescan: () -> Unit, modifier: Mod
  * Within a group several chips can be on (4K or 1080p); the counts are what each chip shows alone.
  */
 @Composable
-private fun Chips(facets: com.kirtanya.reel.core.sources.SourceFacets, filters: SourceFilters, onChange: (SourceFilters) -> Unit, side: androidx.compose.ui.unit.Dp) {
+internal fun Chips(facets: com.kirtanya.reel.core.sources.SourceFacets, filters: SourceFilters, onChange: (SourceFilters) -> Unit, side: androidx.compose.ui.unit.Dp) {
     @Composable
     fun <T> chip(c: FilterChip<T>, on: Boolean, toggle: () -> Unit) =
         ReelButton("${c.label} · ${c.count}", toggle, kind = if (on) ButtonKind.Primary else ButtonKind.Ghost)
@@ -457,11 +472,12 @@ private fun Chips(facets: com.kirtanya.reel.core.sources.SourceFacets, filters: 
         }
         if (facets.providers.isNotEmpty() || facets.languages.isNotEmpty()) {
             LazyRow(contentPadding = PaddingValues(horizontal = side), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                items(facets.providers, key = { "p:${it.value}" }) { c ->
-                    chip(c, c.value in filters.providers) { onChange(filters.copy(providers = SourceBrowser.toggle(filters.providers, c.value))) }
-                }
+                // Languages before providers: the row scrolls sideways, and "Hindi" must not hide behind four provider names.
                 items(facets.languages, key = { "l:${it.value}" }) { c ->
                     chip(c, c.value in filters.languages) { onChange(filters.copy(languages = SourceBrowser.toggle(filters.languages, c.value))) }
+                }
+                items(facets.providers, key = { "p:${it.value}" }) { c ->
+                    chip(c, c.value in filters.providers) { onChange(filters.copy(providers = SourceBrowser.toggle(filters.providers, c.value))) }
                 }
             }
         }

@@ -20,6 +20,8 @@ at once (the Home load is keyed on it); Continue watching, My list, New episodes
   English and duplicate Popular movies under Hindi). Other row titles are unchanged so a saved order / hidden set still
   applies; a row hidden as "Popular in India" shows again under a language, and the Order list in settings still lists
   the default names.
+- Merged with 0.16.7's Hindi rows (New Hindi releases, Popular Hindi films, Hindi shows): **Both** keeps them after
+  Trending this week; a single language drops them (Bollywood's own rows are already all Hindi, and Hollywood excludes it).
 - The empty Search screen's suggestions (Home's first row) follow the preference too. Genre / Browse grids are untouched.
 Evidence: `:core:test` (HomeFeedTest), renders `settings-homelayout`, `settings-homelayout-hindi` (phone, TV). Not tried
 against live TMDB (no key in the worktree): whether Hindi rows are full still needs a look on a device.

@@ -18,15 +18,19 @@ class HomeFeedTest {
 
     private fun title(id: Int, type: MediaType = MediaType.MOVIE) = TitleSummary(TitleRef(type, id), "T$id", 2026, null, null, null, "")
 
-    @Test fun `both is exactly the rows Home always had`() {
+    @Test fun `both is exactly the rows Home always had, Hindi rows included`() {
         val rows = HomeFeed.rows(ContentPreference.Both, today)
-        assertEquals(listOf("Trending this week", "Popular movies", "Trending shows", "Popular in India", "Top rated shows"), rows.map { it.title })
+        assertEquals(
+            listOf("Trending this week", "New Hindi releases", "Popular Hindi films", "Hindi shows", "Popular movies", "Trending shows", "Popular in India", "Top rated shows"),
+            rows.map { it.title },
+        )
         assertEquals(listOf(TmdbPaths.trending(null)), rows[0].requests.map { it.path })
         assertNull(rows[0].requests.single().type)
-        assertEquals(TmdbPaths.popular(MediaType.MOVIE, "IN"), rows[1].requests.single().path)
-        assertEquals(TmdbPaths.trending(MediaType.TV), rows[2].requests.single().path)
-        assertEquals(TmdbPaths.discoverFromCountry(MediaType.MOVIE, "IN"), rows[3].requests.single().path)
-        assertEquals(TmdbPaths.topRated(MediaType.TV, "IN"), rows[4].requests.single().path)
+        assertEquals(TmdbPaths.newReleasesByLanguage(today), rows[1].requests.single().path)
+        assertEquals(TmdbPaths.popular(MediaType.MOVIE, "IN"), rows[4].requests.single().path)
+        assertEquals(TmdbPaths.trending(MediaType.TV), rows[5].requests.single().path)
+        assertEquals(TmdbPaths.discoverFromCountry(MediaType.MOVIE, "IN"), rows[6].requests.single().path)
+        assertEquals(TmdbPaths.topRated(MediaType.TV, "IN"), rows[7].requests.single().path)
     }
 
     @Test fun `hindi rows are all discover queries for hindi originals`() {
@@ -63,10 +67,10 @@ class HomeFeedTest {
         assertTrue("sort_by=vote_average.desc" in en && "vote_count.gte=2000" in en, en)
     }
 
-    @Test fun `only the india row is replaced when a language is chosen`() {
+    @Test fun `a language choice drops the india and extra hindi rows`() {
         val both = HomeFeed.rows(ContentPreference.Both, today).map { it.title }.toSet()
         val hi = HomeFeed.rows(ContentPreference.Bollywood, today).map { it.title }.toSet()
-        assertEquals(setOf("Popular in India"), both - hi)
+        assertEquals(setOf("Popular in India", "New Hindi releases", "Popular Hindi films", "Hindi shows"), both - hi)
         assertEquals(setOf("Top rated films"), hi - both)
     }
 

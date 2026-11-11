@@ -38,22 +38,21 @@ data class TrackCandidate(
 }
 
 /**
- * Which track plays by itself: English first, unless this title remembers another language
- * (TitlePrefs). The pick overrides the file's "default" flag, which usually just marks the
+ * Which track plays by itself: this title's remembered language (TitlePrefs), else the Settings audio
+ * language order (AudioLanguage; "Multi" and "Dual audio" files carry both Hindi and English). The pick overrides the file's "default" flag, which usually just marks the
  * release's original language. Null = no pick: leave what the player chose (one track, or the
  * wanted language isn't there).
  */
 object TrackPick {
-    const val ENGLISH = "en"
-
     /**
      * The audio track to start on, as an index into [tracks]. The title's remembered language
-     * ([titleLanguage]) first, then English; commentary and audio description never count.
-     * Among several in the language: the file's default one, else the first.
+     * ([titleLanguage]) first, then [wantedCodes] in order (AudioLanguage.codes: "hi", "en"); commentary and
+     * audio description never count. Among several in the language: the file's default one, else the first.
+     * None of them present → null (the player keeps its own choice).
      */
-    fun audio(tracks: List<TrackCandidate>, titleLanguage: String?): Int? {
+    fun audio(tracks: List<TrackCandidate>, titleLanguage: String?, wantedCodes: List<String>): Int? {
         if (tracks.size < 2) return null
-        val wanted = listOfNotNull(titleLanguage?.let(Subtitles::normalizeLanguage), ENGLISH).distinct()
+        val wanted = (listOfNotNull(titleLanguage?.let(Subtitles::normalizeLanguage)) + wantedCodes.map(Subtitles::normalizeLanguage)).distinct()
         for (lang in wanted) {
             val inLanguage = tracks.withIndex().filter { (_, t) -> t.code == lang && !t.isExtra }
             if (inLanguage.isEmpty()) continue

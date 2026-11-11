@@ -34,8 +34,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.kirtanya.reel.core.sources.FreeOption
 import com.kirtanya.reel.core.sources.QualityBucket
 import com.kirtanya.reel.core.sources.SeedHealth
+import com.kirtanya.reel.core.sources.SourceBrowser
+import com.kirtanya.reel.core.tmdb.TmdbImages
+import com.kirtanya.reel.ui.common.RemoteImage
 import com.kirtanya.reel.core.sources.SourceKind
 import com.kirtanya.reel.core.sources.SourceType
 import com.kirtanya.reel.core.sources.SourceView
@@ -92,14 +96,13 @@ fun SourceRow(
         Column(Modifier.widthIn(min = 56.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
             QualityBadge(v)
             Text(typeLabel(v.type), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, textAlign = TextAlign.Center, maxLines = 1)
+            // Plain pill, no effects: it makes Hindi releases easy to spot in a long list.
+            if (v.hindi) Pill(SourceBrowser.HINDI, accent = true)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
             Facts(v)
             StartMark(speed)
-            Text(
-                listOf(v.provider).plus(v.languages).joinToString(" · "),
-                style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            ProviderLine(v)
             if (v.tags.isNotEmpty()) {
                 Text(v.tags.joinToString(" · "), style = Tokens.Type.caption, color = Tokens.Colors.accentBright, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -109,6 +112,53 @@ fun SourceRow(
         // Part of the card (one focus stop per row on the TV); it only says what the card does.
         Box(Modifier.size(Tokens.Size.iconButton).clip(CircleShape).background(Tokens.Colors.tonal), contentAlignment = Alignment.Center) {
             Icon(icon, label, tint = Tokens.Colors.onTonal, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/**
+ * "Torrentio · English". A release that names Hindi shows a "Hindi" pill in the card's left column instead, so the
+ * text doesn't say it twice and keeps its full width (a pill beside it cut "MediaFusion · English" short).
+ */
+@Composable
+private fun ProviderLine(v: SourceView) {
+    Text(
+        listOf(v.provider).plus(if (v.hindi) v.languages - SourceBrowser.HINDI else v.languages).joinToString(" · "),
+        style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** The TV's "Hindi" mark: accent text in the detail line (a pill per row is more than the TV's rows should draw). */
+@Composable
+fun HindiMark(modifier: Modifier = Modifier) {
+    Text(SourceBrowser.HINDI, modifier, style = Tokens.Type.caption, color = Tokens.Colors.accentBright, maxLines = 1)
+}
+
+/**
+ * "Free on JioHotstar": a legal free service from TMDB's "where to watch". Same card as a source, with the service's
+ * logo; the whole card opens the service's app (never played here).
+ */
+@Composable
+fun FreeRow(option: FreeOption, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(Tokens.Radius.media)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .then(if (com.kirtanya.reel.ui.common.LocalIsTv.current) Modifier else Modifier.pressScale(0.98f))
+            .focusCard(shape = shape, onClick = onClick)
+            .background(Tokens.Colors.surface1)
+            .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
+            .padding(Tokens.Space.m),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RemoteImage(TmdbImages.logo(option.provider.logoPath), Modifier.size(40.dp).clip(RoundedCornerShape(Tokens.Radius.s)))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
+            Text(option.title, style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(option.detail, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Box(Modifier.size(Tokens.Size.iconButton).clip(CircleShape).background(Tokens.Colors.tonal), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.OpenInNew, "Open", tint = Tokens.Colors.onTonal, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -147,11 +197,12 @@ fun RecommendedCard(
             Pill("Recommended", icon = Icons.Rounded.AutoAwesome, accent = true)
             Pill(v.bucket.label)
             Pill(typeLabel(v.type))
+            if (v.hindi) Pill(SourceBrowser.HINDI)
         }
         Facts(v, large = true)
         StartMark(speed)
         Text(
-            listOf(v.provider).plus(v.languages).joinToString(" · "),
+            listOf(v.provider).plus(if (v.hindi) v.languages - SourceBrowser.HINDI else v.languages).joinToString(" · "),
             style = Tokens.Type.label, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
         if (v.tags.isNotEmpty()) {

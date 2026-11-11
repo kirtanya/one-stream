@@ -32,6 +32,8 @@ class AddonProvider(
         val streamId = manifest.streamIdFor(req) ?: return emptyList()
         val response = http.fetch(FetchRequest(StremioAddon.streamUrl(manifestUrl, req, streamId)))
         if (response.status !in 200..299) throw PluginException("Addon answered ${response.status}")
+        // A block page or captive portal answers 200 with HTML: that is a failure, not "no streams for this film".
+        if (!StremioAddon.isStreamsAnswer(response.text)) throw PluginException("Answered with a web page, not sources")
         return StremioAddon.parseStreams(response.text, name)
     }
 }
@@ -94,10 +96,7 @@ class SourceAggregator(private val timeoutMs: Long = 30_000, private val maxPara
                             if (existing == null || (s.seeders ?: -1) > (existing.seeders ?: -1)) byKey[s.key] = s
                         }
                     }.onFailure { e ->
-                        failed[provider.name] = when (e) {
-                            is kotlinx.coroutines.TimeoutCancellationException -> "Timed out"
-                            else -> e.message ?: "Failed"
-                        }
+                        failed[provider.name] = failureReason(e)
                     }
                     publish()
                 }
@@ -108,5 +107,22 @@ class SourceAggregator(private val timeoutMs: Long = 30_000, private val maxPara
             close()
         }
         awaitClose()
+    }
+}
+
+/**
+ * Plain words for why a provider failed: the empty Sources page shows them, so a TV that can't reach the addons
+ * (site blocked by the network, wrong clock breaking secure connections) says so instead of a Java message.
+ */
+fun failureReason(e: Throwable): String {
+    val chain = generateSequence(e) { it.cause }.take(5).toList()
+    return when {
+        chain.any { it is kotlinx.coroutines.TimeoutCancellationException || it is java.net.SocketTimeoutException } -> "Timed out"
+        chain.any { it is java.net.UnknownHostException } -> "Site not found (blocked by this network, or no internet)"
+        chain.any { it is java.security.cert.CertificateException || it is javax.net.ssl.SSLException } ->
+            "Secure connection failed (check this device's date and time)"
+        chain.any { it is java.net.ConnectException || it is java.net.NoRouteToHostException } -> "Can't connect (blocked by this network?)"
+        chain.any { it is java.net.SocketException } -> "Connection dropped"
+        else -> e.message?.take(80) ?: "Failed"
     }
 }

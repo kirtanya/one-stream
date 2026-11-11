@@ -83,6 +83,10 @@ object StremioAddon {
     }
 
     /** `{"streams":[…]}` → sources. Unknown or unplayable entries are skipped. */
+    /** True when [body] is an addon's JSON answer (an object; "streams" may be missing or empty). */
+    fun isStreamsAnswer(body: String): Boolean =
+        runCatching { json.parseToJsonElement(body) is JsonObject }.getOrDefault(false)
+
     fun parseStreams(body: String, provider: String): List<Source> {
         val o = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return emptyList()
         return (o["streams"] as? JsonArray).orEmpty().mapNotNull { e ->

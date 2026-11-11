@@ -579,6 +579,37 @@ open class ScreenRenders(protected val variant: Variant) {
     /** Typing "du": the suggestions are what was searched before (nothing is fetched per key), next letters outlined. */
     @Test @Config(qualifiers = TV) fun tvSearchSuggest() = tvSearchRecents().let { render("search-suggest", tv = true) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "du") } } }
     /** ► off the keyboard's right edge lands on the results; focus then sits on a poster (named above the grid). */
+    /** A Hindi film: "Free on …" rows above the pick (the paid "Standard with Ads" tier is left out), Hindi tags on rows. */
+    @Test fun sourcesHindi() = render("sources-hindi", data = RenderData(sourceSearch = { Fake.manySources }), content = phone { open(Dest.Sources(Fake.hindi)) })
+    /** The Hindi chip (first among the languages for this title) picked: only releases that name Hindi. */
+    @Test fun sourcesHindiFiltered() = render(
+        "sources-hindi-filtered",
+        data = RenderData(sourceSearch = { Fake.manySources }, sourceFilters = com.kirtanya.reel.core.sources.SourceFilters(languages = setOf("Hindi"))),
+        content = phone { open(Dest.Sources(Fake.hindi)) },
+    )
+    /** The chips of a Hindi title: Hindi leads the languages (then English); "Multi audio" is its own chip, last. */
+    @Test fun sourcesHindiChips() = render("sources-hindi-chips") {
+        val rows = Fake.sources(26).filter { it.kind != com.kirtanya.reel.core.sources.SourceKind.EXTERNAL }.map(com.kirtanya.reel.core.sources.SourceBrowser::view)
+        androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().padding(vertical = 24.dp)) {
+            com.kirtanya.reel.ui.sources.Chips(com.kirtanya.reel.core.sources.SourceBrowser.facets(rows, listOf("Hindi", "English")), com.kirtanya.reel.core.sources.SourceFilters(languages = setOf("Hindi")), {}, 16.dp)
+        }
+    }
+    /** The TV's source rows for a Hindi film: free options on top, a Hindi mark leading the detail line of each Hindi release. */
+    @Test @Config(qualifiers = TV) fun tvSourceRowsHindi() = render("source-rows-hindi", tv = true) {
+        TvScene {
+            val s = Fake.sources(26)
+            val ordered = listOf(s[0], s[1], s[2], s[11], s[3], s[16])
+            val page = com.kirtanya.reel.core.player.TitleSources.page(Fake.manySources, ordered, expanded = true)
+            val free = com.kirtanya.reel.core.sources.FreeOptions.of(Fake.details(Fake.hindi).providers, max = 2)
+            val pick = com.kirtanya.reel.ui.tv.TvSourcePick(page, expanded = true, expand = {}, rescan = {}, play = {}, download = {}, free = free)
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 24.dp)) {
+                com.kirtanya.reel.ui.tv.TvSourceRows(pick, Modifier.fillMaxSize(), androidx.compose.ui.focus.FocusRequester(), onPick = {})
+            }
+        }
+    }
+    @Test @Config(qualifiers = TV) fun tvSourcesHindi() = render("sources-hindi", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.hindi)) })
+    /** The TV title page of a Hindi film: "Free to watch" over the source rows, Hindi marks in their detail lines. */
+    @Test @Config(qualifiers = TV) fun tvTitleFilmHindi() = render("title-film-hindi", tv = true, data = manySources, content = tvApp { open(Dest.Title(Fake.hindi)) })
     @Test @Config(qualifiers = TV) fun tvSearchResultsFocus() = behaviour().let { render("search-results-focus", tv = true, focusRight = 6) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
     /** ↓ from a card in the middle of the first row lands on the next row’s first card (not the one below it). */
     @Test @Config(qualifiers = TV) fun tvSearchRowDown() = behaviour().let { render("search-row-down", tv = true, focusRight = 8, keyDown = 1) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } } }
@@ -633,6 +664,22 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvCastNone() = render("cast-none", tv = true, data = RenderData(sourceSearch = { Fake.nothingFound }), content = tvApp { open(Dest.Cast(castFilm)) })
     @Test @Config(qualifiers = TV) fun tvCollection() = render("collection-service", tv = true, content = tvApp { open(Dest.Collection("Netflix", provider = Provider.FEATURED[0])) })
     @Test @Config(qualifiers = TV) fun tvCollectionGenre() = render("collection-genre", tv = true, content = tvApp { open(Dest.Collection("Drama", genre = com.kirtanya.reel.core.tmdb.Genre(18, "Drama"), genreType = com.kirtanya.reel.core.tmdb.MediaType.TV)) })
+    // TV side nav: Movies, Shows and Categories (and the page a category tile opens).
+    @Test @Config(qualifiers = TV) fun tvMovies() = render("movies", tv = true, content = tvApp { select(Tab.Movies) })
+    @Test @Config(qualifiers = TV) fun tvShows() = render("shows", tv = true, content = tvApp { select(Tab.Shows) })
+    @Test @Config(qualifiers = TV) fun tvMoviesError() = render("movies-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp { select(Tab.Movies) })
+    @Test @Config(qualifiers = TV) fun tvCategories() = render("categories", tv = true, content = tvApp { select(Tab.Categories) })
+    /** Down twice and right once from the first tile: the remote moves through the grid (not off it). */
+    @Test @Config(qualifiers = TV) fun tvCategoriesDown() = behaviour().let { render("categories-down", tv = true, focusDown = 2, focusRight = 1, content = tvApp { select(Tab.Categories) }) }
+    /** Left from the first column: the remote goes to the side nav. */
+    @Test @Config(qualifiers = TV) fun tvCategoriesRail() = behaviour().let { render("categories-rail", tv = true, focusLeft = 1, content = tvApp { select(Tab.Categories) }) }
+    @Test @Config(qualifiers = TV) fun tvCategoryGenre() = render("category-genre", tv = true, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.FALLBACK_GENRES[0])) })
+    @Test @Config(qualifiers = TV) fun tvCategoryLanguage() = render("category-language", tv = true, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.LANGUAGES[0])) })
+    /** Horror has films only: no All / Films / Shows tabs. */
+    @Test @Config(qualifiers = TV) fun tvCategoryOneKind() = render("category-one-kind", tv = true, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.FALLBACK_GENRES.first { it.label == "Horror" })) })
+    /** Right twice, then down from the first row of posters: the same column of the next row. */
+    @Test @Config(qualifiers = TV) fun tvCategoryDown() = behaviour().let { render("category-down", tv = true, focusRight = 2, focusDown = 1, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.FALLBACK_GENRES[0])) }) }
+    @Test @Config(qualifiers = TV) fun tvCategoryError() = render("category-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.LANGUAGES[2])) })
     @Test @Config(qualifiers = TV) fun tvPerson() = render("person", tv = true, content = tvApp { open(Dest.Person(1, "Timothée Chalamet")) })
     @Test @Config(qualifiers = TV) fun tvDownloads() = render("downloads", tv = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvDownloadsCache() = render("downloads-cache", tv = true, data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })

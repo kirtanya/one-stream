@@ -767,7 +767,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             val req = sourceRequest(next) ?: return@launch
             app.sources.ensureReady()
             val search = withTimeoutOrNull(45_000) {
-                app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision())).first { it.done }
+                app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision(), wantedSourceLanguages(nextPlayback))).first { it.done }
             }
             val source = pickNextSource(playback.source, search?.sources.orEmpty())
             nextReady = (if (source != null) nextPlayback.copy(source = source) else nextPlayback) to source
@@ -1150,7 +1150,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         if (sourceSearchJob?.isActive == true) return
         sourceSearchJob = lifecycleScope.launch {
             app.sources.ensureReady()
-            app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision())).collect {
+            app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision(), wantedSourceLanguages())).collect {
                 sourceSearch = it
                 if (it.done) com.kirtanya.reel.ui.sources.cacheSearch(req.key, it)
                 tvControls?.refreshPanel()
@@ -1284,7 +1284,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             var latest: List<Source> = emptyList()
             app.sources.ensureReady()
             withTimeoutOrNull(15_000) {
-                app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision()))
+                app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision(), wantedSourceLanguages()))
                     .transformWhile { emit(it); !it.done }
                     .collect { latest = it.sources }
             }
@@ -1569,9 +1569,10 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().apply {
             if (subs?.off == true) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             else if (subs?.language != null) setPreferredTextLanguage(subs.language)
-            // English first, unless this title remembers a language. This already beats the file's "default"
-            // flag at the start; applyLanguagePicks refines it once the tracks are known (no commentary).
-            setPreferredAudioLanguage(audio ?: com.kirtanya.reel.core.player.TrackPick.ENGLISH)
+            // This title's remembered language, else the Settings audio language order (AudioLanguage). This already
+            // beats the file's "default" flag at the start; applyLanguagePicks refines it once the tracks are known
+            // (no commentary).
+            setPreferredAudioLanguages(*(listOfNotNull(audio) + wantedAudioCodes()).distinct().toTypedArray())
         }.build()
         val speed = com.kirtanya.reel.core.player.TitleStart.speed(saved)
         if (speed != 1f) exo.setPlaybackSpeed(speed)
@@ -1600,8 +1601,17 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     /**
-     * English first (TrackPick): the audio track and the subtitle track that start are the English main ones unless
-     * this title remembers a language (TitlePrefs) or the Settings subtitle language says otherwise; Off stays off.
+     * The audio languages to look for, best first: Settings → Audio language, with "Original language" resolved from
+     * [p]'s TMDB original language (Playback carries it from the title page; old history entries have none = English first).
+     */
+    private fun wantedAudioCodes(p: Playback = playback) = prefs.audioLanguage.codes(p.originalLanguage)
+
+    /** The same order as source-language names, for ranking (Change source, Up next). */
+    private fun wantedSourceLanguages(p: Playback = playback) = prefs.audioLanguage.names(p.originalLanguage)
+
+    /**
+     * TrackPick: the audio track that starts is the main one in the Settings audio language (Hindi / English), the
+     * subtitle track the Settings subtitle language's, unless this title remembers a language (TitlePrefs); Off stays off.
      * Runs on every track change until the user picks something themselves (subtitles join late).
      */
     private fun applyLanguagePicks(tracks: androidx.media3.common.Tracks) {
@@ -1615,7 +1625,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         }
         if (!audioUserPicked) {
             val audio = pickables(tracks, C.TRACK_TYPE_AUDIO)
-            choose(audio, com.kirtanya.reel.core.player.TrackPick.audio(audio.map { it.track }, saved?.audioLanguage), "audio")
+            choose(audio, com.kirtanya.reel.core.player.TrackPick.audio(audio.map { it.track }, saved?.audioLanguage, wantedAudioCodes()), "audio")
         }
         if (!subtitleUserPicked && !exo.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
             val text = pickables(tracks, C.TRACK_TYPE_TEXT)

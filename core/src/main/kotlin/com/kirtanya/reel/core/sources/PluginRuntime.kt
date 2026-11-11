@@ -133,6 +133,7 @@ class PluginRuntime(
             put("imdbId", req.imdbId?.let(::JsonPrimitive) ?: JsonNull)
             put("type", if (req.type.path == "tv") "tv" else "movie")
             put("title", req.title)
+            put("originalTitle", req.originalTitle?.let(::JsonPrimitive) ?: JsonNull)
             put("year", req.year?.let(::JsonPrimitive) ?: JsonNull)
             put("season", req.season?.let(::JsonPrimitive) ?: JsonNull)
             put("episode", req.episode?.let(::JsonPrimitive) ?: JsonNull)
