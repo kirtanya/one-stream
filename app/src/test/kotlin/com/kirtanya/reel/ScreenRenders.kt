@@ -29,6 +29,7 @@ import com.kirtanya.reel.core.sync.LinkKind
 import com.kirtanya.reel.ui.DownloadsScreen
 import com.kirtanya.reel.ui.common.AddLinkSheet
 import com.kirtanya.reel.ui.common.AddSourceLinkDialog
+import com.kirtanya.reel.ui.common.AddSourceLinksSheet
 import com.kirtanya.reel.ui.common.Catalog
 import com.kirtanya.reel.ui.common.LocalCatalog
 import com.kirtanya.reel.ui.common.LocalRenderData
@@ -535,6 +536,23 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun addSourceLoading() = render("add-source-loading", windows = true, data = RenderData(linkPreview = Load.Loading)) {
         AddSourceLinkDialog(preview.url, isTv = false, onDone = {})
     }
+    private val severalLinks = listOf(
+        preview.url,
+        "https://opensubtitles-v3.strem.io/manifest.json",
+        "https://raw.githubusercontent.com/someone/nuvio-plugins/main/manifest.json",
+        "https://dead.example.org/manifest.json",
+        "https://slow.example.net/manifest.json",
+    )
+    private val severalPreviews = listOf(
+        Load.Ready(preview),
+        Load.Ready(SourcesStore.LinkPreview(severalLinks[1], LinkKind.ADDON, "OpenSubtitles v3", "Stremio addon · subtitles", "{}")),
+        Load.Ready(SourcesStore.LinkPreview(severalLinks[2], LinkKind.PLUGIN_REPO, "Community plugins", "Plugin repository · 12 plugins (scripts that run on this device)", "{}")),
+        Load.Failed("That link isn't a Stremio addon or a plugin repository (HTTP 404 from dead.example.org)"),
+        Load.Loading,
+    )
+    @Test fun addSourceLinks() = render("add-source-links", windows = true, data = RenderData(linkPreviews = severalPreviews)) {
+        Box(Modifier.fillMaxSize()) { AddSourceLinksSheet(severalLinks, isTv = false, onDone = {}) }
+    }
     @Test fun addSourceFailed() = render("add-source-failed", windows = true, data = RenderData(linkPreview = Load.Failed("That link isn't a Stremio addon or a plugin repository (HTTP 404 from mediafusion.elfhosted.com)"))) {
         AddSourceLinkDialog(preview.url, isTv = false, onDone = {})
     }
@@ -675,6 +693,9 @@ open class ScreenRenders(protected val variant: Variant) {
         render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvSettingsOver(SettingsPage.HomeStorage) }
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageNotSetUp() =
         render("settings-homestorage-not-set-up", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.notSetUp.copy(isTv = true))) { TvSettingsOver(SettingsPage.HomeStorage) }
+    @Test @Config(qualifiers = TV) fun tvAddSourceLinks() = render("add-source-links", tv = true, windows = true, data = RenderData(linkPreviews = severalPreviews.take(4))) {
+        Box(Modifier.fillMaxSize()) { AddSourceLinksSheet(severalLinks.take(4), isTv = true, onDone = {}) }
+    }
     @Test @Config(qualifiers = TV) fun tvAddSource() = render("add-source", tv = true, windows = true, data = RenderData(linkPreview = Load.Ready(preview))) {
         AddSourceLinkDialog(preview.url, isTv = true, onDone = {})
     }

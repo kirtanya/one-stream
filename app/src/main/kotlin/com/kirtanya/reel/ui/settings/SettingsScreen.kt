@@ -83,6 +83,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kirtanya.reel.BuildConfig
 import com.kirtanya.reel.ReelApp
+import com.kirtanya.reel.core.sync.SourceLinks
+import com.kirtanya.reel.ui.common.AddSourceLinksSheet
 import com.kirtanya.reel.data.PlaybackSettings
 import com.kirtanya.reel.data.SourceSetupException
 import com.kirtanya.reel.ui.common.AmbientGlow
@@ -393,6 +395,9 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
     var message by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var link by remember { mutableStateOf("") }
+    // Several links pasted at once: they open the pick-which sheet instead of adding straight away.
+    var several by remember { mutableStateOf<List<String>?>(null) }
+    several?.let { urls -> AddSourceLinksSheet(urls, isTv) { several = null } }
     var cacheBytes by remember { mutableLongStateOf(0L) }
     if (page == SettingsPage.Storage) LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { app.engine.cacheBytes() } }
 
@@ -408,6 +413,14 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
             }
             busy = false
         }
+    }
+
+    fun addLinks() {
+        val urls = SourceLinks.allFromUserInput(link)
+        if (urls.size > 1) {
+            several = urls
+            link = ""
+        } else run { app.sources.addFromLink(link).also { link = "" } }
     }
 
     // Results ("Added …", errors) as a toast: the field that caused them is often at the bottom of the page.
@@ -502,8 +515,8 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                     }
                 }
                 item {
-                    Section("Add by link", note = "Tap Install on an addon's website, or paste its link (manifest.json or stremio://).") {
-                        AddField(link, { link = it }, "Add", busy) { run { app.sources.addFromLink(link).also { link = "" } } }
+                    Section("Add by link", note = "Tap Install on an addon's website, or paste its link (manifest.json or stremio://). Paste several, one per line, to add them together.") {
+                        AddField(link, { link = it }, "Add", busy, multiLine = true, onAdd = ::addLinks)
                     }
                 }
             }
@@ -532,7 +545,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                 }
                 item {
                     Section("Add a repository") {
-                        AddField(link, { link = it }, "Add", busy) { run { app.sources.addFromLink(link).also { link = "" } } }
+                        AddField(link, { link = it }, "Add", busy, multiLine = true, onAdd = ::addLinks)
                     }
                 }
             }
@@ -657,12 +670,14 @@ internal fun AddField(
     placeholder: String = "https://…/manifest.json",
     keyboardOptions: KeyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
     ready: Boolean = value.isNotBlank(),
+    /** Grows to a few lines so a pasted list of links stays readable. */
+    multiLine: Boolean = false,
     onAdd: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
         OutlinedTextField(
-            value, onChange, Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = keyboardOptions,
-            shape = RoundedCornerShape(Tokens.Radius.pill),
+            value, onChange, Modifier.fillMaxWidth(), singleLine = !multiLine, maxLines = if (multiLine) 5 else 1, keyboardOptions = keyboardOptions,
+            shape = RoundedCornerShape(if (multiLine) Tokens.Radius.l else Tokens.Radius.pill),
             placeholder = { Text(placeholder) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Tokens.Colors.surface2, unfocusedContainerColor = Tokens.Colors.surface2,

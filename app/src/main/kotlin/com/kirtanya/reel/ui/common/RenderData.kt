@@ -20,6 +20,8 @@ class RenderData(
     val installed: SourcesState? = null,
     val store: StoreState? = null,
     val linkPreview: Load<SourcesStore.LinkPreview>? = null,
+    /** The several-links sheet, one entry per pasted link. */
+    val linkPreviews: List<Load<SourcesStore.LinkPreview>>? = null,
     /** Which title / episode each download is for (info-hash → origin). */
     val origins: Map<String, com.kirtanya.reel.core.library.DownloadOrigin>? = null,
     /** Sources page: chips already picked; [confirmReplace] opens the "Replace this download?" dialog for the pick. */

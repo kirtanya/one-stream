@@ -26,6 +26,29 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SourceLinksTest {
+    @Test fun severalLinksOnePerLine() = assertEquals(
+        listOf(
+            "https://torrentio.strem.fun/manifest.json",
+            "https://opensubtitles-v3.strem.io/manifest.json",
+            "https://addon.example/base/manifest.json",
+        ),
+        SourceLinks.allFromUserInput(
+            "https://torrentio.strem.fun/manifest.json\r\n\nstremio://opensubtitles-v3.strem.io/manifest.json  \n https://addon.example/base/\n",
+        ),
+    )
+
+    @Test fun severalLinksDropDuplicatesAndNonLinks() = assertEquals(
+        listOf("https://a.example/manifest.json", "https://b.example/manifest.json"),
+        SourceLinks.allFromUserInput("https://a.example/manifest.json hello https://b.example/manifest.json, stremio://a.example/manifest.json"),
+    )
+
+    @Test fun oneLinkStaysOne() = assertEquals(
+        listOf("https://a.example/manifest.json"),
+        SourceLinks.allFromUserInput("  https://a.example/manifest.json  "),
+    )
+
+    @Test fun noLinks() = assertEquals(emptyList(), SourceLinks.allFromUserInput("just some words"))
+
     @Test fun stremioScheme() = assertEquals(
         "https://opensubtitles-v3.strem.io/manifest.json",
         SourceLinks.normalize("stremio://opensubtitles-v3.strem.io/manifest.json"),

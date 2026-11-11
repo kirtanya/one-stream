@@ -36,6 +36,15 @@ object SourceLinks {
         return s.substringBefore('#').substringBefore('?').trimEnd('/') + "/manifest.json"
     }
 
+    /**
+     * Every addon / repo link in pasted text, in order, duplicates dropped. Links are told apart by spaces or
+     * line breaks (one per line is how people paste a list); each piece is read as [fromUserInput] reads one.
+     */
+    fun allFromUserInput(text: String): List<String> {
+        if (text.length > MAX_LENGTH * 64) return emptyList()
+        return text.split(Regex("""\s+""")).mapNotNull { fromUserInput(it) }.distinct()
+    }
+
     /** One link → https manifest URL. Accepts stremio:// and web.stremio.com `…addons?addon=<url>` links. */
     fun normalize(link: String): String? = normalize(link, depth = 0)
 
