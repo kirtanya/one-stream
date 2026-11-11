@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.kirtanya.reel.core.tmdb.ContentPreference
 
 /** What the big hero at the top of Home cycles through. */
 enum class HeroSource(val label: String) { Trending("Trending"), MyList("My list"), Continue("Continue watching") }
@@ -32,6 +33,9 @@ object HomeLayout {
     private const val PREFS = "home_layout"
     private var prefs: android.content.SharedPreferences? = null
 
+    /** Whose titles Home's TMDB rows suggest. Both = TMDB's usual rows; changing it reloads Home (the load is keyed on it). Not part of "Reset Home": it is taste, not layout. */
+    var content by mutableStateOf(ContentPreference.Both)
+        private set
     var order by mutableStateOf(RowIds.DEFAULT)
         private set
     var hidden by mutableStateOf(emptySet<String>())
@@ -62,6 +66,7 @@ object HomeLayout {
         // "services" (the removed "On your services" row) may still be in a saved layout: drop it.
         p.getString("order", null)?.split('\n')?.let { order = dropRemoved(it) }
         hidden = dropRemoved(p.getStringSet("hidden", emptySet()).orEmpty()).toSet()
+        content = ContentPreference.fromKey(p.getString("content", null))
         hero = p.getString("hero", null)?.let { n -> HeroSource.entries.firstOrNull { it.name == n } } ?: HeroSource.Trending
         heroAutoAdvance = p.getBoolean("heroAuto", true)
         posterStyle = p.getString("posterStyle", null)?.let { n -> PosterStyle.entries.firstOrNull { it.name == n } } ?: PosterStyle.Posters
@@ -99,6 +104,7 @@ object HomeLayout {
         prefs?.edit()?.putStringSet("hidden", hidden)?.apply()
     }
 
+    fun chooseContent(v: ContentPreference) { content = v; prefs?.edit()?.putString("content", v.key)?.apply() }
     fun chooseHero(v: HeroSource) { hero = v; prefs?.edit()?.putString("hero", v.name)?.apply() }
     fun chooseHeroAutoAdvance(v: Boolean) { heroAutoAdvance = v; prefs?.edit()?.putBoolean("heroAuto", v)?.apply() }
     fun choosePosterStyle(v: PosterStyle) { posterStyle = v; prefs?.edit()?.putString("posterStyle", v.name)?.apply() }

@@ -428,6 +428,14 @@ open class ScreenRenders(protected val variant: Variant) {
         com.kirtanya.reel.ui.home.HomeLayout.setShown(com.kirtanya.reel.ui.home.RowIds.BECAUSE, false)
         try { settingsPage(SettingsPage.HomeLayout) } finally { com.kirtanya.reel.ui.home.HomeLayout.reset() }
     }
+    // A language chosen: its chip is the filled one, and the page summary names it.
+    @Test fun settingsHomeLayoutHindi() {
+        com.kirtanya.reel.ui.home.HomeLayout.init(app); com.kirtanya.reel.ui.home.HomeLayout.reset()
+        com.kirtanya.reel.ui.home.HomeLayout.chooseContent(com.kirtanya.reel.core.tmdb.ContentPreference.Bollywood)
+        try {
+            render("settings-homelayout-hindi", data = RenderData(installed = Fake.installed, store = Fake.store)) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.HomeLayout)) } }
+        } finally { com.kirtanya.reel.ui.home.HomeLayout.chooseContent(com.kirtanya.reel.core.tmdb.ContentPreference.Both) }
+    }
     @Test fun settingsHistory() {
         app.hidden.hide(Fake.titles(1, seed = 3).first())
         try { render("settings-history", history = true, data = RenderData(installed = Fake.installed)) { PhoneTab(Tab.Settings) { SettingsScreen(isTv = false, start = listOf(SettingsPage.History)) } } }

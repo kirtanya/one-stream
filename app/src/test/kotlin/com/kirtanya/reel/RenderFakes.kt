@@ -61,7 +61,7 @@ class FakeCatalog(private val answer: Answer = Answer.Data, private val logos: B
         Answer.Fail -> throw Exception("Can't reach TMDB. Check your connection.")
     }
 
-    override suspend fun home() = give(Fake.home, emptyList())
+    override suspend fun home(content: com.kirtanya.reel.core.tmdb.ContentPreference) = give(Fake.home, emptyList())
     override suspend fun onService(providerId: Int) = give(Fake.titles(30, seed = providerId), emptyList())
     override suspend fun search(query: String) = give(if (query.startsWith("zz")) emptyList() else Fake.titles(20, seed = 7), emptyList())
     override suspend fun details(ref: TitleRef) = give(Fake.details(ref), Fake.bare(ref))

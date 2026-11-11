@@ -21,7 +21,7 @@ import com.kirtanya.reel.data.TmdbRepository
  * can be drawn without a network.
  */
 interface Catalog {
-    suspend fun home(): List<HomeRow>
+    suspend fun home(content: com.kirtanya.reel.core.tmdb.ContentPreference = com.kirtanya.reel.core.tmdb.ContentPreference.Both): List<HomeRow>
     suspend fun onService(providerId: Int): List<TitleSummary>
     suspend fun search(query: String): List<TitleSummary>
     suspend fun details(ref: TitleRef): TitleDetails
@@ -68,7 +68,7 @@ private class TmdbCatalog(private val tmdb: TmdbRepository, ratings: Lazy<com.ki
     override fun cachedImdb(ref: TitleRef) = ratings.cachedImdb(ref)
     override suspend fun episodeImdb(d: TitleDetails, season: Int) = ratings.episodeRatings(d.imdbId, season)
     override suspend fun posterImdb(ref: TitleRef) = ratings.posterImdb(ref)
-    override suspend fun home() = tmdb.home()
+    override suspend fun home(content: com.kirtanya.reel.core.tmdb.ContentPreference) = tmdb.home(content)
     override suspend fun onService(providerId: Int) = tmdb.onService(providerId)
     override suspend fun search(query: String) = tmdb.search(query) { tmdb.taste(tasteRefs()) }
 

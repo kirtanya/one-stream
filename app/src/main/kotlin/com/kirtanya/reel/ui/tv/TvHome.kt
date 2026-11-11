@@ -117,7 +117,7 @@ internal val TvHomeSide = Tokens.Space.l
 @Composable
 fun TvHome(onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit, onShowDownloads: () -> Unit = {}) {
     val catalog = rememberCatalog()
-    val (load, retry) = rememberLoad(Unit) { catalog.home() }
+    val (load, retry) = rememberLoad(HomeLayout.content) { catalog.home(HomeLayout.content) }
     val continueItems = rememberContinueWatching()
     val myList = rememberWatchlist()
     val because = com.kirtanya.reel.ui.home.rememberBecauseYouWatched()

@@ -3,8 +3,10 @@ package com.kirtanya.reel.data
 import android.util.LruCache
 import com.kirtanya.reel.BuildConfig
 import com.kirtanya.reel.core.browse.SearchRank
+import com.kirtanya.reel.core.tmdb.ContentPreference
 import com.kirtanya.reel.core.tmdb.Episode
 import com.kirtanya.reel.core.tmdb.Genre
+import com.kirtanya.reel.core.tmdb.HomeFeed
 import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.PersonDetails
 import com.kirtanya.reel.core.tmdb.TitleDetails
@@ -37,19 +39,15 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
 
     val hasKey: Boolean get() = token.isNotBlank()
 
-    suspend fun home(): List<HomeRow> = coroutineScope {
-        val trending = async { list(TmdbPaths.trending(null)) }
-        val movies = async { list(TmdbPaths.popular(MediaType.MOVIE, region), MediaType.MOVIE) }
-        val shows = async { list(TmdbPaths.trending(MediaType.TV), MediaType.TV) }
-        val indian = async { list(TmdbPaths.discoverFromCountry(MediaType.MOVIE, region), MediaType.MOVIE) }
-        val topShows = async { list(TmdbPaths.topRated(MediaType.TV, region), MediaType.TV) }
-        listOf(
-            HomeRow("Trending this week", trending.await()),
-            HomeRow("Popular movies", movies.await()),
-            HomeRow("Trending shows", shows.await()),
-            HomeRow("Popular in India", indian.await()),
-            HomeRow("Top rated shows", topShows.await()),
-        ).filter { it.items.isNotEmpty() }
+    /**
+     * Home's TMDB rows for [content] (see [HomeFeed]: Both is the usual trending / popular rows, one language swaps
+     * them for language-filtered discover queries). A row whose requests all fail or come back empty is left out.
+     */
+    suspend fun home(content: ContentPreference = ContentPreference.Both): List<HomeRow> = coroutineScope {
+        HomeFeed.rows(content, region = region)
+            .map { row -> row.title to row.requests.map { r -> async { list(r.path, r.type) } } }
+            .map { (title, answers) -> HomeRow(title, HomeFeed.interleave(answers.map { it.await() })) }
+            .filter { it.items.isNotEmpty() }
     }
 
     /** What's streaming on a service in India: films and shows, interleaved by popularity. */

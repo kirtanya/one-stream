@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import com.kirtanya.reel.core.tmdb.ContentPreference
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.GlassIconButton
 import com.kirtanya.reel.ui.common.ReelButton
@@ -31,6 +32,7 @@ import com.kirtanya.reel.ui.theme.Tokens
 
 /** Settings → Home screen: the hero, poster look, and which rows show in what order. */
 internal fun homeLayoutSummary(isTv: Boolean): String = listOfNotNull(
+    HomeLayout.content.takeIf { it != ContentPreference.Both }?.label,
     if (isTv) null else "Hero: ${HomeLayout.hero.label}",
     if (isTv) "${HomeLayout.tvCardShape.label.lowercase()} · ${HomeLayout.tvCardSize.label.lowercase()} cards"
     else HomeLayout.posterStyle.label.lowercase() + " rows",
@@ -39,6 +41,11 @@ internal fun homeLayoutSummary(isTv: Boolean): String = listOfNotNull(
 ).joinToString(" · ")
 
 internal fun LazyListScope.homeLayoutItems(isTv: Boolean) {
+    item(key = "content") {
+        Section("Suggestions", note = "Which films and shows Home suggests. Continue watching and My list always show everything.") {
+            Choices(ContentPreference.entries, HomeLayout.content, { it.label }, HomeLayout::chooseContent)
+        }
+    }
     // The TV has no hero carousel (its backdrop follows focus).
     if (!isTv) item(key = "hero") {
         Section("Hero", note = "The big picture at the top of Home.") {
