@@ -15,6 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -259,10 +265,14 @@ private fun TvExitChip(modifier: Modifier = Modifier) {
 }
 
 /**
- * The TV's left rail: four icons (Search, Home, Downloads, Settings), vertically centred, no labels. Selected = white
+ * The TV's left rail: four icons (Search, Home, Downloads, Settings), vertically centred. Selected = white
  * icon + a small marker on its left, the rest grey; focus = a ring and a white icon. It's one focus group: ◄ from a
  * screen's first item enters on the selected icon, ► leaves to the screen ([contentFocus], which remembers where you
  * were), ▲ / ▼ past the ends stay put. Nothing animates (the ring fade is the shared focus fade).
+ *
+ * While any icon has focus the rail EXPANDS: each tab's name appears beside its icon on a solid panel. It is an overlay:
+ * the rail keeps reporting [TvRailWidth] to its parent (the wrapper below lets the panel overflow to the right) so no
+ * page moves, and the panel is drawn in the rail's own draw pass (no blur, no shadow, no layer, no animation).
  */
 @Composable
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -275,31 +285,61 @@ internal fun TvRail(
 ) {
     val items = remember { listOf(Tab.Search to Icons.Rounded.Search, Tab.Home to Icons.Rounded.Home, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings) }
     val requesters = remember { items.associate { (tab, _) -> tab to (if (tab == Tab.Settings) settingsFocus else FocusRequester()) } }
-    Column(
-        modifier
-            .width(TvRailWidth)
-            .focusProperties {
-                enter = { requesters.getValue(selected) }
-                // Only the four arrows are held in or sent on; a programmatic focus change (Exit) must pass, or a page that
-                // lost focus could never hand it back.
-                exit = { dir ->
-                    when (dir) {
-                        FocusDirection.Right -> contentFocus ?: FocusRequester.Cancel
-                        FocusDirection.Left, FocusDirection.Up, FocusDirection.Down -> FocusRequester.Cancel
-                        else -> FocusRequester.Default
+    var expanded by remember { mutableStateOf(false) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val panelPad = with(density) { Tokens.Space.s.toPx() }
+    val panelCorner = with(density) { Tokens.Radius.l.toPx() }
+    val railPanelColor = Tokens.Colors.surface1
+    // Outside: exactly the collapsed footprint, so the page beside it never moves. Inside the panel may be wider.
+    Box(modifier.width(TvRailWidth).wrapContentWidth(Alignment.Start, unbounded = true)) {
+        Column(
+            Modifier
+                .widthIn(min = TvRailWidth)
+                .drawBehind {
+                    if (expanded) {
+                        // Left corners start off-screen so only the right edge reads as rounded; it grows past the icons by
+                        // [panelPad] above and below so the first and last icon don't touch the edge.
+                        drawRoundRect(
+                            color = railPanelColor,
+                            topLeft = Offset(-panelCorner, -panelPad),
+                            size = Size(size.width + panelCorner, size.height + 2 * panelPad),
+                            cornerRadius = CornerRadius(panelCorner),
+                        )
                     }
                 }
-            }
-            .focusGroup()
-            .padding(start = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
-    ) {
-        items.forEach { (tab, icon) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // The selected marker: 3 × 16 dp, drawn only for the selected icon.
-                Box(Modifier.width(3.dp).height(16.dp).then(if (tab == selected) Modifier.clip(CircleShape).background(Tokens.Colors.text) else Modifier))
-                Spacer(Modifier.width(9.dp))
-                RailIcon(icon, tab.label, selected = tab == selected, Modifier.focusRequester(requesters.getValue(tab))) { onSelect(tab) }
+                .focusProperties {
+                    enter = { requesters.getValue(selected) }
+                    // Only the four arrows are held in or sent on; a programmatic focus change (Exit) must pass, or a page that
+                    // lost focus could never hand it back.
+                    exit = { dir ->
+                        when (dir) {
+                            FocusDirection.Right -> contentFocus ?: FocusRequester.Cancel
+                            FocusDirection.Left, FocusDirection.Up, FocusDirection.Down -> FocusRequester.Cancel
+                            else -> FocusRequester.Default
+                        }
+                    }
+                }
+                .onFocusChanged { expanded = it.hasFocus }
+                .focusGroup()
+                .padding(start = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
+        ) {
+            items.forEach { (tab, icon) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The selected marker: 3 × 16 dp, drawn only for the selected icon.
+                    Box(Modifier.width(3.dp).height(16.dp).then(if (tab == selected) Modifier.clip(CircleShape).background(Tokens.Colors.text) else Modifier))
+                    Spacer(Modifier.width(9.dp))
+                    RailIcon(icon, tab.label, selected = tab == selected, Modifier.focusRequester(requesters.getValue(tab))) { onSelect(tab) }
+                    if (expanded) {
+                        Text(
+                            tab.label,
+                            modifier = Modifier.padding(start = Tokens.Space.m, end = Tokens.Space.xl),
+                            style = Tokens.Type.heading,
+                            color = if (tab == selected) Tokens.Colors.text else Tokens.Colors.textSecondary,
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
         }
     }

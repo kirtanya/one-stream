@@ -659,6 +659,8 @@ open class ScreenRenders(protected val variant: Variant) {
         com.kirtanya.reel.ui.settings.SettingsLink.pending = SettingsPage.HomeLayout
         try { render("settings-live", tv = true, history = true, content = tvApp { select(Tab.Settings) }) } finally { com.kirtanya.reel.ui.home.HomeLayout.reset() }
     }
+    /** The rail expanded (names beside the icons) over a page that is not Home: nothing behind it moves. */
+    @Test @Config(qualifiers = TV) fun tvRailExpandedSearch() = render("rail-expanded-search", tv = true, focusLeft = 3) { TvTab(Tab.Search) { TvSearch(onOpen = {}, initialQuery = "dune") } }
     /** ◄ from the first card reaches the rail (on the Home icon). */
     @Test @Config(qualifiers = TV) fun tvRailFocused() = render("rail-focused", tv = true, history = true, focusLeft = 1, content = tvApp())
     /** ◄ then ► returns to the card you left. */
