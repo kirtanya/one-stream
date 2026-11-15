@@ -5,6 +5,15 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-15 · TV: Back on the last screen asks "Exit One Stream?"; the title page's round buttons get names**
+Decision (user): leaving the TV app is a dialog, not "Press Back again to exit". Back on Search (the last screen)
+opens "Exit One Stream?" with **Exit focused**, so OK leaves; **Cancel** or Back closes the dialog and stays, and the next
+Back asks again. The double-Back chip and its 3 s window are gone from the app (`ui/tv/TvApp.kt`, `TvExitDialog`;
+render `exit-dialog`). The player keeps its own "Press Back again to exit" (it leaves the film, not the app).
+Also (user): the title page's round icons (Trailer, My list, Watched) were not understandable alone; each now has its
+name under it ("Trailer", "My list" / "In My list", "Mark watched" / "Watched"), white when focused. Under, not
+beside, so a long "Resume S2 E8 · 30 min left" still fits on the half page (render `title-show-resume`).
+
 **2026-11-11 · Home suggestions follow a content preference (Hollywood / Bollywood / Both)**
 Decision (user): Settings → Home screen → Suggestions: **Hollywood (English)**, **Bollywood (Hindi)** or **Both** (default;
 exactly the old rows, so nothing changes until chosen). Saved per device with the rest of the Home layout

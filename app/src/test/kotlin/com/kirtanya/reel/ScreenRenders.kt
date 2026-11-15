@@ -623,6 +623,7 @@ open class ScreenRenders(protected val variant: Variant) {
     private val manySources = RenderData(sourceSearch = { Fake.manySources })
     /** The film with a saved position (history): the top source says "Resume 70:00", sources best first, "All sources…" at the end. */
     @Test @Config(qualifiers = TV) fun tvTitleFilm() = render("title-film", tv = true, history = true, data = manySources, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvExitDialog() = render("exit-dialog", tv = true, content = { com.kirtanya.reel.ui.tv.TvExitDialog(onExit = {}, onDismiss = {}) })
     @Test @Config(qualifiers = TV) fun tvTitleFilmFresh() = render("title-film-fresh", tv = true, data = manySources, content = tvApp { open(Dest.Title(Fake.film)) })
     @Test @Config(qualifiers = TV) fun tvTitleFilmSearching() = render("title-film-searching", tv = true, data = RenderData(sourceSearch = { Fake.searching }), content = tvApp { open(Dest.Title(Fake.film)) })
     @Test @Config(qualifiers = TV) fun tvTitleFilmStarting() = render("title-film-starting", tv = true, data = RenderData(sourceSearch = { null }), content = tvApp { open(Dest.Title(Fake.film)) })

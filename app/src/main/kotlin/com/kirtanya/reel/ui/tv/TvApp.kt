@@ -155,11 +155,10 @@ fun TvApp(
     val appeared = remember { booleanArrayOf(false) }
     val activity = LocalContext.current as? Activity
     // While the settings panel is open it owns Back (a sub-page, then the panel). Otherwise Back on Home goes to
-    // Search, and on Search the first Back shows "Press Back again to exit" (as in the player); a second one within
-    // [EXIT_WINDOW_MS] closes the app. Pages and the other tabs go back as before.
-    var exitArmed by remember { mutableStateOf(false) }
-    LaunchedEffect(exitArmed) { if (exitArmed) { kotlinx.coroutines.delay(EXIT_WINDOW_MS); exitArmed = false } }
-    LaunchedEffect(nav.tab, nav.top) { exitArmed = false }
+    // Search, and on Search Back asks "Exit One Stream?" (Exit has focus). Back on that dialog closes it; the next Back
+    // asks again. Pages and the other tabs go back as before.
+    var exitAsk by remember { mutableStateOf(false) }
+    LaunchedEffect(nav.tab, nav.top) { exitAsk = false }
     var focusContent by remember { mutableStateOf(0) }
     LaunchedEffect(focusContent) {
         if (focusContent == 0) return@LaunchedEffect
@@ -173,8 +172,7 @@ fun TvApp(
             nav.top != null -> nav.back()
             nav.tab == Tab.Home -> { nav.select(Tab.Search); focusContent++ }
             nav.tab != Tab.Search -> { nav.back(); focusContent++ }
-            exitArmed -> activity?.finish()
-            else -> exitArmed = true
+            else -> exitAsk = true
         }
     }
     val openTitle: (com.kirtanya.reel.core.tmdb.TitleSummary) -> Unit = { nav.open(Dest.Title(it.ref)) }
@@ -249,26 +247,34 @@ fun TvApp(
             undo, isTv = true,
             Modifier.align(Alignment.BottomStart).padding(horizontal = Tokens.Space.tvSafeH, vertical = Tokens.Space.tvSafeV),
         )
-        if (exitArmed) TvExitChip(Modifier.align(Alignment.BottomCenter).padding(bottom = Tokens.Space.tvSafeV))
         // Browse screens only (the player is its own activity; Sources may be mid-search).
         TvScreensaver(idle, enabled = nav.top == null || nav.top is Dest.Title || nav.top is Dest.Collection)
     }
     }
 
+    if (exitAsk) TvExitDialog(onExit = { exitAsk = false; activity?.finish() }, onDismiss = { exitAsk = false })
+
     // A magnet sent to the TV (e.g. opened from another app): Stream / Download sheet.
     if (incomingMagnet != null) AddLinkSheet(initialLink = incomingMagnet, onDismiss = onIncomingHandled, onDownloadStarted = { nav.select(Tab.Downloads) })
 }
 
-private const val EXIT_WINDOW_MS = 3_000L
-
-/** "Press Back again to exit", bottom centre: the same words and pill as the player's exit chip. */
+/** "Exit One Stream?" with Exit focused, so OK leaves. Back (the dialog's dismiss) closes it and stays. */
 @Composable
-private fun TvExitChip(modifier: Modifier = Modifier) {
-    Text(
-        "Press Back again to exit",
-        modifier.background(Tokens.Colors.surface3, CircleShape).border(Tokens.Size.hairline, Tokens.Colors.hairline, CircleShape)
-            .padding(horizontal = Tokens.Space.l, vertical = Tokens.Space.s),
-        style = Tokens.Type.body, color = Tokens.Colors.text,
+internal fun TvExitDialog(onExit: () -> Unit, onDismiss: () -> Unit) {
+    val exitFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        // The dialog's window takes a frame or two to be ready for focus.
+        repeat(10) {
+            withFrameNanos { }
+            if (runCatching { exitFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+        }
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Tokens.Colors.surface1,
+        title = { Text("Exit One Stream?", style = Tokens.Type.heading, color = Tokens.Colors.text) },
+        confirmButton = { ReelButton("Exit", onExit, Modifier.focusRequester(exitFocus), kind = ButtonKind.Primary) },
+        dismissButton = { ReelButton("Cancel", onDismiss, kind = ButtonKind.Ghost) },
     )
 }
 

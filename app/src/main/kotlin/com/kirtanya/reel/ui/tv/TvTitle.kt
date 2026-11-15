@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -257,11 +258,11 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                             }
                             Spacer(Modifier.height(Tokens.Space.m))
                             // The page's actions, on top: Resume / Play next (shows), Trailer, My list, Watched.
-                            Row(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                            Row(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs), verticalAlignment = Alignment.Top) {
                                 if (isShow) ReelButton(action.label, ::runAction, kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow)
                                 // Round icons beside it, so a long "Resume S2 E8 · 30 min left" still fits on the half page.
                                 d.trailer?.let { t -> RoundAction(Icons.Rounded.Movie, "Trailer") { openVideo(context, t) } }
-                                RoundAction(watchlistIcon(saved), if (saved) "In My list" else "Add to My list", toggleSaved)
+                                RoundAction(watchlistIcon(saved), if (saved) "In My list" else "My list", toggleSaved)
                                 // The whole film or show (every aired episode).
                                 RoundAction(if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility, if (watchedAll) "Watched" else "Mark watched", toggleWatched)
                             }
@@ -524,16 +525,30 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onC
     }
 }
 
-/** A round icon-only action beside the title page's main button (Trailer, My list, Watched); the ring is the focus. */
+/**
+ * A round action beside the title page's main button (Trailer, My list, Watched) with its name underneath, so it's
+ * clear what each icon does; the ring is the focus, and the name turns white with it. Names under (not beside) the
+ * icons keep the row narrow enough for a long "Resume S2 E8 · 30 min left" on the half page.
+ */
 @Composable
 private fun RoundAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.pill)
-    Box(
-        Modifier.size(Tokens.Size.button).clip(shape).background(Tokens.Colors.surface2).focusCard(shape = shape, onClick = onClick)
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, null, tint = Tokens.Colors.text, modifier = Modifier.size(20.dp))
+    var focused by remember { mutableStateOf(false) }
+    Column(Modifier.widthIn(min = Tokens.Size.button), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(Tokens.Size.button).clip(shape).background(Tokens.Colors.surface2)
+                .onFocusChanged { focused = it.isFocused }
+                .focusCard(shape = shape, onClick = onClick)
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, null, tint = Tokens.Colors.text, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.height(Tokens.Space.xs))
+        Text(
+            label, style = Tokens.Type.caption, maxLines = 1,
+            color = if (focused) Tokens.Colors.text else Tokens.Colors.textSecondary,
+        )
     }
 }
 
