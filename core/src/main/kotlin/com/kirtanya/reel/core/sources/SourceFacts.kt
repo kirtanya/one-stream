@@ -88,7 +88,7 @@ object SourceFacts {
     )
 
     /** Tags for a release, most important first, without duplicates ("DTS-HD" hides "DTS", "HDR10+" hides "HDR"). */
-    fun tags(s: Source): List<String> = tags(s.title, s.filename)
+    fun tags(s: Source): List<String> = s.releaseTags
 
     fun tags(vararg texts: String?): List<String> {
         val text = normalise(texts)
@@ -125,8 +125,18 @@ object SourceFacts {
         "PT" to "Portuguese", "BR" to "Portuguese", "TR" to "Turkish", "PL" to "Polish", "NL" to "Dutch",
     )
 
+    // Built once: languages() runs for every source on every ranking (hundreds per search on the TV).
+    private val WORD = Regex("[A-Za-z]+")
+    private val LANGUAGE_BY_WORD: Map<String, String> by lazy { LANGUAGE_WORDS.associateBy { it.lowercase() } }
+    // Compiled once too: these ran per source per row, and compiling a pattern costs far more than matching it.
+    private val DUAL_AUDIO = Regex("(?i)\\bdual[ ._-]?audio\\b")
+    private val MULTI = Regex("(?i)\\bmulti\\b")
+    private val SPACES = Regex("\\s+")
+    private val SEPARATORS = Regex("[._\\[\\]()]")
+    private val AUDIO_DIGIT = Regex("(?i)(ddp|dd|aac|ac3|truehd|atmos|dts)(\\d)")
+
     /** Spoken languages named in the release (words, upper-case codes, flags), in first-seen order. */
-    fun languages(s: Source): List<String> = languages(s.title, s.filename)
+    fun languages(s: Source): List<String> = s.spokenLanguages
 
     /**
      * "Dual audio" / "Multi" only when no language is named: "Hindi + English" already says it.
@@ -135,8 +145,8 @@ object SourceFacts {
     fun languages(vararg texts: String?): List<String> {
         val text = texts.filterNotNull().joinToString(" ")
         val found = LinkedHashSet<String>()
-        for (w in Regex("[A-Za-z]+").findAll(text).map { it.value }) {
-            LANGUAGE_WORDS.firstOrNull { it.equals(w, ignoreCase = true) }?.let(found::add)
+        for (w in WORD.findAll(text).map { it.value }) {
+            LANGUAGE_BY_WORD[w.lowercase()]?.let(found::add)
             ABBREVIATIONS[w]?.let(found::add)
         }
         // Regional-indicator pairs → country code.
@@ -151,8 +161,8 @@ object SourceFacts {
             } else i++
         }
         if (found.isEmpty()) {
-            if (Regex("(?i)\\bdual[ ._-]?audio\\b").containsMatchIn(text)) found += "Dual audio"
-            else if (Regex("(?i)\\bmulti\\b").containsMatchIn(text)) found += "Multi"
+            if (DUAL_AUDIO.containsMatchIn(text)) found += "Dual audio"
+            else if (MULTI.containsMatchIn(text)) found += "Multi"
         }
         return found.toList()
     }
@@ -161,16 +171,21 @@ object SourceFacts {
      * A provider's short name for chips and rows: "Comet | Real-Debrid" → "Comet",
      * "MediaFusion 🇮🇳 (Hindi, Tamil)" → "MediaFusion", "Built-in: Internet Archive" → "Internet Archive".
      */
-    fun providerLabel(provider: String): String {
+    fun providerLabel(provider: String): String = PROVIDER_LABELS.getOrPut(provider) { shortProvider(provider) }
+
+    /** A handful of providers, asked once per source per list (ranking, size checks, rows): remembered. */
+    private val PROVIDER_LABELS = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun shortProvider(provider: String): String {
         var p = provider.substringAfter("Built-in:").trim()
         p = p.substringBefore(" | ").substringBefore(" (").substringBefore(" - ")
         p = p.filter { it.isLetterOrDigit() || it == ' ' || it == '.' || it == '+' || it == '-' || it == '\'' }
-        return p.trim().replace(Regex("\\s+"), " ").ifEmpty { provider.trim() }
+        return p.trim().replace(SPACES, " ").ifEmpty { provider.trim() }
     }
 
     /** Dots, underscores and brackets read as spaces, so "DDP5.1" and "5.1" both match "5 1". */
     private fun normalise(texts: Array<out String?>): String =
         texts.filterNotNull().joinToString(" ")
-            .replace(Regex("[._\\[\\]()]"), " ")
-            .replace(Regex("(?i)(ddp|dd|aac|ac3|truehd|atmos|dts)(\\d)"), "$1 $2")
+            .replace(SEPARATORS, " ")
+            .replace(AUDIO_DIGIT, "$1 $2")
 }

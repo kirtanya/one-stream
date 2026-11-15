@@ -18,6 +18,7 @@ import com.kirtanya.reel.core.sources.SourceRequest
 import com.kirtanya.reel.core.sources.StremioAddon
 import com.kirtanya.reel.core.sources.TMDB_KEY_PLACEHOLDER
 import com.kirtanya.reel.core.tmdb.MediaType
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -58,6 +59,29 @@ class QualityTest {
 class RankerTest {
     private fun t(res: Int?, seeds: Int?, size: Long? = null, cam: Boolean = false) =
         Source(SourceKind.TORRENT, "x$res$seeds", "p", Quality(resolution = res, lowQualityRip = cam), infoHash = "a".repeat(40), seeders = seeds, sizeBytes = size)
+
+    /** Scoring once per source (TV freeze fix) keeps exactly the order of the per-comparison scoring it replaced. */
+    @Test fun rankOrderMatchesScoreOrder() {
+        val names = listOf("Movie.2019.1080p.HINDI.x264", "Movie 2019 720p ENG", "Film.2160p.Multi.HDR", "Film.1080p.ITA", "plain release", "🇮🇳 Hindi + English")
+        val sources = (0 until 300).map { i ->
+            Source(SourceKind.TORRENT, names[i % names.size] + " #$i", "p", Quality(resolution = listOf(480, 720, 1080, 2160, null)[i % 5]),
+                infoHash = "a".repeat(40), fileIdx = i, seeders = (i * 37) % 200, sizeBytes = (i % 7 + 1).toLong() shl 30)
+        }
+        val prefs = RankPrefs(language = "Hindi", alsoLanguages = listOf("English"))
+        val reference = sources.sortedWith(
+            compareByDescending<Source> { SourceRanker.score(it, prefs) }.thenBy { 0L }.thenBy { it.title },
+        )
+        assertEquals(reference.map { it.key }, SourceRanker.rank(sources, prefs).map { it.key })
+    }
+
+    /** key / languages are remembered per source but never sent along (the player's alternatives list is JSON). */
+    @Test fun rememberedFactsAreNotSerialized() {
+        val s = Source(SourceKind.TORRENT, "Film 1080p Hindi", "p", Quality(resolution = 1080), infoHash = "a".repeat(40), fileIdx = 2)
+        assertEquals(listOf("Hindi"), com.kirtanya.reel.core.sources.SourceFacts.languages(s))
+        val json = kotlinx.serialization.json.Json.encodeToString(Source.serializer(), s)
+        assertFalse("spokenLanguages" in json || "\"key\"" in json, json)
+        assertEquals(s, kotlinx.serialization.json.Json.decodeFromString(Source.serializer(), json))
+    }
 
     @Test fun prefers1080WithSeeders() {
         val ranked = SourceRanker.rank(listOf(t(720, 500), t(1080, 50), t(2160, 50), t(1080, 0)))
@@ -244,6 +268,21 @@ class AggregatorTest {
     }
 
     private fun bt(seeds: Int, res: Int) = Source(SourceKind.TORRENT, "t$res", "p", Quality(resolution = res), infoHash = "b".repeat(40), fileIdx = 0, seeders = seeds)
+
+    /** The UI collects on the main thread: the search (merge + rank of hundreds of sources) must not run there (TV freeze, 0.16.10). */
+    @Test fun searchRunsOffTheCollectorsThread() {
+        val caller = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "caller") }
+        val seen = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        try {
+            runBlocking(caller.asCoroutineDispatcher()) {
+                SourceAggregator(timeoutMs = 500).search(
+                    EPISODE,
+                    listOf(provider("p", 0) { seen += Thread.currentThread().name; listOf(bt(5, 1080)) }),
+                ).toList()
+            }
+        } finally { caller.shutdown() }
+        assertTrue(seen.isNotEmpty() && seen.none { it == "caller" }, "ran on $seen")
+    }
 
     @Test fun mergesDedupesAndReportsFailures(): Unit = runBlocking {
         val updates = SourceAggregator(timeoutMs = 500).search(

@@ -66,13 +66,22 @@ data class Source(
     /** A trailer or other extra (see [SourceExtras]): never recommended or picked automatically. */
     val isExtra: Boolean get() = extra != null
 
-    /** Two sources with the same key are the same file. */
-    val key: String
-        get() = when (kind) {
+    /**
+     * Two sources with the same key are the same file. Built once per source (not serialized: delegated): ranking,
+     * de-duplication and the Sources page ask for it many times per source, on the TV's slow CPU.
+     */
+    val key: String by lazy {
+        when (kind) {
             SourceKind.TORRENT -> "bt:$infoHash:${fileIdx ?: filename ?: "-"}"
             SourceKind.DIRECT -> "url:$url"
             SourceKind.EXTERNAL -> "ext:$externalUrl"
         }
+    }
+
+    /** [SourceFacts.languages] of this release, read once: every ranking and the Sources page's chips need it (freezes on the TV). */
+    internal val spokenLanguages: List<String> by lazy { SourceFacts.languages(title, filename) }
+    /** [SourceFacts.tags], read once per source (every row of every list asks again). */
+    internal val releaseTags: List<String> by lazy { SourceFacts.tags(title, filename) }
 
     /** Magnet to hand the engine (torrents only). */
     fun magnetUri(): String? = when {

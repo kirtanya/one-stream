@@ -25,7 +25,8 @@ class YoutubeOfficialPluginTest {
     private val goldmines = "UCOF23vGxkbhN4wl7ROrgXsA"
 
     private class Net(val language: String?, val pages: Map<String, String>) {
-        val urls = mutableListOf<String>()
+        // The plugin asks the channels in parallel: a plain list lost an entry now and then (flaky "5 but was 4").
+        val urls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
         val fetcher = HttpFetcher { r ->
             urls += r.url
             val body = when {
@@ -37,7 +38,7 @@ class YoutubeOfficialPluginTest {
             }
             if (body == null) FetchResponse(500, r.url, emptyMap(), ByteArray(0)) else FetchResponse(200, r.url, emptyMap(), body.toByteArray())
         }
-        val youtubeUrls get() = urls.filter { it.contains("youtube.com") }
+        val youtubeUrls get() = synchronized(urls) { urls.filter { it.contains("youtube.com") } }
     }
 
     private fun search(net: Net, title: String, year: Int?) = runBlocking {

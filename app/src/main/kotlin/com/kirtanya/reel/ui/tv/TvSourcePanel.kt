@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -339,7 +340,7 @@ private fun TvAllSourcesRow(more: Int, onClick: () -> Unit) {
 /**
  * The sources of one episode as a panel over the title page (docs/TV_CLEAN_REDESIGN.md §5): ~40 % of the width on the right,
  * a solid surface. OK plays (or, with [download], downloads); hold OK downloads; Back closes. Focus can't leave it while it's
- * open ([focusProperties] onExit cancels every move; focus that drops out is taken back), and the title page puts it
+ * open ([focusProperties] onExit cancels every move; focus that drops out is taken back at once; the page behind refuses it), and the title page puts it
  * back on the episode afterwards.
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -348,17 +349,22 @@ fun TvSourcePanel(d: TitleDetails, episode: Episode, download: Boolean, onClose:
     BackHandler(onBack = onClose)
     val pick = rememberTvSourcePick(d, episode.season, episode.number, episode.name, episode.stillPath, episode.runtimeMin)
     val first = remember { FocusRequester() }
-    // Focus belongs inside while the panel is open. It drops out by itself when the content swaps under it: the
-    // focused "Close" under "Searching…" (or "Search again") goes away as the first sources arrive, and the next press
-    // would land on the title page behind. So for a moment after each swap (and on opening), a panel without focus
-    // takes it back; the group hands it to its first row or button.
+    // Focus belongs inside while the panel is open. It drops out by itself whenever the focused row leaves the list: the
+    // "Close" under "Searching…" goes as the first sources arrive, a re-ranked answer moves the focused row away (the lazy
+    // list drops it once it's off screen), the Quick start group pushes rows down. The next press then landed on the title
+    // page behind (Play, an episode) and only Back + reopening fixed it. So for as long as the panel is open, whenever it
+    // has lost focus it takes it back on the next frames; the group hands it to its first row or button. Event-driven:
+    // nothing runs while focus stays put.
     val panel = remember { FocusRequester() }
     var inside by remember { mutableStateOf(false) }
-    val swap = pick.page.rows.isEmpty() to (pick.page.empty != null)
-    LaunchedEffect(swap) {
-        repeat(30) {
-            withFrameNanos { }
-            if (!inside) runCatching { panel.requestFocus(FocusDirection.Enter) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { inside }.collect { now ->
+            if (now) return@collect
+            for (attempt in 0 until 30) {
+                withFrameNanos { }
+                if (inside) break
+                runCatching { panel.requestFocus(FocusDirection.Enter) }
+            }
         }
     }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.scrim)) {

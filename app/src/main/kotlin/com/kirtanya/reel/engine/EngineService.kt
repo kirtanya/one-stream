@@ -21,6 +21,8 @@ import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.ui.formatBytes
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 /** Keeps the process (and the torrent session) alive while Reel works in the background. */
 class EngineService : LifecycleService() {
@@ -34,9 +36,10 @@ class EngineService : LifecycleService() {
             notification("Starting…"),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
-        val engine = ReelApp.get(this).engine
-        engine.start()
+        // Off the main thread: building the engine loads libtorrent and start() reads every saved download's resume
+        // data into it (byte by byte over JNI), 0.5–1 s on the TV's CPU — the app's first frames froze behind it.
         lifecycleScope.launch {
+            val engine = withContext(Dispatchers.Default) { ReelApp.get(this@EngineService).engine.also { it.start() } }
             engine.torrents.collectLatest { list ->
                 val streaming = list.filter { engine.isStreaming(it.infoHash) }
                 val active = list.count { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA }

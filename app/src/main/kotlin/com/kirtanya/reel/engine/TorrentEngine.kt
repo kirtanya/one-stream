@@ -172,14 +172,27 @@ class TorrentEngine(private val context: Context) {
     val torrents: StateFlow<List<TorrentSnapshot>> = _torrents.asStateFlow()
 
     @Volatile private var started = false
+    /** Set once [start] has finished: the lock-free fast path. */
+    @Volatile private var ready = false
+    private val startLock = Any()
 
     // ---------------------------------------------------------------- lifecycle
 
+    /**
+     * Starts the session and restores the saved torrents. Runs off the main thread (EngineService, [EngineIdle.warm]);
+     * a caller on another thread waits until the first one is done, so nobody sees a half-started engine.
+     * [started] is set first, as before, so a call back into start() from the same thread returns.
+     */
     fun start() {
-        synchronized(this) {
+        if (ready) return
+        synchronized(startLock) {
             if (started) return
             started = true
+            try { startNow() } finally { ready = true }
         }
+    }
+
+    private fun startNow() {
         // Whoever starts the engine (a download, a stream, sync) also needs the foreground service,
         // or Android may kill the process in the background. Not allowed from the background on 12+; then
         // the app's next launch starts it.
@@ -217,6 +230,7 @@ class TorrentEngine(private val context: Context) {
         runCatching { io.awaitTermination(2, TimeUnit.SECONDS) }
         nightAlarm.hold(false)
         session.stop()
+        ready = false
         started = false
     }
 

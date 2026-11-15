@@ -1,8 +1,10 @@
 package com.kirtanya.reel.core.sources
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -77,7 +79,12 @@ class SourceAggregator(private val timeoutMs: Long = 30_000, private val maxPara
         val pending = active.map { it.name }.toMutableList()
         val failed = LinkedHashMap<String, String>()
 
-        suspend fun publish() = send(SourceSearch(SourceRanker.rank(byKey.values.toList(), prefs), pending.toList(), failed.toMap(), active.size))
+        suspend fun publish() {
+            val all = byKey.values.toList()
+            // Read each release's tags here, off the main thread: the rows ask for them while composing.
+            all.forEach { it.releaseTags }
+            send(SourceSearch(SourceRanker.rank(all, prefs), pending.toList(), failed.toMap(), active.size))
+        }
 
         lock.withLock { publish() }
         if (active.isEmpty()) {
@@ -107,7 +114,9 @@ class SourceAggregator(private val timeoutMs: Long = 30_000, private val maxPara
             close()
         }
         awaitClose()
-    }
+    // Merging and ranking hundreds of sources is CPU work: off the collector's thread (the UI collects on Main, and
+    // ranking there froze the TV, 0.16.10). Plugins / addons doing their own blocking work run here too.
+    }.flowOn(Dispatchers.Default)
 }
 
 /**

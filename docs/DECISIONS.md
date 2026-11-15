@@ -5,6 +5,25 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-15 · TV: "One Stream isn't responding" fixed — source work and engine start leave the main thread; the episode panel keeps focus**
+The flat TV (Acer R4, 32-bit) showed Android's "isn't responding" dialog. Problem reports (`reports/R4/…-freeze`) and a
+simpleperf profile of the release build (now `<profileable android:shell="true"/>`, shell-only, so it can be sampled):
+- Ranking ran on the main thread: the search flow ran in its collector's context (Compose). `SourceAggregator.search`
+  is now `flowOn(Dispatchers.Default)`; `SourceRanker.rank` scores each source once (not per comparison).
+- Release-name parsing compiled regexes on every call and ran per source per row while composing. All patterns are
+  compiled once; a source remembers its languages and tags (`Source.spokenLanguages` / `releaseTags`, not
+  serialized), warmed by the aggregator off the main thread; provider labels are remembered.
+- `EngineService.onCreate` built and started libtorrent on the main thread (resume data is copied in byte by byte
+  over JNI). It now starts on `Dispatchers.Default`; `TorrentEngine.start()` makes a second caller wait until the
+  first is done, so nobody sees a half-started engine. The player's cold start does the same off the main thread.
+Fight Club title page, cold open on the R4: worst frame ~4.9 s (freeze detector fired) → ~2 s → ~0.4 s.
+Also (user): with an episode's source panel open, focus sometimes jumped to the page behind (Play) and only Back +
+reopen fixed it. Focus dropped out whenever the focused row left the list (re-ranking, Quick start arriving, a row
+leaving the lazy list); the panel only took it back for 30 frames after a content swap. Now it takes focus back
+whenever it loses it while open, and the page behind refuses D-pad focus (`onEnter` cancelled) while the panel is up.
+
+---
+
 **2026-11-15 · TV: Back on the last screen asks "Exit One Stream?"; the title page's round buttons get names**
 Decision (user): leaving the TV app is a dialog, not "Press Back again to exit". Back on Search (the last screen)
 opens "Exit One Stream?" with **Exit focused**, so OK leaves; **Cancel** or Back closes the dialog and stays, and the next

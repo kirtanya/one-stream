@@ -317,8 +317,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     private suspend fun prepareTorrent(source: Source): String {
         showStatus("Finding peers…")
-        val engine = app.engine
-        engine.start()
+        // Off the main thread: a cold start (straight from One Launcher) builds and starts the engine here.
+        val engine = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { app.engine.also { it.start() } }
         val magnet = source.magnetUri() ?: error("No magnet for this torrent")
         Magnet.parse(magnet)?.infoHash?.let {
             hash = it

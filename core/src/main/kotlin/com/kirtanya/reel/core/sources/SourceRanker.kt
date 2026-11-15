@@ -26,13 +26,18 @@ data class RankPrefs(
  * Direct links don't depend on peers, so they get a steady health score.
  */
 object SourceRanker {
+    /**
+     * Each source is scored ONCE, then sorted by that number: scoring reads the release name (language regexes), and a
+     * comparator that scored on every comparison did it n·log n times. With ~900 sources on the TV's 32-bit CPU that
+     * blocked the main thread past 5 s (freeze + ANR, 0.16.10, R4 report 20261115-181007).
+     */
     fun rank(sources: List<Source>, prefs: RankPrefs = RankPrefs()): List<Source> =
-        sources.filter { allowed(it, prefs) }.sortedWith(
-            compareByDescending<Source> { score(it, prefs) }
+        sources.filter { allowed(it, prefs) }.map { it to score(it, prefs) }.sortedWith(
+            compareByDescending<Pair<Source, Double>> { it.second }
                 // Same score: a smaller direct file starts sooner (a 1.7 GB MP4 beats a 10.7 GB MKV).
-                .thenBy { if (it.kind == SourceKind.DIRECT) it.sizeBytes ?: Long.MAX_VALUE else 0L }
-                .thenBy { it.title },
-        )
+                .thenBy { (s, _) -> if (s.kind == SourceKind.DIRECT) s.sizeBytes ?: Long.MAX_VALUE else 0L }
+                .thenBy { it.first.title },
+        ).map { it.first }
 
     /** What the user's source preferences leave out (blocked providers, cam rips when "never CAM"). */
     fun allowed(s: Source, prefs: RankPrefs): Boolean =

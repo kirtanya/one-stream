@@ -46,6 +46,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Reel"
         android:usesCleartextTraffic="true">
+        <!-- Lets `simpleperf` / Android Studio sample the release build over adb (shell only; no debugging, no data access). -->
+        <profileable android:shell="true" />
 
         <activity
             android:name=".MainActivity"

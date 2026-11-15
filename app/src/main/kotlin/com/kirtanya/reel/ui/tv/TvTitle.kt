@@ -61,6 +61,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -220,7 +222,10 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
         TvColumnGlide(reveal = RowReveal) {
             // Under the source panel the page is only to look at: semantics say so (a modal's background is disabled).
             LazyColumn(
-                Modifier.fillMaxSize().then(if (panel != null) Modifier.semantics { disabled() } else Modifier),
+                // And the remote can't move into it: a press made while the panel had lost focus used to land here.
+                Modifier.fillMaxSize().then(
+                    if (panel != null) Modifier.semantics { disabled() }.focusProperties { onEnter = { cancelFocusChange() } }.focusGroup() else Modifier,
+                ),
                 state = listState, verticalArrangement = Arrangement.spacedBy(Tokens.Space.l),
             ) {
                 item(key = "hero", contentType = "hero") {
