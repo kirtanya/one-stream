@@ -62,13 +62,13 @@ class CropRender {
 
     /** The settings panels with the new row (next to Picture). */
     @Test fun phoneSettings() {
-        val scene = PlayerScenes.phone(panel = true, withPlayer = true, cropPercent = CROP)
+        val scene = PlayerScenes.phone(panel = true, withPlayer = true, cropPercent = CROP, tab = "Picture")
         scrollTo(scene.root, CROP_ROW)
         scene.root.captureRoboImage("build/outputs/roborazzi/crop_phone_settings.png")
         scene.release()
     }
     @Test @Config(qualifiers = TV) fun tvSettings() {
-        val scene = PlayerScenes.tv(PlayerScenes.MID, panel = true, cropPercent = CROP)
+        val scene = PlayerScenes.tv(PlayerScenes.MID, panel = true, cropPercent = CROP, tab = "Picture")
         scene.root.findViewWithTag<android.view.View>(CROP_ROW)!!.requestFocus()
         scrollTo(scene.root, CROP_ROW)
         scene.root.captureRoboImage("build/outputs/roborazzi/crop_tv_settings.png")

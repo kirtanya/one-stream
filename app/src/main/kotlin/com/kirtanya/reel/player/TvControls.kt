@@ -41,6 +41,8 @@ internal class TvControls(
     /** Change source (the Sources page for this title) and whether there is one to change to. */
     private val onChangeSource: (() -> Unit)? = null,
     private val canChangeSource: () -> Boolean = { false },
+    /** What is changed from the file's defaults (PlayerTweaks.labels): chips above the title while the controls show. */
+    private val tweaks: () -> List<String> = { emptyList() },
 ) {
     private val context = playerView.context
     private val main = Handler(Looper.getMainLooper())
@@ -69,6 +71,12 @@ internal class TvControls(
     private val elapsed = text(14f, medium = true)
     private val remaining = text(14f, medium = true)
     private val seek = SeekStrip(context, font(true))
+    /** The active changes (Stretch, Dialogue boost…): small chips above the title, gone when there are none. */
+    private val tweakRow = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        visibility = View.GONE
+    }
+    private var shownTweaks: List<String> = emptyList()
     private val settingsPanel = SettingsPanel(context, font, { player }, extraSettings, onExtra = { hide() }, minRowDp = 44, cropStep = com.kirtanya.reel.core.player.CropBars.TV_STEP)
 
     /** The panel's picture rows (Picture, Crop bars, Cinema mode). */
@@ -148,6 +156,7 @@ internal class TvControls(
             orientation = LinearLayout.VERTICAL
             clipChildren = false
         }
+        block.addView(tweakRow, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = context.dp(14) })
         block.addView(bar, LinearLayout.LayoutParams(-1, -2))
         block.addView(times, LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.dp(12) })
         view.addView(block, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { setMargins(context.dp(EDGE), 0, context.dp(EDGE), context.dp(EDGE)) })
@@ -185,8 +194,10 @@ internal class TvControls(
         load(url) { d ->
             if (d == null) return@load
             logoView.setImageDrawable(d)
-            // A dark logo (black wordmark) would vanish over a dark picture: draw it in the strip's white.
-            if (isDark(d)) logoView.setColorFilter(PlayerColors.FOREGROUND, android.graphics.PorterDuff.Mode.SRC_IN)
+            // The logo's own colours, as on the title page. Only a near-black, colourless wordmark (it would
+            // vanish over a dark picture) is drawn in the strip's white; a red, blue or gold logo stays as it is.
+            if (isBlackWordmark(d)) logoView.setColorFilter(PlayerColors.FOREGROUND, android.graphics.PorterDuff.Mode.SRC_IN)
+            else logoView.clearColorFilter()
             logoLoaded = true
             showTitle()
         }
@@ -204,18 +215,31 @@ internal class TvControls(
         titleView.visibility = if (logo) View.INVISIBLE else View.VISIBLE
     }
 
-    /** Mean luminance of the logo's visible pixels (sampled on a small grid) below 0.35. */
-    private fun isDark(d: android.graphics.drawable.Drawable): Boolean {
+    /**
+     * A black or dark-grey wordmark: the logo's visible pixels (sampled on a small grid) are dark on
+     * average (luminance below 0.12) AND colourless (mean chroma below 0.12). A coloured logo, even a
+     * deep one, is never flattened: tinting it white was what made red / blue logos come out all white.
+     */
+    private fun isBlackWordmark(d: android.graphics.drawable.Drawable): Boolean {
         val bmp = (d as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return false
-        val soft = if (bmp.config == android.graphics.Bitmap.Config.HARDWARE) bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else bmp
-        var sum = 0f
+        // A GPU bitmap can't be read reliably: on the Acer R4 its copy came back all black, which flattened the
+        // colourful Oye Lucky! logo to a white shape. The loader asks for a software bitmap; if one still
+        // arrives, leave the logo untinted.
+        if (bmp.config == android.graphics.Bitmap.Config.HARDWARE) return false
+        val soft = bmp
+        var clear = 0
+        var lum = 0f
+        var chroma = 0f
         var n = 0
         for (y in 0 until 24) for (x in 0 until 48) {
             val c = soft.getPixel(x * soft.width / 48, y * soft.height / 24)
-            if (Color.alpha(c) < 128) continue
-            sum += luminance(c); n++
+            if (Color.alpha(c) < 128) { clear++; continue }
+            lum += luminance(c)
+            chroma += (maxOf(Color.red(c), Color.green(c), Color.blue(c)) - minOf(Color.red(c), Color.green(c), Color.blue(c))) / 255f
+            n++
         }
-        return n > 0 && sum / n < 0.35f
+        // A wordmark has see-through space around its letters; a fully opaque image is artwork (or a bad read).
+        return n > 0 && clear >= 48 * 24 / 10 && lum / n < 0.12f && chroma / n < 0.12f
     }
 
     /** Renders only: a logo drawable instead of a network load. */
@@ -316,6 +340,14 @@ internal class TvControls(
             swallowUp = code
             return true
         }
+        // Shown by a media key (pause), the strip has no focus yet: the first arrow / OK lands on play instead of
+        // going nowhere (on the TV it did, until the strip hid itself).
+        if (!panelOpen && view.findFocus() == null && code in FOCUS_KEYS) {
+            play.requestFocusFromTouch()
+            touch()
+            swallowUp = code
+            return true
+        }
         touch()
         return false
     }
@@ -342,6 +374,27 @@ internal class TvControls(
         nextChip.set(nextLabel())
         source.visibility = if (onChangeSource != null && canChangeSource()) View.VISIBLE else View.GONE
         audioBtn.visibility = if (previewAudioChoice || (player?.audioChoices() ?: 0) > 1) View.VISIBLE else View.GONE
+        showTweaks(tweaks())
+    }
+
+    /** Rebuilt only when the list changes (this runs on every 0.5 s tick). */
+    private fun showTweaks(list: List<String>) {
+        if (list == shownTweaks) return
+        shownTweaks = list
+        tweakRow.removeAllViews()
+        for ((i, label) in list.withIndex()) {
+            tweakRow.addView(text(13f, medium = true).apply {
+                text = label
+                setTextColor(PlayerColors.FOREGROUND)
+                setPadding(context.dp(10), context.dp(4), context.dp(10), context.dp(4))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(PlayerColors.CHIP_SCRIM)
+                    cornerRadius = context.dpf(14f)
+                    setStroke(context.dp(1), PlayerColors.GLASS_STROKE)
+                }
+            }, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = context.dp(8) })
+        }
+        tweakRow.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
     }
 
     // ---------------------------------------------------------------- playback
@@ -421,6 +474,12 @@ internal class TvControls(
     companion object {
         /** Every control's size (dp). */
         const val BUTTON = 48
+
+        /** Keys that move focus: with the strip up but nothing focused, the first one lands on play. */
+        private val FOCUS_KEYS = setOf(
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+        )
 
         /** The title logo's box (dp): no taller than the Next chip + the controls, so the strip keeps its height. */
         const val LOGO_H = 72

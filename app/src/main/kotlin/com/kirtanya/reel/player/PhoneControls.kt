@@ -75,6 +75,8 @@ internal class PhoneControls(
     private val onChangeSource: (() -> Unit)? = null,
     /** Whether this playback has sources to change to (a TMDB title); checked on every refresh. */
     private val canChangeSource: () -> Boolean = { false },
+    /** What is changed from the file's defaults (PlayerTweaks.labels): after "Ends at", so a carried-over change is seen. */
+    private val tweaks: () -> List<String> = { emptyList() },
 ) : FrameLayout(activity) {
     private val ctx: Context = activity
     private val main = Handler(Looper.getMainLooper())
@@ -562,7 +564,8 @@ internal class PhoneControls(
         val s = p.playbackParameters.speed
         if (d > 0) {
             val left = ((d - p.currentPosition) / s).toLong().coerceAtLeast(0)
-            metaView.text = "Ends at " + android.text.format.DateFormat.getTimeFormat(ctx).format(java.util.Date(System.currentTimeMillis() + left))
+            metaView.text = (listOf("Ends at " + android.text.format.DateFormat.getTimeFormat(ctx).format(java.util.Date(System.currentTimeMillis() + left))) + tweaks())
+                .joinToString(" · ")
         }
         showNext(nextLabel())
     }

@@ -49,6 +49,21 @@ class TvControlsRender {
     /** Back with the controls hidden: "Press Back again to exit". */
     @Test fun renderLogo() = render("tv_controls_logo", PlayerScenes.MID, logo = true)
 
+    /** A coloured logo keeps its colours; a black wordmark is drawn white; the chips for what is changed sit above the logo. */
+    @Test fun renderLogoRed() = render("tv_controls_logo_red", PlayerScenes.MID, logo = true, logoColor = 0xFFE50914.toInt())
+    @Test fun renderLogoBlack() = render("tv_controls_logo_black", PlayerScenes.DARK, logo = true, logoColor = 0xFF111111.toInt())
+    @Test fun renderTweaksLogo() = render("tv_controls_tweaks_logo", PlayerScenes.MID, logo = true, logoColor = 0xFFE50914.toInt(), tweaks = TWEAKS)
+    @Test fun renderTweaksTitle() = render("tv_controls_tweaks_title", PlayerScenes.BRIGHT, tweaks = TWEAKS)
+    /** Every tweak at once (the real labels): does the row still fit one line over the strip? */
+    @Test fun renderTweaksMax() = render("tv_controls_tweaks_max", PlayerScenes.MID, logo = true, logoColor = 0xFFE50914.toInt(), tweaks = MAX_TWEAKS)
+    @Test fun renderTweaksFew() = render("tv_controls_tweaks_few", PlayerScenes.MID, tweaks = listOf("Stretch"))
+
+    /** The settings panel's tabs: the Audio and Picture tab shown (the tab focused, as ←/→ does). */
+    @Test fun renderSettingsAudioTab() = render("tv_controls_settings_audio_tab", PlayerScenes.MID, panel = true, tab = "Audio")
+    @Test fun renderSettingsPictureTab() = render("tv_controls_settings_picture_tab", PlayerScenes.MID, panel = true, tab = "Picture")
+    @Test fun renderSettingsSubtitlesTab() = render("tv_controls_settings_subtitles_tab", PlayerScenes.MID, panel = true, tab = "Subtitles")
+    @Test fun renderSettingsMoreTab() = render("tv_controls_settings_more_tab", PlayerScenes.MID, panel = true, tab = "More")
+
     @Test fun renderExitChip() = render("tv_exit_chip", PlayerScenes.BRIGHT, exitChip = true)
 
     /** Change source inside the player: the button's page (list, still searching, nothing found) and the Settings row's page. */
@@ -60,10 +75,20 @@ class TvControlsRender {
     private fun render(
         name: String, picture: IntArray, panel: Boolean = false, panelEnd: Boolean = false, file: Boolean = false,
         overlay: PlayerScenes.Overlay? = null, slider: String? = null, audio: Boolean = true, next: Boolean = true, audioPanel: Boolean = false,
-        section: String? = null, exitChip: Boolean = false, logo: Boolean = false, sources: PlayerScenes.Sources? = null, sourcesViaRow: Boolean = false,
+        section: String? = null, exitChip: Boolean = false, logo: Boolean = false, logoColor: Int = 0xFFFFFFFF.toInt(),
+        tweaks: List<String> = emptyList(), tab: String? = null, sources: PlayerScenes.Sources? = null, sourcesViaRow: Boolean = false,
     ) {
-        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider, audio = audio, next = next, audioPanel = audioPanel, section = section, exitChip = exitChip, logo = logo, sources = sources, sourcesViaRow = sourcesViaRow)
+        val scene = PlayerScenes.tv(picture, panel, file = file, panelEnd = panelEnd, overlay = overlay, slider = slider, audio = audio, next = next, audioPanel = audioPanel, section = section, exitChip = exitChip, logo = logo, logoColor = logoColor, tweaks = tweaks, tab = tab, sources = sources, sourcesViaRow = sourcesViaRow)
         scene.root.captureRoboImage("build/outputs/roborazzi/$name.png")
         scene.release()
+    }
+
+    private companion object {
+        /** Every chip PlayerTweaks.labels can show at once (the widest case). */
+        val MAX_TWEAKS = com.kirtanya.reel.core.player.PlayerTweaks(
+            picture = com.kirtanya.reel.core.playback.PictureMode.STRETCH, cropPercent = 8f, volumeBoost = 2, dialogueBoost = true,
+            audioTrack = "Hindi", audioDelayMs = 150, subtitleDelayMs = -250, speed = 1.5f,
+        ).labels()
+        val TWEAKS = listOf("Stretch", "Crop 8 %", "Volume +6 dB", "Dialogue boost", "Audio: Hindi")
     }
 }

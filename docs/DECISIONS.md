@@ -5,6 +5,21 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-16 · Player: logos keep their colours; active picture / sound changes show with the controls; settings in tabs**
+User: the TV player's title logo was "completely white", a stretch / crop / boost carried over from an earlier session
+went unnoticed after a resume, and the settings panel took a lot of scrolling.
+- Logo: the strip tinted any logo whose mean luminance was under 0.35 solid white (`SRC_IN`), which caught red, blue
+  and gold logos. Now only a near-black, colourless wordmark (luminance < 0.12 and chroma < 0.12) is whitened; every
+  other logo shows its own colours, as on the title page (`TvControls.isBlackWordmark`).
+- Active changes: `core/player/PlayerTweaks` lists what differs from how the file plays by default: picture mode
+  (not Fit), crop bars, volume boost, dialogue boost, a non-default audio track, audio / subtitle delay and speed.
+  TV: small chips above the title while the controls show. Phone: after "Ends at" on the title line.
+- Settings panel: one tab per group (Playback · Audio · Subtitles · Picture · More), one tab's rows at a time. The
+  remote's ←/→ walk the tabs (on the tab bar or on a row), ↓ enters the rows, ↑ from the first row returns to the
+  tabs; Crop bars keeps ←/→ for trimming. The Audio button opens its list and Back lands on the Audio tab.
+
+---
+
 **2026-11-15 · TV: "One Stream isn't responding" fixed — source work and engine start leave the main thread; the episode panel keeps focus**
 The flat TV (Acer R4, 32-bit) showed Android's "isn't responding" dialog. Problem reports (`reports/R4/…-freeze`) and a
 simpleperf profile of the release build (now `<profileable android:shell="true"/>`, shell-only, so it can be sampled):

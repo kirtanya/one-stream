@@ -29,6 +29,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.withStarted
 import androidx.lifecycle.lifecycleScope
 import coil3.asDrawable
+import coil3.request.allowHardware
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -1371,7 +1372,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         lifecycleScope.launch {
             val path = runCatching { ReelApp.get(this@PlayerActivity).tmdb.logo(ref) }.getOrNull()
             c.setLogo(com.kirtanya.reel.core.tmdb.TmdbImages.titleLogo(path, "w500")) { url, done ->
+                // Software bitmap: TvControls reads its pixels to decide whether a black wordmark needs whitening.
                 val request = coil3.request.ImageRequest.Builder(this@PlayerActivity).data(url)
+                    .allowHardware(false)
                     .target(onSuccess = { done(it.asDrawable(resources)) }, onError = { done(null) })
                     .build()
                 coil3.SingletonImageLoader.get(this@PlayerActivity).enqueue(request)
@@ -1739,6 +1742,35 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             tvControls?.setSources(sources)
             phoneControls?.setSources(sources)
         }
+    }
+
+    /**
+     * What is changed from how the file plays by default (picture, crop, boosts, a non-default audio track,
+     * delays, speed): shown with the controls so changes carried over from an earlier session are seen.
+     */
+    private fun currentTweaks() = com.kirtanya.reel.core.player.PlayerTweaks(
+        picture = currentPicture,
+        cropPercent = cropPercent,
+        volumeBoost = options.volumeBoost,
+        dialogueBoost = options.dialogueBoost,
+        audioTrack = player?.let(::nonDefaultAudioTrack),
+        audioDelayMs = (delays.audioUs / 1000).toInt(),
+        subtitleDelayMs = (delays.subtitlesUs / 1000).toInt(),
+        speed = player?.playbackParameters?.speed ?: 1f,
+    )
+
+    /** The playing audio track's name when the file has several and it isn't the one the file marks as default (else the first). */
+    private fun nonDefaultAudioTrack(p: Player): String? {
+        val tracks = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+            .flatMap { g -> (0 until g.length).filter { g.isTrackSupported(it) }.map { g to it } }
+        if (tracks.size < 2) return null
+        val default = tracks.firstOrNull { (g, i) -> g.getTrackFormat(i).selectionFlags and C.SELECTION_FLAG_DEFAULT != 0 } ?: tracks.first()
+        val playing = tracks.firstOrNull { (g, i) -> g.isTrackSelected(i) } ?: return null
+        if (playing == default) return null
+        val f = playing.first.getTrackFormat(playing.second)
+        val lang = f.language?.takeIf { it.isNotBlank() && it != C.LANGUAGE_UNDETERMINED }
+            ?.let { java.util.Locale.forLanguageTag(it).getDisplayLanguage(java.util.Locale.getDefault()).ifBlank { it } }
+        return lang ?: f.label?.takeIf { it.isNotBlank() } ?: "Track ${tracks.indexOf(playing) + 1}"
     }
 
     /** Volume / dialogue boost from the options: the audio sink picks them up on its next buffer. */
@@ -2179,6 +2211,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 onNext = { onNextChip() },
                 onChangeSource = { changeSource() },
                 canChangeSource = { PlayerSourceChange.available(playback) },
+                tweaks = { currentTweaks().labels() },
             ).also {
                 // Title: the logo artwork or plain text (the user's choice; a logo can distract).
                 val titleStyle = PanelToggle(com.kirtanya.reel.R.drawable.ic_pl_title, "Title", listOf("Logo", "Text"), { if (prefs.titleLogo) 0 else 1 }) { i ->
@@ -2222,6 +2255,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             },
             // Shown for TMDB titles; without a paired TV the tap explains how to set it up.
             canSendToTv = { com.kirtanya.reel.tvremote.SendToTv.canSend(playback) },
+            tweaks = { currentTweaks().labels() },
             onZoom = { fill ->
                 setPicture(if (fill) com.kirtanya.reel.core.playback.PictureMode.FILL else com.kirtanya.reel.core.playback.PictureMode.FIT)
             },

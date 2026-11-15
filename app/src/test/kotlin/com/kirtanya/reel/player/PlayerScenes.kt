@@ -151,15 +151,31 @@ internal object PlayerScenes {
         }
     }
 
+    /** Focuses the settings tab [name], as ←/→ does: its rows show. */
+    fun selectTab(root: android.view.View, name: String) {
+        root.findViewWithTag<android.view.View>("tab:$name")?.requestFocusFromTouch()
+        ShadowLooper.idleMainLooper(400, TimeUnit.MILLISECONDS)
+    }
+
+    /** The panel row tagged [tag], going through the settings tabs until the one that holds it shows. */
+    fun row(root: android.view.View, tag: String): android.view.View? {
+        root.findViewWithTag<android.view.View>(tag)?.let { return it }
+        for (name in listOf("Playback", "Audio", "Subtitles", "Picture", "More")) {
+            selectTab(root, name)
+            root.findViewWithTag<android.view.View>(tag)?.let { return it }
+        }
+        return null
+    }
+
     /** Opens the slider of the panel row tagged [label] ("Audio delay", "Subtitle delay"). */
     fun openSlider(root: android.view.View, label: String) {
-        root.findViewWithTag<android.view.View>(label)?.performClick()
+        row(root, label)?.performClick()
         ShadowLooper.idleMainLooper()
     }
 
     /** Scrolls the open settings panel to its end, where the extra rows are. */
     fun scrollPanelToEnd(root: android.view.View) {
-        val row = root.findViewWithTag<android.view.View>(CHANGE_SOURCE_ROW) ?: root.findViewWithTag("$CHANGE_SOURCE_ROW (off)") ?: return
+        val row = row(root, CHANGE_SOURCE_ROW) ?: row(root, "$CHANGE_SOURCE_ROW (off)") ?: return
         var p = row.parent
         while (p != null && p !is android.widget.ScrollView) p = p.parent
         val sv = p as? android.widget.ScrollView ?: return
@@ -203,6 +219,8 @@ internal object PlayerScenes {
         layout: com.kirtanya.reel.core.player.PhoneLayout = com.kirtanya.reel.core.player.PhoneLayout.CLASSIC,
         cutout: com.kirtanya.reel.core.player.PhoneLayout.Side? = null,
         audio: Boolean = true, audioPanel: Boolean = false, tracks: Boolean = false,
+        /** The settings tab to show ("Audio", "Picture"…): its tab is focused, as ←/→ does. */
+        tab: String? = null,
         /** The Change source page: [sources] data, opened by its button (default) or through the Settings row ([sourcesViaRow]). */
         sources: Sources? = null, sourcesViaRow: Boolean = false,
     ): Phone {
@@ -248,7 +266,8 @@ internal object PlayerScenes {
         if (panel && sources != null && sourcesViaRow) openSlider(root, CHANGE_SOURCE_ROW)
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
         if (panel && panelEnd) scrollPanelToEnd(root)
-        if (panel && audioPanel) { root.findViewWithTag<android.view.View>("audio")?.performClick(); ShadowLooper.idleMainLooper() }
+        if (panel && audioPanel) { row(root, "audio")?.performClick(); ShadowLooper.idleMainLooper() }
+        if (panel && tab != null) selectTab(root, tab)
         if (panel && slider != null) openSlider(root, slider)
         if (panel && crop) openCrop(root, cropAuto)
         if (overlay == Overlay.SKIP_OVER_BAND) {
@@ -297,6 +316,12 @@ internal object PlayerScenes {
         exitChip: Boolean = false,
         /** A wide title logo instead of the text title. */
         logo: Boolean = false,
+        /** The logo's colour (default white, like most TMDB wordmarks); a red one must stay red, a black one is drawn white. */
+        logoColor: Int = 0xFFFFFFFF.toInt(),
+        /** The chips above the title (PlayerTweaks.labels). */
+        tweaks: List<String> = emptyList(),
+        /** The settings tab to show ("Audio", "Picture"…): its tab is focused, as the remote's ←/→ does. */
+        tab: String? = null,
         /** The Change source page: [sources] data, opened by its button (default) or through the Settings row ([sourcesViaRow]). */
         sources: Sources? = null, sourcesViaRow: Boolean = false,
     ): Tv {
@@ -307,9 +332,9 @@ internal object PlayerScenes {
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         video?.invoke(root, playerView)
         val c = TvControls(playerView, TITLE, { null }, extraSettings = { extras(file) },
-            nextLabel = { if (next) "Next · S1 E4" else null }, onChangeSource = {}, canChangeSource = { !file })
+            nextLabel = { if (next) "Next · S1 E4" else null }, onChangeSource = {}, canChangeSource = { !file }, tweaks = { tweaks })
         c.previewAudioChoice = audio
-        if (logo) c.previewLogo(fakeLogo(activity))
+        if (logo) c.previewLogo(fakeLogo(activity, logoColor))
         c.previewTracks(tracks())
         c.setToggles(pictureRows(cropPercent))
         val (subRows, audioRows, playRows) = rows()
@@ -327,10 +352,11 @@ internal object PlayerScenes {
         showOverlay(o, overlay, tv = true)
         if (panel) c.openPanel(if (sources != null && !sourcesViaRow) "source" else section)
         if (panel && sources != null && sourcesViaRow) openSlider(root, CHANGE_SOURCE_ROW)
+        if (panel && tab != null) selectTab(root, tab)
         if (exitChip) { c.hide(); o.exitChip.visibility = android.view.View.VISIBLE }
         ShadowLooper.idleMainLooper()
         if (panel && panelEnd) scrollPanelToEnd(root)
-        if (panel && audioPanel) { root.findViewWithTag<android.view.View>("audio")?.performClick(); ShadowLooper.idleMainLooper() }
+        if (panel && audioPanel) { row(root, "audio")?.performClick(); ShadowLooper.idleMainLooper() }
         if (panel && slider != null) openSlider(root, slider)
         if (panel && crop) openCrop(root, auto = false)
         val scene = Tv(root, c, exo, o)
@@ -338,11 +364,11 @@ internal object PlayerScenes {
         return scene
     }
 
-    /** A wide white wordmark, like TMDB's logos (5:1). */
-    private fun fakeLogo(context: android.content.Context): android.graphics.drawable.Drawable {
+    /** A wide wordmark in [color], like TMDB's logos (5:1). */
+    internal fun fakeLogo(context: android.content.Context, color: Int = 0xFFFFFFFF.toInt()): android.graphics.drawable.Drawable {
         val bmp = android.graphics.Bitmap.createBitmap(1000, 200, android.graphics.Bitmap.Config.ARGB_8888)
         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFFFFFFF.toInt(); textSize = 170f; typeface = android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD)
+            this.color = color; textSize = 170f; typeface = android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD)
         }
         android.graphics.Canvas(bmp).drawText("THE NIGHT", 10f, 170f, paint)
         return android.graphics.drawable.BitmapDrawable(context.resources, bmp)

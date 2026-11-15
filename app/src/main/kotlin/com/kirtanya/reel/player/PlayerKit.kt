@@ -14,6 +14,8 @@ import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -533,7 +535,7 @@ internal class SettingsPanel(
         when (section) {
             "sub" -> showSubtitlePage()
             "source" -> if (sources != null) showSources() else { submenu = null; buildMain() }
-            "audio" -> showTracks(C.TRACK_TYPE_AUDIO)
+            "audio" -> { tab = AUDIO; showTracks(C.TRACK_TYPE_AUDIO) }
             else -> { submenu = null; buildMain() }
         }
         focusSelected()
@@ -582,38 +584,153 @@ internal class SettingsPanel(
     }
 
     /**
-     * Four groups in the order people reach for them: Playback (speed, auto-play next, sleep timer), Audio
-     * (track, delay, night mode, voice boost), Subtitles (track, style, delay, search again), Picture
-     * (mode, crop, cinema, layout); then the extra rows under More. Every row says its current value.
+     * Tabs in the order people reach for them: Playback (speed, auto-play next, sleep timer), Audio (track, delay,
+     * volume / dialogue boost), Subtitles (track, style, delay, search again), Picture (mode, crop, cinema, title /
+     * layout), then More (change source, other player, report). One tab's rows show at a time, so there's little
+     * to scroll: ←/→ on the tabs or on a row moves to the next tab, ↓ from the tabs goes into its rows.
      */
+    private var tab = PLAYBACK
+
+    private fun tabNames() = buildList {
+        add(PLAYBACK); add(AUDIO); add(SUBTITLES)
+        if (toggles.isNotEmpty()) add(PICTURE)
+        if (extras().isNotEmpty()) add(MORE)
+    }
+
+    /** The shown tab's rows (under the tab bar); [addRows] and friends add to [into]. */
+    private var content: LinearLayout? = null
+    private var into: LinearLayout = list
+    private val tabViews = LinkedHashMap<String, TextView>()
+
     private fun buildMain() {
         list.removeAllViews()
         val p = player() ?: return
-        list.addView(header("Playback"))
-        list.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
-        addRows(playbackRows)
-        list.addView(header("Audio"))
-        val audioTracks = trackOptions(p, C.TRACK_TYPE_AUDIO)
-        if (audioTracks.size > 1) list.addView(row(R.drawable.ic_pl_audio, "Audio track", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
-        else list.addView(offRow(R.drawable.ic_pl_audio, "Audio track", audioTracks.firstOrNull()?.label ?: "Only one track"))
-        addRows(audioRows)
-        list.addView(header("Subtitles"))
-        list.addView(row(R.drawable.ic_pl_subtitles, "Subtitle track", current(p, C.TRACK_TYPE_TEXT) ?: "Off", "sub") { showTracks(C.TRACK_TYPE_TEXT) })
-        addRows(subtitleRows)
-        if (toggles.isNotEmpty()) {
-            list.addView(header("Picture"))
-            addRows(toggles)
+        val names = tabNames()
+        if (tab !in names) tab = names.first()
+        list.addView(tabBar(names), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = context.dp(4) })
+        content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }.also { list.addView(it, LinearLayout.LayoutParams(-1, -2)) }
+        fillTab(p)
+    }
+
+    private fun fillTab(p: Player) {
+        val c = content ?: return
+        c.removeAllViews()
+        into = c
+        when (tab) {
+            PLAYBACK -> {
+                c.addView(row(R.drawable.ic_pl_fast, "Speed", speedLabel(p.playbackParameters.speed), "speed") { showSpeeds() })
+                addRows(playbackRows)
+            }
+            AUDIO -> {
+                val audioTracks = trackOptions(p, C.TRACK_TYPE_AUDIO)
+                if (audioTracks.size > 1) c.addView(row(R.drawable.ic_pl_audio, "Audio track", current(p, C.TRACK_TYPE_AUDIO) ?: "Default", "audio") { showTracks(C.TRACK_TYPE_AUDIO) })
+                else c.addView(offRow(R.drawable.ic_pl_audio, "Audio track", audioTracks.firstOrNull()?.label ?: "Only one track"))
+                addRows(audioRows)
+            }
+            SUBTITLES -> {
+                c.addView(row(R.drawable.ic_pl_subtitles, "Subtitle track", current(p, C.TRACK_TYPE_TEXT) ?: "Off", "sub") { showTracks(C.TRACK_TYPE_TEXT) })
+                addRows(subtitleRows)
+            }
+            PICTURE -> addRows(toggles)
+            MORE -> addRows(extras())
         }
-        val more = extras()
-        if (more.isNotEmpty()) {
-            list.addView(header("More"))
-            addRows(more)
+        into = list
+        // ←/→ on a row: the next tab; ↑ from the first row: the tabs. Crop bars keeps ←/→ for itself.
+        val crops = toggles.filterIsInstance<PanelCrop>().map { it.label }.toSet()
+        val rows = (0 until c.childCount).map { c.getChildAt(it) }.filter { it.isFocusable }
+        for ((i, r) in rows.withIndex()) {
+            if (r.tag in crops) continue
+            r.setOnKeyListener { _, code, e ->
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (e.action == KeyEvent.ACTION_DOWN) stepTab(if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1, intoRows = true)
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP -> if (i == 0) { if (e.action == KeyEvent.ACTION_DOWN) tabViews[tab]?.requestFocus(); true } else false
+                    else -> false
+                }
+            }
         }
     }
 
+    /** The tabs: the shown one filled, focus a ring; focusing one shows it (the remote's ←/→ walk them). */
+    private fun tabBar(names: List<String>): View {
+        tabViews.clear()
+        val bar = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(context.dp(2), context.dp(2), context.dp(2), context.dp(2))
+        }
+        for ((i, name) in names.withIndex()) {
+            val t = text(14f, medium = true).apply {
+                text = name
+                tag = "tab:$name"
+                gravity = Gravity.CENTER
+                isFocusable = true
+                isClickable = true
+                // Tight on purpose: five tabs (Playback … More) have to fit the 340 dp panel at 14 sp, so none is cut off at the edge.
+                setPadding(context.dp(7), context.dp(8), context.dp(7), context.dp(8))
+                // 48 dp touch area on the phone (design rule 1); the TV panel's rows are 44 dp.
+                minimumHeight = context.dp(minRowDp)
+                minimumWidth = context.dp(48)
+                setOnFocusChangeListener { _, has -> if (has && tab != name) selectTab(name) }
+                setOnClickListener { selectTab(name) }
+                setOnKeyListener { _, code, e ->
+                    val down = e.action == KeyEvent.ACTION_DOWN
+                    when (code) {
+                        // Ends of the bar: stay (focus must never leave the panel).
+                        KeyEvent.KEYCODE_DPAD_LEFT -> i == 0
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> i == names.lastIndex
+                        KeyEvent.KEYCODE_DPAD_UP -> true
+                        KeyEvent.KEYCODE_DPAD_DOWN -> { if (down) firstRow()?.requestFocus(); true }
+                        else -> false
+                    }
+                }
+            }
+            tabViews[name] = t
+            bar.addView(t, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = context.dp(2) })
+        }
+        styleTabs()
+        return HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFocusable = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            addView(bar)
+        }
+    }
+
+    private fun styleTabs() {
+        for ((name, t) in tabViews) {
+            val on = name == tab
+            val fill = if (on) PlayerColors.ROW_HIGHLIGHT else Color.TRANSPARENT
+            t.alpha = if (on) 1f else 0.7f
+            t.background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply { setColor(fill); cornerRadius = context.dpf(18f); setStroke(context.dp(2), PlayerColors.FOREGROUND) })
+                addState(intArrayOf(), GradientDrawable().apply { setColor(fill); cornerRadius = context.dpf(18f) })
+            }
+        }
+    }
+
+    private fun selectTab(name: String) {
+        if (name == tab) return
+        tab = name
+        styleTabs()
+        tabViews[name]?.let { t -> (t.parent?.parent as? HorizontalScrollView)?.let { it.post { it.smoothScrollTo((t.left - context.dp(24)).coerceAtLeast(0), 0) } } }
+        player()?.let(::fillTab)
+    }
+
+    /** The tab [dir] steps away (no wrap); with [intoRows] focus goes to its first row, else its tab. */
+    private fun stepTab(dir: Int, intoRows: Boolean) {
+        val names = tabNames()
+        val next = names.getOrNull(names.indexOf(tab) + dir) ?: return
+        selectTab(next)
+        (if (intoRows) firstRow() else null)?.requestFocus() ?: tabViews[next]?.requestFocus()
+    }
+
+    private fun firstRow(): View? = content?.let { c -> (0 until c.childCount).map { c.getChildAt(it) }.firstOrNull { it.isFocusable } }
+
     private fun addRows(rows: List<PanelRow>) {
         for (r in rows) when (r) {
-            is PanelToggle -> list.addView(row(r.icon, r.label, (r.display?.invoke() ?: r.values[r.current()]), r.label) {
+            is PanelToggle -> into.addView(row(r.icon, r.label, (r.display?.invoke() ?: r.values[r.current()]), r.label) {
                 if (r.asList) {
                     showList(r)
                 } else {
@@ -622,8 +739,8 @@ internal class SettingsPanel(
                     list.findViewWithTag<View>(r.label)?.requestFocus()
                 }
             })
-            is PanelSlider -> list.addView(row(r.icon, r.label, r.delay.label(r.current()), r.label) { showSlider(r) })
-            is PanelCrop -> list.addView(row(r.icon, r.label, com.kirtanya.reel.core.player.CropBars.label(r.current()), r.label) {
+            is PanelSlider -> into.addView(row(r.icon, r.label, r.delay.label(r.current()), r.label) { showSlider(r) })
+            is PanelCrop -> into.addView(row(r.icon, r.label, com.kirtanya.reel.core.player.CropBars.label(r.current()), r.label) {
                 onCrop?.invoke(r) ?: showCrop(r)
             }.also { cropKeys(it, r) })
             is PanelExtra -> {
@@ -634,7 +751,7 @@ internal class SettingsPanel(
                     else -> R.drawable.ic_pl_external
                 }
                 val action = r.action
-                list.addView(
+                into.addView(
                     if (action == null) offRow(icon, r.label, r.note)
                     // Change source is a page of this panel; the row's action is only its fallback without a host.
                     else if (r.label == CHANGE_SOURCE_ROW && sources != null) row(icon, r.label, null, r.label) { showSources() }
@@ -864,6 +981,8 @@ internal class SettingsPanel(
     }
 
     private fun focusSelected() {
+        // The settings list: the shown tab (←/→ from there walks the tabs).
+        if (home == null && submenu == null) tabViews[tab]?.let { it.requestFocus(); return }
         val kids = (0 until list.childCount).map { list.getChildAt(it) }
         (kids.firstOrNull { it.tag == SELECTED } ?: kids.firstOrNull { it.isFocusable })?.requestFocus()
     }
@@ -1005,6 +1124,11 @@ internal class SettingsPanel(
     companion object {
         private const val SELECTED = "selected"
         private const val ALL_SOURCES = "all sources"
+        private const val PLAYBACK = "Playback"
+        private const val AUDIO = "Audio"
+        private const val SUBTITLES = "Subtitles"
+        private const val PICTURE = "Picture"
+        private const val MORE = "More"
     }
 }
 
