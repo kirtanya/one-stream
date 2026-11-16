@@ -2,6 +2,8 @@ package com.kirtanya.reel.ui.tv
 
 import com.kirtanya.reel.ui.home.withoutHidden
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Row
@@ -9,6 +11,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import com.kirtanya.reel.ui.common.HeroPicture
@@ -224,7 +227,7 @@ internal fun TvHomeContent(
 
         // Right of the rail; the backdrop above runs under it.
         Column(Modifier.fillMaxSize().padding(start = TvRailWidth)) {
-            Spacer(Modifier.height(Tokens.Space.tvSafeV))
+            Spacer(Modifier.height(Tokens.Space.tvSafeV + Tokens.Cinema.tvHomeDrop))
             HomeInfoBlock(infoState)
             // Netflix-style: the focused row glides to a fixed line just under the info block (columnSpec) and its
             // cards slide under a fixed focus (each row's own spec).
@@ -276,6 +279,13 @@ internal fun TvHomeContent(
                 }
             }
         }
+        // The foot goes to black: the focused row stays clear above it, the next row only peeks in under it.
+        Box(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(Tokens.Cinema.tvHomeFootFade)
+                .background(Tokens.Gradients.footFade)
+                // Lets the design rules know the text under it is dimmed on purpose (black text keeps its colour under a fade).
+                .testTag(Tokens.Cinema.SCRIM_TAG),
+        )
     }
 }
 
@@ -287,8 +297,15 @@ internal fun TvHomeContent(
 private fun HomeBackdrop(settled: State<HomeInfo>) {
     val path = settled.value.backdropPath
     Box(Modifier.fillMaxSize()) {
-        HeroPicture(TmdbImages.backdrop(path), Modifier.fillMaxSize())
-        HeroScrims(top = true, start = true, topHeight = Tokens.Space.tvSafeV + Tokens.Space.xxxl)
+        // A little smaller, pinned top-right: less of the picture hides behind the rail and the title, and its own
+        // scrims melt its left and bottom edges into the black around it.
+        Box(
+            Modifier.align(Alignment.TopEnd).fillMaxWidth(Tokens.Cinema.tvHomeBackdropShare)
+                .fillMaxHeight(Tokens.Cinema.tvHomeBackdropShare),
+        ) {
+            HeroPicture(TmdbImages.backdrop(path), Modifier.fillMaxSize())
+            HeroScrims(top = true, start = true, topHeight = Tokens.Space.tvSafeV + Tokens.Space.xxxl)
+        }
     }
 }
 

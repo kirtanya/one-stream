@@ -107,6 +107,8 @@ object Tokens {
         val heroBottom: Brush get() = Brush.verticalGradient(
             0.30f to Color.Transparent, 0.62f to Colors.canvas.copy(alpha = 0.55f), 0.86f to Colors.canvas.copy(alpha = 0.92f), 1f to Colors.canvas,
         )
+        /** TV Home's foot: clear at the top, near-black at the screen's edge. */
+        val footFade: Brush get() = Brush.verticalGradient(0f to Color.Transparent, 0.55f to Colors.canvas.copy(alpha = 0.7f), 1f to Colors.canvas)
         /** Top of a hero, behind the status bar and floating buttons. */
         val heroTop: Brush get() = Brush.verticalGradient(0f to Colors.canvas.copy(alpha = 0.72f), 1f to Color.Transparent)
         /** Behind a page heading (grids, person): the picture as a dim wash, so any text reads on it. */
@@ -258,6 +260,14 @@ object Tokens {
         val tvTitleTop = 64.dp
         /** TV Home: the info block above the rows (badge, logo, meta, two lines of story). */
         val tvInfoHeight = 184.dp
+        /** TV Home: the info block and rows sit this much lower, so the backdrop gets the upper half and one row shows. */
+        val tvHomeDrop = 72.dp
+        /** TV Home: the backdrop's share of the screen, pinned top-right, clear of the rail and the text. */
+        const val tvHomeBackdropShare = 0.9f
+        /** TV Home: the black fade over the screen's foot, where the next row only peeks in. */
+        val tvHomeFootFade = 96.dp
+        /** Test tag on a decorative fade drawn over content: the contrast rule skips text that sits wholly inside one. */
+        const val SCRIM_TAG = "scrim"
         /** TV row heading: fixed so every row's cards share one top line. */
         val tvRowHeader = 32.dp
         /** TV: a row's cards start this far under the row's top (heading + gaps), see [Space.s] twice. */

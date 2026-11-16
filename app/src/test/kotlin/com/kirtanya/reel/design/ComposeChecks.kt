@@ -194,6 +194,9 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
         }
         // Controls in the order they're drawn: text under one drawn later (an Undo snackbar over a row) is covered.
         val controls = s.nodes.withIndex().filter { (_, it) -> it.isTouchTarget() }
+        // Decorative fades drawn over content (TV Home's black foot): text wholly inside one is dimmed on purpose.
+        // Black text can't show it (its ink stays black), so it would read as black on a darkened chip.
+        val scrims = s.nodes.withIndex().filter { (_, it) -> it.config.getOrNull(SemanticsProperties.TestTag) == Tokens.Cinema.SCRIM_TAG }
         var covered = 0
         // Text that doesn't show at all: a real failure, unless the capture missed the window (decided after the loop).
         val sameAsBackground = ArrayList<Pair<String, String>>()
@@ -206,6 +209,9 @@ internal class ComposeChecks(private val compose: ComposeContentTestRule, privat
             if (!n.fullyShown(s)) continue
             val over = controls.firstOrNull { (i, c) -> i > index && !c.contains(n) && !n.contains(c) && c.unclipped().overlaps(n.unclipped()) }
             if (over != null) { skipped += "$element: under a control drawn over it"; continue }
+            if (scrims.any { (i, sc) -> i > index && sc.unclipped().let { r -> r.contains(n.unclipped().topLeft) && r.contains(n.unclipped().bottomRight - androidx.compose.ui.geometry.Offset(1f, 1f)) } }) {
+                skipped += "$element: inside a decorative fade drawn over it"; continue
+            }
             // Partly under the floating tab bar: the bar's glass would count as its background (fully under it is
             // caught below as covered). The same row is checked where it sits clear of the bar.
             if (bar != null && n.unclipped().overlaps(bar)) { skipped += "$element: partly under the floating tab bar"; continue }
