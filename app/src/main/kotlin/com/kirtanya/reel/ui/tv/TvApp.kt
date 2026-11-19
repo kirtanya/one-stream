@@ -279,7 +279,7 @@ internal fun TvExitDialog(onExit: () -> Unit, onDismiss: () -> Unit) {
 }
 
 /**
- * The TV's left rail: seven icons (Search, Home, Movies, Shows, Categories, Downloads, Settings), vertically centred. Selected = white
+ * The TV's left rail: seven icons (Search, Home, Categories, Movies, Shows, Downloads, Settings), vertically centred. Selected = white
  * icon + a small marker on its left, the rest grey; focus = a ring and a white icon. It's one focus group: ◄ from a
  * screen's first item enters on the selected icon, ► leaves to the screen ([contentFocus], which remembers where you
  * were), ▲ / ▼ past the ends stay put. Nothing animates (the ring fade is the shared focus fade).
@@ -299,8 +299,8 @@ internal fun TvRail(
 ) {
     val items = remember {
         listOf(
-            Tab.Search to Icons.Rounded.Search, Tab.Home to Icons.Rounded.Home, Tab.Movies to Icons.Rounded.Movie, Tab.Shows to Icons.Rounded.Tv,
-            Tab.Categories to Icons.Rounded.GridView, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings,
+            Tab.Search to Icons.Rounded.Search, Tab.Home to Icons.Rounded.Home, Tab.Categories to Icons.Rounded.GridView, Tab.Movies to Icons.Rounded.Movie,
+            Tab.Shows to Icons.Rounded.Tv, Tab.Downloads to Icons.Rounded.Download, Tab.Settings to Icons.Rounded.Settings,
         )
     }
     val requesters = remember { items.associate { (tab, _) -> tab to (if (tab == Tab.Settings) settingsFocus else FocusRequester()) } }

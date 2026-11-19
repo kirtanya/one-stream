@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Share
@@ -115,18 +117,37 @@ internal fun PosterCardBody(
  * column glides to it, see [rememberHomeColumnSpec]); phone: the usual section header.
  */
 @Composable
-internal fun RowHeader(title: String, sidePadding: Dp, onSeeAll: (() -> Unit)? = null) {
+internal fun RowHeader(title: String, sidePadding: Dp) {
     if (!LocalIsTv.current) {
-        SectionHeader(title, Modifier.padding(horizontal = sidePadding), action = if (onSeeAll != null) "See all" else null, onAction = onSeeAll)
+        SectionHeader(title, Modifier.padding(horizontal = sidePadding))
         return
     }
     Row(Modifier.fillMaxWidth().height(Tokens.Cinema.tvRowHeader).padding(horizontal = sidePadding), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = Tokens.Type.title, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (onSeeAll != null) {
-            Text(
-                "See all", style = Tokens.Type.label, color = Tokens.Colors.text,
-                modifier = Modifier.focusCard(shape = RoundedCornerShape(Tokens.Radius.pill), onClick = onSeeAll).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs),
+    }
+}
+
+/**
+ * The last card of a Home row: a quiet tonal card the size and shape of its row's cards, an arrow and "View all".
+ * The focus treatment is the cards' own ([focusCard]); on TV it sits one ► past the last title.
+ */
+@Composable
+internal fun ViewAllCard(width: Dp, aspect: Float, radius: Dp, onClick: () -> Unit) {
+    val tv = LocalIsTv.current
+    val shape = RoundedCornerShape(radius)
+    Box(
+        Modifier.width(width).aspectRatio(aspect)
+            .focusCard(shape = shape, outset = tv, onClick = onClick)
+            .background(Tokens.Colors.surface2, shape)
+            .then(if (tv) Modifier else Modifier.border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+            androidx.compose.material3.Icon(
+                Icons.AutoMirrored.Rounded.ArrowForward, null,
+                tint = Tokens.Colors.text, modifier = Modifier.size(Tokens.Size.barIcon),
             )
+            Text("View all", style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1)
         }
     }
 }
@@ -155,7 +176,7 @@ fun PosterRow(
     var optionsFor by remember { mutableStateOf<TitleSummary?>(null) }
     optionsFor?.let { PosterOptions(it, onOpen = { onOpen(it) }, onDismiss = { optionsFor = null }) }
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        RowHeader(title, sidePadding, onSeeAll)
+        RowHeader(title, sidePadding)
         FixedFocusRow(sidePadding) {
             LazyRow(
                 // TV: up/down between rows comes back to the card last focused in this row.
@@ -170,6 +191,10 @@ fun PosterRow(
                         item, posterWidth, onClick = { onOpen(item) }, onLongClick = { optionsFor = item }, modifier = m, showText = showText,
                         onFocus = onFocus?.let { { it(item) } }, badge = badges, outset = tv,
                     )
+                }
+                // The row's last card: same size and shape as the posters, opens what the old "See all" opened.
+                if (onSeeAll != null) item(key = "view-all", contentType = "view-all") {
+                    ViewAllCard(posterWidth, 2f / 3f, Tokens.Radius.m, onSeeAll)
                 }
             }
         }

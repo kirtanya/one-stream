@@ -125,7 +125,7 @@ fun TitleRow(
     val toggleSaved = rememberWatchlistToggler()
     val imdb = if (isTv) com.kirtanya.reel.ui.common.rememberImdbRatings(items) else null
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-        RowHeader(title, sidePadding, onSeeAll)
+        RowHeader(title, sidePadding)
         FixedFocusRow(sidePadding) {
             LazyRow(
                 modifier = Modifier.focusRestorer(),
@@ -139,6 +139,9 @@ fun TitleRow(
                         onFocus = onFocus?.let { { it(item) } }, onLongClick = { toggleSaved(item) }, onClick = { onOpen(item) },
                         imdb = { imdb?.value?.get(item.ref) },
                     )
+                }
+                if (onSeeAll != null) item(key = "view-all", contentType = "view-all") {
+                    com.kirtanya.reel.ui.common.ViewAllCard(width, 16f / 9f, Tokens.Radius.media, onSeeAll)
                 }
             }
         }
