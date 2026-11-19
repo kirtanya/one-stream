@@ -75,7 +75,6 @@ fun TvPosterRow(
         Row(Modifier.padding(horizontal = side).height(Tokens.Size.button), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l)) {
             Text(title, style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 1)
             FocusedName(focused, Modifier.weight(1f))
-            if (onSeeAll != null) TvTab("See all", null, selected = false, onClick = onSeeAll)
         }
         TvRowPivot(side) {
             LazyRow(
@@ -85,6 +84,10 @@ fun TvPosterRow(
             ) {
                 itemsIndexed(items, key = { _, it -> it.ref.toString() }, contentType = { _, _ -> "poster" }) { i, item ->
                     PosterCard(item, posterWidth, onClick = { onOpen(item) }, modifier = Modifier.rowStart(i == 0), showText = false, onFocus = { focused.value = item })
+                }
+                // Same as the home rows: the way to the full list is the last card, not a header button.
+                if (onSeeAll != null) item(key = "view-all", contentType = "view-all") {
+                    com.kirtanya.reel.ui.common.ViewAllCard(posterWidth, 2f / 3f, Tokens.Radius.m, onSeeAll)
                 }
             }
         }
