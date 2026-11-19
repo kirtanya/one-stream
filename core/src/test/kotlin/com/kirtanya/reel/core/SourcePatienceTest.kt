@@ -208,7 +208,7 @@ class SourcePatienceTest {
     @Test fun `start target is the engine's first fetch plus two seconds of picture, never past the file`() {
         val mib = 1024L * 1024
         val t = BufferInfoBuilder.startTargetBytes(1_954_210_119L, 7_200_000, "1080p")
-        assertTrue(t > 6 * mib && t < 8 * mib, "t=$t")
+        assertTrue(t > 3 * mib && t < 5 * mib, "t=$t") // MKV blind tail is 1 MiB since the stream-speed change
         assertEquals(3 * mib, BufferInfoBuilder.startTargetBytes(3 * mib, null, null))
     }
 }

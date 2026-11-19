@@ -59,9 +59,6 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val myListDownloader by lazy { com.kirtanya.reel.data.MyListDownloader(this) }
     /** Films and episodes that are completely downloaded (the "Downloaded" badge). */
     val downloaded by lazy { com.kirtanya.reel.data.DownloadedStore(this) }
-
----
-
     /** The phone as the TV's remote (wake + "Send to TV"). */
     val tvRemote by lazy { com.kirtanya.reel.tvremote.TvRemote(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
