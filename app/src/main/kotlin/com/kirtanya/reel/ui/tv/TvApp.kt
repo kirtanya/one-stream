@@ -204,6 +204,7 @@ fun TvApp(
                 is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs, addedToList = screen.addedToList)
                 is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.Category -> saveable.SaveableStateProvider("category:${screen.category.key}") { TvCategoryPage(screen, onOpen = openTitle) }
+                is Dest.Chart -> saveable.SaveableStateProvider(screen.chart.key) { TvChartPage(screen, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { com.kirtanya.reel.ui.common.PersonScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = true, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
                 is Dest.Cast -> com.kirtanya.reel.ui.sources.CastScreen(

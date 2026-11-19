@@ -201,6 +201,15 @@ class TmdbRepository(private val http: OkHttpClient, private val region: String 
         rows
     }
 
+    /**
+     * A Top chart ([com.kirtanya.reel.core.browse.TopCharts]): its pages asked together, each on its own so one failing
+     * ends the chart there rather than failing it; only the first page failing throws (the page offers Try again).
+     */
+    suspend fun chart(chart: com.kirtanya.reel.core.browse.TopChart, content: ContentPreference): List<TitleSummary> = coroutineScope {
+        val pages = com.kirtanya.reel.core.browse.TopCharts.paths(chart, content).map { path -> async { runCatching { list(path, chart.type) } } }
+        com.kirtanya.reel.core.browse.TopCharts.assemble(pages.map { it.await() })
+    }
+
     /** Popular titles of [type] whose original language is [code]; [page] from 1. */
     suspend fun titlesInLanguage(type: MediaType, code: String, page: Int = 1): List<TitleSummary> =
         list(TmdbPaths.discoverByLanguage(type, code, minVotes = 20, page = page), type)

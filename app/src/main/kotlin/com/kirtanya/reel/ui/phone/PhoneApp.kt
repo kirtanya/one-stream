@@ -124,7 +124,7 @@ fun PhoneApp(
                 is Dest.Collection -> saveable.SaveableStateProvider(collectionKey(screen)) { CollectionScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { PersonScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 // Categories is a TV page; the phone never opens one.
-                is Dest.Category -> Unit
+                is Dest.Category, is Dest.Chart -> Unit
                 is Dest.ImdbTitle -> com.kirtanya.reel.ui.title.ImdbTitleLookup(screen, isTv = false, onBack = back, onResolved = { nav.replace(screen, Dest.Title(it)) })
                 is Dest.Cast -> com.kirtanya.reel.ui.sources.CastScreen(
                     screen.request, isTv = false, onBack = back,

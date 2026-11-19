@@ -54,6 +54,9 @@ sealed interface Dest {
     /** TV: the films and shows of one Categories tile (a genre of both kinds, or an original language). */
     data class Category(val category: com.kirtanya.reel.core.browse.Category) : Dest
 
+    /** TV: one of the Top charts on the Categories page (top 100, ranked). */
+    data class Chart(val chart: com.kirtanya.reel.core.browse.TopChart) : Dest
+
     /** A cast member: photo, bio, what they've been in. */
     data class Person(val id: Int, val name: String) : Dest
 

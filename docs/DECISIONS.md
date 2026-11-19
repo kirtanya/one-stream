@@ -86,6 +86,25 @@ Settings (phone has no Categories tab, unchanged). Evidence: `tv/home-view-all.p
 ---
 
 
+**2026-11-19 · TV Categories: "Top charts" (most popular / top rated, films and series, top 100), from TMDB**
+User: wanted to see the top movies "based upon the views", most viewed series top to bottom (top 100), and most rated
+series or films, "publicly available maybe on IMDb".
+- Real view counts aren't public and IMDb has no free API (scraping it breaks its terms), so no IMDb data is fetched.
+  "Most popular" = TMDB's popularity score (page views, watchlist / favourite adds, ratings); "Top rated" = TMDB's vote
+  average with a vote floor. Titles still show the IMDb pill the app already shows (cached ratings on TV).
+- Four tiles at the top of Categories (Most popular movies / series, Top rated movies / series) open a ranked grid, each
+  poster with its number top-right. Five pages of 20 are asked together (`core/browse/TopCharts`), so the chart is one
+  load; only the unbroken run of pages counts, repeats are dropped, so a number is never given to the wrong title. A
+  title hidden from suggestions leaves a gap in the numbers rather than renumbering.
+- Content preference (Settings → Home screen) applies: Both = `/popular` and `/top_rated` (world, no region); Hollywood /
+  Bollywood = `/discover` with `with_original_language` en / hi, same sort, vote floors (rating: films 2000 en / 200 hi,
+  shows 500 en / 50 hi; popular: 50). The page's line names the choice ("· Bollywood (Hindi)").
+- TV only (Categories is a TV page; the phone has no equivalent).
+- Evidence: `TopChartsTest` (paths, paging to 100, de-duplication, failed / empty pages, rank gaps, fixture JSON through
+  `TmdbParser`); renders `categories.png`, `chart-*.png`.
+
+---
+
 **2026-11-16 · TV Home: one row in view, the backdrop smaller and top-right, a black foot**
 User: the backdrop was hidden behind the rail and the title text, and two rows showed. Now the info block and rows sit
 `Cinema.tvHomeDrop` (72 dp) lower so the focused row is the one fully in view; the backdrop is 90 % of the width and
