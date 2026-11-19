@@ -103,8 +103,14 @@ object SourceRanker {
             }
             else -> 60.0
         }
+        // Multi-season packs have 8-16 MiB pieces: slow to start on the TV even when well seeded. A pack still wins
+        // against a single release with a tenth of its seeders (the log curve gives ~46 points for that), not an equal one.
+        if (s.kind == SourceKind.TORRENT && s.multiSeasonPack) score -= PACK_PENALTY
         return score
     }
+
+    /** See [score]: multi-season packs. */
+    const val PACK_PENALTY = 25.0
 
     /** See [score]: uncached debrid links (DebridCache). */
     const val UNCACHED_PENALTY = 50.0

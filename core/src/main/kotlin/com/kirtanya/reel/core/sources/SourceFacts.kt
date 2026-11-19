@@ -88,6 +88,18 @@ object SourceFacts {
     )
 
     /** Tags for a release, most important first, without duplicates ("DTS-HD" hides "DTS", "HDR10+" hides "HDR"). */
+    private val MULTI_SEASON = Regex(
+        "(?i)(?<![a-z0-9])(?:s\\d{1,2}\\s*[-~\\u2013]\\s*s?\\d{1,2}|seasons?\\s*\\d{1,2}\\s*(?:[-~\\u2013&,]|to|thru|through)\\s*(?:seasons?\\s*)?\\d{1,2}" +
+            "|complete(?:\\W+(?:series|collection|seasons?|saga))?|(?:the\\W+)?complete\\W+series|collection|box\\W?set|all\\W+seasons|full\\W+series|trilogy|anthology)(?![a-z0-9])",
+    )
+
+    /**
+     * A release that bundles several seasons (or a whole series / collection). Such torrents are tens of GB, so their
+     * pieces are 8-16 MiB: the TV needs ~32 MiB before the first frame (R4 report 20261116-013131, BCS pack stalled at
+     * startup). A single season is not flagged: its pieces are the usual 2-4 MiB.
+     */
+    fun isMultiSeasonPack(vararg texts: String?): Boolean = MULTI_SEASON.containsMatchIn(normalise(texts))
+
     fun tags(s: Source): List<String> = s.releaseTags
 
     fun tags(vararg texts: String?): List<String> {

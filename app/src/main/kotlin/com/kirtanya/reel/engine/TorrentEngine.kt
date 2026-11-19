@@ -8,6 +8,7 @@ import android.util.AtomicFile
 import android.util.Log
 import com.kirtanya.reel.core.magnet.DEFAULT_TRACKERS
 import com.kirtanya.reel.core.magnet.Magnet
+import com.kirtanya.reel.core.magnet.TrackerMerge
 import com.kirtanya.reel.core.stream.CacheEntry
 import com.kirtanya.reel.core.stream.CachePolicy
 import com.kirtanya.reel.core.stream.ModeChange
@@ -319,7 +320,10 @@ class TorrentEngine(private val context: Context) {
             } catch (t: Throwable) {
                 throw EngineException("Couldn't read the magnet link")
             }
-            params.setTrackers((params.getTrackers() + DEFAULT_TRACKERS).distinct())
+            val own = params.getTrackers()
+            params.setTrackers(TrackerMerge.merge(own))
+            // Seeing how many a bad torrent really announces to (and whether the cap bit) is the first question on a stall.
+            EngineStats.log("trackers", mapOf("key" to hash.take(12), "own" to own.size, "used" to params.getTrackers().size))
             add(hash, params, mode, onlyFileIndex, onlyFileHint, streamFileIdx)
             hash to true
         }
@@ -340,7 +344,7 @@ class TorrentEngine(private val context: Context) {
         val params = AddTorrentParams()
         params.setTorrentInfo(info)
         // Public trackers only for public torrents: a private one would leak to them.
-        if (!info.isPrivate) params.setTrackers((params.getTrackers() + DEFAULT_TRACKERS).distinct())
+        if (!info.isPrivate) params.setTrackers(TrackerMerge.merge(params.getTrackers()))
         add(hash, params, mode)
         hash
     }
@@ -512,6 +516,14 @@ class TorrentEngine(private val context: Context) {
 
     /** "Keep" / "Save as download": a stream becomes a normal download in the Downloads folder; fetched pieces are reused. */
     fun keep(hash: String) {
+        // Off the caller's thread: find() + torrentFile() + moveStorage() + applyFileIntent() walk the file list and talk
+        // to libtorrent's session thread; on the TV's 32-bit CPU a big pack froze the main thread (R4 report 20261116-145044).
+        scope.launch(Dispatchers.IO) {
+            runCatching { keepNow(hash) }.onFailure { Log.w(TAG, "keep ${hash.take(8)} failed", it) }
+        }
+    }
+
+    private fun keepNow(hash: String) {
         val h = find(hash) ?: return
         val meta = metas[hash] ?: return
         when (ModeChange.toDownload(modeFacts(hash, meta))) {
@@ -527,6 +539,12 @@ class TorrentEngine(private val context: Context) {
      * where it is and becomes a stream-cache entry under the normal cache policy, so it can still play.
      */
     fun keepAsCache(hash: String) {
+        scope.launch(Dispatchers.IO) {
+            runCatching { keepAsCacheNow(hash) }.onFailure { Log.w(TAG, "keepAsCache ${hash.take(8)} failed", it) }
+        }
+    }
+
+    private fun keepAsCacheNow(hash: String) {
         val h = find(hash) ?: return
         val meta = metas[hash] ?: return
         when (ModeChange.toCache(modeFacts(hash, meta))) {

@@ -83,6 +83,9 @@ data class Source(
     /** [SourceFacts.tags], read once per source (every row of every list asks again). */
     internal val releaseTags: List<String> by lazy { SourceFacts.tags(title, filename) }
 
+    /** [SourceFacts.isMultiSeasonPack] of this release, read once (ranking scores every source). */
+    internal val multiSeasonPack: Boolean by lazy { kind == SourceKind.TORRENT && SourceFacts.isMultiSeasonPack(title, filename) }
+
     /** Magnet to hand the engine (torrents only). */
     fun magnetUri(): String? = when {
         kind != SourceKind.TORRENT -> null
