@@ -697,8 +697,24 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 val exo = player ?: continue
                 if (exo.isPlaying) saveProgress()
                 maybePrepareNext(exo)
+                maybePrefetchNext(exo)
             }
         }
+    }
+
+    /** Is the stream healthy enough to share the link with the next episode's download (NextPrefetch / BufferWatch)? */
+    private val bufferWatch = com.kirtanya.reel.core.library.BufferWatch()
+
+    /**
+     * Docs/STREAMING_V2.md §7.7: feeds the buffer watch and lets the prefetcher decide. Only while the player is on
+     * screen (a backgrounded stream is suspended, and its buffer says nothing about the link).
+     */
+    private fun maybePrefetchNext(exo: ExoPlayer) {
+        if (playback.next == null || !prefs.prefetchNext) return
+        val now = now()
+        val visible = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        bufferWatch.sample(now, visible && exo.playbackState == Player.STATE_READY, exo.totalBufferedDuration)
+        app.nextPrefetch.consider(playback, bufferWatch.healthy(now))
     }
 
     private fun saveProgress(ended: Boolean = false) {
@@ -770,7 +786,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             val search = withTimeoutOrNull(45_000) {
                 app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision(), wantedSourceLanguages(nextPlayback))).first { it.done }
             }
-            val source = pickNextSource(playback.source, search?.sources.orEmpty())
+            // The prefetch (if one started) already fetches a specific source: play that one so the file is used.
+            val source = app.nextPrefetch.chosenFor(nextPlayback.key) ?: pickNextSource(playback.source, search?.sources.orEmpty())
             nextReady = (if (source != null) nextPlayback.copy(source = source) else nextPlayback) to source
             Log.i(TAG, "next ${next.label}: ${source?.provider ?: "no source"}")
             watchForCredits()

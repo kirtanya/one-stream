@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 data class PlaybackPrefs(
     val autoplayNext: Boolean = true,
+    /** Download the next episode in the background once this one plays smoothly (docs/STREAMING_V2.md §7.7). */
+    val prefetchNext: Boolean = true,
     /**
      * ISO 639-1 code to show subtitles in, or null for Off. English unless the user chose otherwise
      * (stored through SubtitleLanguagePref, where Off is its own value).
@@ -43,6 +45,7 @@ class PlaybackSettings(context: Context) {
         _state.value = next
         prefs.edit {
             putBoolean("autoplayNext", next.autoplayNext)
+            putBoolean("prefetchNext", next.prefetchNext)
             putString("subtitleLanguage", SubtitleLanguagePref.encode(next.subtitleLanguage))
             putString("audioLanguage", next.audioLanguage.name)
             putString("caption", next.caption.encode())
@@ -55,6 +58,7 @@ class PlaybackSettings(context: Context) {
 
     private fun read() = PlaybackPrefs(
         autoplayNext = prefs.getBoolean("autoplayNext", true),
+        prefetchNext = prefs.getBoolean("prefetchNext", true),
         subtitleLanguage = SubtitleLanguagePref.decode(prefs.getString("subtitleLanguage", null)),
         audioLanguage = com.kirtanya.reel.core.player.AudioLanguage.of(prefs.getString("audioLanguage", null)),
         caption = CaptionStyle.decode(prefs.getString("caption", null), legacySize = prefs.getString("subtitleSize", null)),

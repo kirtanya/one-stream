@@ -16,12 +16,13 @@ import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.theme.Tokens
 
 /**
- * Settings → Playback: auto-play the next episode and its countdown, and how far one skip goes (the
+ * Settings → Playback: auto-play the next episode, downloading it ahead while you watch, its countdown, and how far one skip goes (the
  * remote's ←/→, the ± buttons, a double-tap). Volume boost, dialogue boost, delays and the sleep timer are
  * in the player's own panel, where their effect can be heard.
  */
 internal fun LazyListScope.playbackItems(@Suppress("UNUSED_PARAMETER") isTv: Boolean) {
     item(key = "playback-autoplay") { AutoplayRow() }
+    item(key = "playback-prefetch") { PrefetchRow() }
     item(key = "playback-countdown") {
         val options by PlayerStore.get(LocalContext.current).options.collectAsState()
         val store = PlayerStore.get(LocalContext.current)
@@ -49,6 +50,19 @@ private fun AutoplayRow() {
             "After a ${options.countdownS}-second countdown.",
             playback.autoplayNext,
         ) { app.playbackSettings.update { it.copy(autoplayNext = !it.autoplayNext) } }
+    }
+}
+
+@Composable
+private fun PrefetchRow() {
+    val app = ReelApp.get(LocalContext.current)
+    val playback by app.playbackSettings.state.collectAsState()
+    Section {
+        ToggleRow(
+            "Download the next episode while watching",
+            "So the next one starts instantly. Uses storage.",
+            playback.prefetchNext,
+        ) { app.playbackSettings.update { it.copy(prefetchNext = !it.prefetchNext) } }
     }
 }
 
