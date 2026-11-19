@@ -144,6 +144,15 @@ class NextPrefetchTest {
         assertFalse(NextPrefetch.fits(s, 3 * GiB, FormFactor.TV))
         assertTrue(NextPrefetch.fits(s, 4 * GiB, FormFactor.TV))
     }
+    @Test fun onUsbABigPickIsSwappedForASmallerOneAtTheSameOrLowerQuality() {
+        val big = torrent("A", 1080, "big", size = 5 * GiB)
+        val small = torrent("B", 1080, "small", size = 2 * GiB)
+        val ranked = listOf(big, small)
+        assertEquals(hex("big"), chosen(NextPrefetch.pick(null, ranked, emptySet())).infoHash)
+        assertEquals(hex("small"), chosen(NextPrefetch.pick(null, ranked, emptySet(), underFatLimit = true)).infoHash)
+        // No swap when nothing smaller is left at that quality: the big one stays and the placement decides.
+        assertEquals(hex("big"), chosen(NextPrefetch.pick(null, listOf(big), emptySet(), underFatLimit = true)).infoHash)
+    }
 }
 
 class BufferWatchTest {
@@ -184,4 +193,5 @@ class BufferWatchTest {
         w.sample(10_000, true, 2_000)
         assertFalse(w.healthy(hold))
     }
+
 }

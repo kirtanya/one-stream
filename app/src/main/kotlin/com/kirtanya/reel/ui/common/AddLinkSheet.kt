@@ -105,8 +105,13 @@ fun AddLinkSheet(initialLink: String?, onDismiss: () -> Unit, onDownloadStarted:
                             }
                         }
                     }
-                    f != null -> app.engine.addTorrentFile(f.second, TorrentMode.DOWNLOAD).also { onDownloadStarted() }
-                    else -> app.engine.addMagnet(link.trim(), TorrentMode.DOWNLOAD).also { onDownloadStarted() }
+                    else -> {
+                        // A pasted link has no size: the TV with the USB disk ready saves it there; the metadata step catches a file of 4 GiB or more.
+                        val place = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.downloadPlacer.decide("link", null) }
+                        place.refused?.let { throw EngineException(it.message) }
+                        if (f != null) app.engine.addTorrentFile(f.second, TorrentMode.DOWNLOAD, place.saveDir) else app.engine.addMagnet(link.trim(), TorrentMode.DOWNLOAD, saveDir = place.saveDir)
+                        onDownloadStarted()
+                    }
                 }
                 onDismiss()
             } catch (e: EngineException) {

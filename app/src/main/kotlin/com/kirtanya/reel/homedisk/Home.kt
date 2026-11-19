@@ -70,7 +70,11 @@ class Home(private val app: ReelApp) {
 
     fun start() {
         network.start()
-        if (isTv) agent.start() else {
+        if (isTv) {
+            // "Keep" asks where a stream becomes a download (docs/HOME_DISK.md §24.2); set before the engine starts.
+            com.kirtanya.reel.engine.TorrentEngine.targets = com.kirtanya.reel.engine.DownloadTargets { app.downloadPlacer.forKeep(it) }
+            agent.start()
+        } else {
             gate.start()
             client.start()
         }

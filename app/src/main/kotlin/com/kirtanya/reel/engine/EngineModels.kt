@@ -36,6 +36,10 @@ data class TorrentSnapshot(
     val waitingForNight: Boolean = false,
     /** Why the engine holds or slows this torrent ("Waiting for night (01:00)", "Slowed while you watch"). */
     val notice: String? = null,
+    /** Saved on a USB volume (docs/HOME_DISK.md §24): "USB disk" on the Downloads screen. */
+    val onUsb: Boolean = false,
+    /** Its USB disk is not plugged in: kept out of the session, resumes when the disk is back (§24.5). */
+    val waitingForDisk: Boolean = false,
 ) {
     val etaSec: Long? get() =
         if (downBps <= 0 || wantedBytes <= doneBytes) null else (wantedBytes - doneBytes) / downBps
@@ -77,6 +81,12 @@ data class TorrentMeta(
     val pausedForNight: Boolean = false,
     /** "Start now": the overnight window never holds this torrent again. */
     val startNow: Boolean = false,
+    /** Name, wanted and done bytes last seen: what the list shows while its USB disk is away (§24.5). */
+    val lastName: String? = null,
+    val lastWanted: Long = 0,
+    val lastDone: Long = 0,
+    /** Why it was stopped for good until the user acts (a file of 4 GiB or more on the USB disk, §24.3). */
+    val blocked: String? = null,
     val schema: Int = 1,
 ) {
     val intent: FileIntent get() = FileIntent(fullTorrent, wantedFiles, wantedHints, streamFileIndex)

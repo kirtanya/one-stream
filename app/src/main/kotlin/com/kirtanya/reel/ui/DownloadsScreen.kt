@@ -109,11 +109,14 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
     val origins = fixed?.origins ?: liveOrigins
     var cacheBytes by remember { mutableLongStateOf(fixed?.storage?.first ?: 0L) }
     var freeBytes by remember { mutableLongStateOf(fixed?.storage?.second ?: 0L) }
+    // The USB disk's free space, only when it is in play (docs/HOME_DISK.md §24.7).
+    var usbFree by remember { mutableStateOf<Long?>(fixed?.usbFree) }
     LaunchedEffect(Unit) {
         while (fixed?.storage == null) {
             withContext(Dispatchers.IO) {
                 cacheBytes = engine.cacheBytes()
                 freeBytes = runCatching { StatFs(engine.downloadsDir().path).availableBytes }.getOrDefault(0L)
+                if (isTv) usbFree = ReelApp.get(context).downloadPlacer.usbFreeBytes()
             }
             delay(3000)
         }
@@ -122,6 +125,8 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
     val shownJobs = if (filter == DownloadFilter.All || filter == DownloadFilter.Home) home.jobs.sortedByDescending { it.createdAt } else emptyList()
     val heldShown = torrents.filter { it.infoHash.lowercase() in home.held }
     val shownDownloads = shown.filter { it.mode == TorrentMode.DOWNLOAD }
+    // "USB disk" / "This TV" lines show only once the disk is in play, so a TV without one looks as before.
+    val anyUsb = isTv && (usbFree != null || torrents.any { it.onUsb })
     val shownCache = shown.filter { it.mode == TorrentMode.STREAM }
     // Disk checks once, not on every recomposition (and some devices can't answer at all).
     val saveDir = remember { runCatching { engine.downloadsDir().path.substringAfter("/0/") }.getOrNull() }
@@ -146,7 +151,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                     if (!isTv) GlassIconButton(Icons.Rounded.Add, "Add a link", onAdd)
                 }
             }
-            item(key = "storage", contentType = "storage") { StorageCard(torrents, cacheBytes, freeBytes, isTv) { engine.trimCache(0) } }
+            item(key = "storage", contentType = "storage") { StorageCard(torrents, cacheBytes, freeBytes, usbFree, isTv) { engine.trimCache(0) } }
             if (needsFileAccess) {
                 item(key = "access") {
                     ReelCard {
@@ -194,7 +199,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
             if (isTv && shownDownloads.isNotEmpty() && shownCache.isNotEmpty()) item(key = "downloads-header", contentType = "header") {
                 Text("Downloads · ${shownDownloads.size}", style = Tokens.Type.heading, color = Tokens.Colors.text)
             }
-            items(shownDownloads, key = { it.infoHash }, contentType = { "download" }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = { more = t }, home = home.takeIf { !isTv }, tv = isTv) }
+            items(shownDownloads, key = { it.infoHash }, contentType = { "download" }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = { more = t }, home = home.takeIf { !isTv }, tv = isTv, anyUsb = anyUsb) }
             if (shownCache.isNotEmpty()) {
                 item(key = "cache-header", contentType = "header") {
                     Column(Modifier.widthIn(max = 980.dp).padding(top = if (shownDownloads.isEmpty()) 0.dp else Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
@@ -281,8 +286,10 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
 }
 
 @Composable
-private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeBytes: Long, isTv: Boolean, onClearCache: () -> Unit) {
-    val downloaded = torrents.filter { it.mode == TorrentMode.DOWNLOAD }.sumOf { it.doneBytes }
+private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeBytes: Long, usbFree: Long?, isTv: Boolean, onClearCache: () -> Unit) {
+    // The bar is the TV's own storage: downloads on the USB disk are counted on their own line.
+    val downloaded = torrents.filter { it.mode == TorrentMode.DOWNLOAD && !it.onUsb }.sumOf { it.doneBytes }
+    val onUsbBytes = torrents.filter { it.mode == TorrentMode.DOWNLOAD && it.onUsb }.sumOf { it.doneBytes }
     val used = downloaded + cacheBytes
     val total = (used + freeBytes).coerceAtLeast(1)
     if (isTv) {
@@ -296,6 +303,7 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
                     }
                     GradientProgress(used.toFloat() / total, height = 4.dp)
                     Text("${formatBytes(downloaded)} downloads  ·  ${formatBytes(cacheBytes)} stream cache", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
+                    if (usbFree != null) Text("USB disk: ${formatBytes(usbFree)} free  ·  ${formatBytes(onUsbBytes)} downloads", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
                 }
                 if (cacheBytes > 0) ReelButton("Clear stream cache", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
             }
@@ -317,12 +325,12 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
 }
 
 @Composable
-private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null, tv: Boolean = false) {
+private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null, tv: Boolean = false, anyUsb: Boolean = false) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val done = t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING
     if (tv) {
-        DownloadRowTv(t, done, onDelete, onMore)
+        DownloadRowTv(t, done, onDelete, onMore, anyUsb)
         return
     }
     ReelCard(Modifier.widthIn(max = 980.dp)) {
@@ -383,7 +391,7 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -
  * a stall, an error) hangs under the row only when there is one.
  */
 @Composable
-private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Unit, onMore: (() -> Unit)?) {
+private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Unit, onMore: (() -> Unit)?, anyUsb: Boolean = false) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val shape = RoundedCornerShape(Tokens.Radius.l)
@@ -404,7 +412,7 @@ private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Uni
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
                 Text(com.kirtanya.reel.ui.sources.releaseName(t.name), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    t.error ?: statusLine(t), style = Tokens.Type.caption,
+                    t.error ?: statusLine(t, if (!anyUsb || t.mode != TorrentMode.DOWNLOAD) null else if (t.onUsb) "USB disk" else "This TV"), style = Tokens.Type.caption,
                     color = if (t.error != null) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 if (!done) GradientProgress(t.progress, Modifier.padding(top = Tokens.Space.xs), height = 3.dp)
@@ -437,7 +445,7 @@ private fun TorrentSnapshot.matches(f: DownloadFilter): Boolean = when (f) {
     DownloadFilter.Home -> false
 }
 
-private fun statusLine(t: TorrentSnapshot): String = buildString {
+private fun statusLine(t: TorrentSnapshot, place: String? = null): String = buildString {
     append(
         when (t.phase) {
             TorrentPhase.METADATA -> "Finding peers"
@@ -450,6 +458,7 @@ private fun statusLine(t: TorrentSnapshot): String = buildString {
         },
     )
     if (t.hasMetadata) append(" · ").append(formatBytes(t.wantedBytes))
+    if (place != null) append(" · ").append(place)
     if (t.phase == TorrentPhase.DOWNLOADING || t.phase == TorrentPhase.METADATA) {
         append(" · ↓ ").append(formatBytes(t.downBps.toLong())).append("/s · ").append(com.kirtanya.reel.ui.plural(t.peers, "peer"))
         t.etaSec?.let { append(" · ").append(formatEta(it)) }

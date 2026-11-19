@@ -78,7 +78,10 @@ class HomeDisk(private val app: ReelApp, private val home: Home) {
         }
         if (home.isTv) {
             // A plugged-in or pulled-out disk shows up at once; the slow loop covers TVs that don't report it (§23.2).
-            home.usb.watch { app.appScope.launch { if (usbChosen()) refresh(deep = false) } }
+            home.usb.watch {
+                app.engineIfCreated?.volumesChanged()
+                app.appScope.launch { if (usbChosen()) refresh(deep = false) }
+            }
             app.appScope.launch {
                 while (true) {
                     delay(USB_RECHECK_MS)

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import java.io.File
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleRef
@@ -28,6 +29,9 @@ import kotlinx.coroutines.withTimeout
  * `--ez report true [--es note <text>]` saves a manual problem report (screenshot of the screen on top, if ours).
  * `--es reportTest crash|freeze` tests the automatic reports: crash the app / block its main thread for 8 s.
  * `--es home state|test|open|request|jobs|config|net` home disk checks (docs/HOME_DISK.md, see homeProbe).
+ * `--es usbDownload start|status|unplug|replug|cleanup [--ei sample 0..2]` the USB download check on the TV (docs/HOME_DISK.md §24.10):
+ *   start saves a legal Blender sample like the Download button would; status lists its files and sizes on the disk;
+ *   unplug / replug make the app pretend the USB volume is gone / back (nothing is unmounted); cleanup deletes the sample.
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
@@ -93,6 +97,10 @@ class SourcesProbe : BroadcastReceiver() {
         }
         intent.getStringExtra("home")?.let { cmd ->
             homeProbe(app, cmd, intent, goAsync())
+            return
+        }
+        intent.getStringExtra("usbDownload")?.let { cmd ->
+            usbDownloadProbe(app, cmd, intent.getIntExtra("sample", 1), goAsync())
             return
         }
         if (intent.hasExtra("sync")) {
@@ -439,6 +447,61 @@ class SourcesProbe : BroadcastReceiver() {
                 Log.w(TAG, "home $cmd failed: ${e.javaClass.simpleName}: ${e.message}")
             } finally {
                 if (!answered) pending.finish()
+            }
+        }
+    }
+
+    /** `usbDownload` (see the class comment): one legal sample, saved where the Download button would save it. */
+    private fun usbDownloadProbe(app: ReelApp, cmd: String, sampleIdx: Int, pending: PendingResult) {
+        app.appScope.launch {
+            try {
+                val sample = com.kirtanya.reel.ui.SAMPLE_TORRENTS.getOrNull(sampleIdx) ?: run { Log.w(TAG, "usbDownload: no sample $sampleIdx"); return@launch }
+                val hash = com.kirtanya.reel.core.magnet.Magnet.parse(sample.magnet)?.infoHash?.lowercase()
+                val engine = app.engine
+                when (cmd) {
+                    "start" -> {
+                        val place = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.downloadPlacer.decide("button", null) }
+                        Log.i(TAG, "usbDownload start place=${place.placement::class.simpleName} dir=${place.saveDir} refused=${place.refused?.message}")
+                        place.refused?.let { return@launch }
+                        val key = engine.addMagnet(sample.magnet, com.kirtanya.reel.engine.TorrentMode.DOWNLOAD, saveDir = place.saveDir)
+                        Log.i(TAG, "usbDownload start added ${sample.title} key=${key.take(12)}")
+                    }
+                    "status" -> {
+                        val t = engine.torrents.value.firstOrNull { it.infoHash.equals(hash, true) }
+                        Log.i(TAG, "usbDownload status ${t?.name} phase=${t?.phase} progress=${t?.progress?.times(100)?.toInt()}% done=${t?.doneBytes} wanted=${t?.wantedBytes} onUsb=${t?.onUsb} waiting=${t?.waitingForDisk} notice=${t?.notice} error=${t?.error} path=${t?.savePath}")
+                        val roots = listOfNotNull(t?.savePath?.takeIf { it.isNotBlank() }?.let(::File), engine.downloadsDir())
+                        for (root in roots.distinct()) root.walkTopDown().filter { it.isFile && !it.name.endsWith(".parts") }.take(40).forEach {
+                            Log.i(TAG, "usbDownload file ${it.path} ${it.length()} bytes")
+                        }
+                    }
+                    "unplug" -> {
+                        com.kirtanya.reel.engine.DownloadVolumes.pretendGone = com.kirtanya.reel.engine.DownloadVolumes.mountedIds(app).filter { it.contains('-') }.toSet()
+                        engine.volumesChanged()
+                        Log.i(TAG, "usbDownload unplug pretending gone=${com.kirtanya.reel.engine.DownloadVolumes.pretendGone}")
+                    }
+                    "replug" -> {
+                        com.kirtanya.reel.engine.DownloadVolumes.pretendGone = emptySet()
+                        engine.volumesChanged()
+                        Log.i(TAG, "usbDownload replug")
+                    }
+                    "cleanup" -> {
+                        com.kirtanya.reel.engine.DownloadVolumes.pretendGone = emptySet()
+                        if (hash != null) {
+                            engine.remove(hash, deleteFiles = true)
+                            app.downloadOrigins.remove(hash)
+                        }
+                        kotlinx.coroutines.delay(2_000)
+                        val left = engine.torrents.value.filter { it.infoHash.equals(hash, true) }.size
+                        Log.i(TAG, "usbDownload cleanup torrentsLeft=$left")
+                        val dir = app.downloadPlacer.decide("probe", null).saveDir
+                        Log.i(TAG, "usbDownload cleanup folder ${dir} entries=${dir?.list()?.toList()}")
+                    }
+                    else -> Log.w(TAG, "usbDownload: unknown command $cmd")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "usbDownload $cmd failed: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                pending.finish()
             }
         }
     }

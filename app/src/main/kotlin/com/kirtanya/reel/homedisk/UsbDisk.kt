@@ -22,7 +22,7 @@ class UsbDisk(private val app: ReelApp, private val home: Home) {
     private val storage = app.getSystemService(StorageManager::class.java)
 
     /** Where the disk stands now, and, when it is usable, its folder. */
-    class Found(val state: HomeDiskState, val volumeId: String?, val root: File?)
+    class Found(val state: HomeDiskState, val volumeId: String?, val root: File?, val appDir: File? = null)
 
     fun find(): Found {
         val volumes = ArrayList<VolumeFacts>()
@@ -42,7 +42,7 @@ class UsbDisk(private val app: ReelApp, private val home: Home) {
         val preferred = home.settings.value.usbVolume
         val picked = VolumeChoice.pick(volumes, preferred)
         val root = picked?.let { folders[it.id] }?.let { File(it, ROOT).also(File::mkdirs) }
-        return Found(VolumeChoice.state(volumes, preferred), picked?.id, root?.takeIf { it.isDirectory })
+        return Found(VolumeChoice.state(volumes, preferred), picked?.id, root?.takeIf { it.isDirectory }, picked?.let { folders[it.id] })
     }
 
     fun store(): HomeStore? = find().root?.let { UsbStore(it) }
@@ -73,5 +73,8 @@ class UsbDisk(private val app: ReelApp, private val home: Home) {
     companion object {
         /** The folder inside the app's own folder on the volume; §3.1's tree hangs below it. */
         const val ROOT = "OneStream"
+
+        /** Where libtorrent saves downloads on the volume: a sibling of [ROOT] in the same app folder (docs/HOME_DISK.md §24.2). */
+        const val DOWNLOADS = "downloads"
     }
 }

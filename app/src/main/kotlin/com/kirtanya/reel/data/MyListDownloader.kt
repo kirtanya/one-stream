@@ -73,9 +73,12 @@ class MyListDownloader(private val app: ReelApp) {
         app.sources.ensureReady()
         val req = com.kirtanya.reel.ui.sources.requestFor(d, origin.season, origin.episode)
         val search = withTimeoutOrNull(LauncherPage.SOURCES_TIMEOUT_MS) {
-            app.aggregator.search(req, app.sources.providers(), com.kirtanya.reel.ui.sources.rankPrefs(app, app.isTv, com.kirtanya.reel.ui.sources.wantedLanguages(app, d))).first { it.done }
+            app.aggregator.search(req, app.sources.providers(), com.kirtanya.reel.ui.sources.rankPrefs(app, app.isTv, com.kirtanya.reel.ui.sources.wantedLanguages(app, d), forDownload = true)).first { it.done }
         }
-        val source = search?.let { MyListDownload.bestToDownload(it.sources) }
+        // TV with the USB disk ready (docs/HOME_DISK.md §24.3): prefer a source under 4 GiB at the same or one-lower quality.
+        val onUsb = withContext(Dispatchers.IO) { app.downloadPlacer.usbInPlay() }
+        val source = search?.let { MyListDownload.bestToDownload(it.sources, underFatLimit = onUsb) }
+        if (onUsb && source != null) search.let { MyListDownload.bestToDownload(it.sources) }?.let { app.downloadPlacer.logSwap("mylist", it, source) }
         withContext(Dispatchers.Main) {
             if (source == null) {
                 Toast.makeText(app, "No source to download for “${origin.label}” yet. It's on My list.", Toast.LENGTH_LONG).show()
@@ -93,7 +96,7 @@ class MyListDownloader(private val app: ReelApp) {
      */
     private fun start(source: com.kirtanya.reel.core.sources.Source, origin: DownloadOrigin) {
         val label = origin.label
-        if (app.isTv || source.kind != SourceKind.TORRENT) return com.kirtanya.reel.ui.sources.download(app, source, label, origin)
+        if (app.isTv || source.kind != SourceKind.TORRENT) return com.kirtanya.reel.ui.sources.download(app, source, label, origin, placeSrc = "mylist", automatic = true)
         val home = app.home
         val atHomeOk = home.setUp && home.client.pairedTv() != null
         if (home.settings.value.downloadWhere == DownloadWhere.AT_HOME && atHomeOk) {

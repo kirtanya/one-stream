@@ -15,6 +15,8 @@ class RenderData(
     val torrents: List<TorrentSnapshot>? = null,
     /** Stream cache and free space, in bytes. */
     val storage: Pair<Long, Long>? = null,
+    /** Free bytes on the USB disk when it is in play (Downloads screen, docs/HOME_DISK.md §24.7); null = no disk. */
+    val usbFree: Long? = null,
     /** The Sources screen's search, whatever the title (null inside = still getting ready). */
     val sourceSearch: (() -> SourceSearch?)? = null,
     val installed: SourcesState? = null,

@@ -5,6 +5,25 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-19 · Downloads save straight onto the USB disk (TV), with a 4 GiB rule and no silent fallback**
+The TV has about 1.7 GB of internal storage, so downloads now go to the PiBOX disk when it is plugged in. Spec: `docs/HOME_DISK.md` §24,
+`docs/STREAMING_V2.md` §7.8.
+- **Where**: `<volume>/Android/data/com.kirtanya.reel/files/downloads/` for the Download button, My List, Auto-download, next-episode
+  prefetch and Keep. The streaming cache stays internal (it is small, hot and rewritten all the time). The phone is unchanged.
+- **FAT32 cannot hold a file of 4 GiB or more** and libtorrent writes torrent files itself (no split pieces like the library). So a
+  file under 4 GiB goes to USB; 4 GiB or more goes to internal if it fits (free minus the 1 GiB floor), else it is refused with
+  "Too big for the USB disk (over 4 GB). Pick a smaller source." Automatic picks first prefer the best candidate under 4 GiB at the
+  same or one-lower resolution. A pasted link has no size, so the metadata step moves or pauses it (`MetaStep`).
+- **Free space is the target volume's** (USB floor 2 GB), not the TV's.
+- **Unplugged**: the download is taken out of the libtorrent session (resume data saved first, files untouched) and shows
+  "USB disk not plugged in"; it resumes when the disk returns. Never a silent fallback to internal: that would fill the 1.7 GB and
+  scatter one download across two places. Rejected: leaving it in the session (libtorrent can drop progress on a failed recheck).
+- **Not built**: moving existing internal downloads ("Move to USB disk"). They stay where they are.
+- Evidence: `core` tests (`DownloadPlacementTest`, `UsbPathsTest`, additions to `NextPrefetchTest`, `MyListDownloadTest`), render
+  `downloads-usb`, SourcesProbe `--es usbDownload` on the TV (see the commit message).
+
+---
+
 **2026-11-19 · Home disk: a second backend, a USB disk on the TV (FAT32, split big files, app folder on the volume)**
 The router (Airtel AOT-4221SR) has no SMB, only FTP, so the user plugged a 512 GB PiBOX SSD into the Acer R4
 (volume `public:8,1`, `/storage/37EE-1DEE`, formatted FAT32 by the TV because the TV can't mount exFAT and FAT32 is

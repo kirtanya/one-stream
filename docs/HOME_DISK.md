@@ -1013,6 +1013,7 @@ Tailscale throughput from the R4, reconnect ramp after a reset, disk spin-up del
 - Same layout (§3.1), manifests (§3.2), piece maps (§3.3), lease (§3.4), invariants I1–I5, retention (§13),
   delete-where (§14). I6 (no sign-in off the home network) does not apply: nothing is signed into and nothing
   crosses a network. Home detection (§5.2) is still done, the phone's P2P rule needs it.
+- **Downloads on the TV also land on this disk, written by libtorrent into the app's `downloads/` folder: §24.**
 - Everything the app does to the disk goes through one small interface, `HomeStore` (§23.9), with a USB
   implementation (plain files, split pieces) and an SMB one (jcifs). Nothing else in the app knows which is active.
 
@@ -1172,3 +1173,109 @@ Tailscale throughput from the R4, reconnect ramp after a reset, disk spin-up del
 `ReelStats ev=hd-connect dev=tv src=usb ok=1|0 err=NoUsb|Unreadable|Full|Other` (once per change of state, not per refresh) and
 `ev=hd-test dev=tv src=usb ok=1|0 state=… writeMBps=… readMBps=… splitOk=1|0 ms=…` (no volume names or paths).
 
+
+---
+
+## 24. Downloads straight onto the USB disk (TV) **[Decided 2026-11-19]**
+
+### 24.1 Why, and what changes
+The TV has about 1.7 GB of free internal storage, so a Download there either fails or eats the room streaming needs. With the USB
+disk of §23 plugged in, **the TV's downloads are written to the disk by libtorrent itself**: no conveyor slice, no copy afterwards. This is
+the TV's own *Downloads* folder, only bigger. It is **not** the library tree of §3.1 (no manifests, no piece maps, no lease): libtorrent
+owns those files, the Downloads screen lists them, playback reads them through the engine as for any download. (The library and the
+conveyor of §8 are separate, later work; nothing here blocks them.)
+
+What counts as a download: the Download button (Sources page and title page), "When I add to My list" (`MyListDownloader`), Settings →
+Downloads automation (`AutoDownloader`), the phone's "Download at home" request, "Save as download" (Keep) and the next-episode
+download (STREAMING_V2 §7.7). **Streaming cache stays internal** (`files/streams/`): it is small, short-lived and must never wait for a disk.
+
+Used only when **all** hold: this is the TV, `HomeSettings.backend` is USB, and the disk is *Ready* (`VolumeChoice.state` = Connected,
+so mounted and at least 2 GB free). Otherwise nothing changes from before (internal Downloads folder). The phone is unaffected.
+
+### 24.2 Where the files go
+- New downloads: `<volume>/Android/data/com.kirtanya.reel/files/downloads/` (the app's own folder on the volume, §23.3; a sibling
+  of `OneStream/`). libtorrent's save path is that folder; files sit in it the way they sit in the internal Downloads folder.
+- A download's place is **its save path**: a path under `/storage/<uuid>/` (not `emulated` / `self`) is on that USB volume; anything else is
+  "This TV". There is no second setting to keep in step. Existing internal downloads stay where they are (§24.7).
+- "Save as download" (Keep) moves a stream's fetched pieces with `moveStorage` to the same folder, under the same size rule.
+
+### 24.3 The size rule (FAT32: no file of 4 GiB or more) **[Decided]**
+libtorrent writes each torrent file as one file, and FAT32 refuses a file of 4 GiB (4,294,967,296 bytes) or more. `UsbStore`'s
+split pieces (§23.5) do not help here. The deciding size is **the chosen file's size** (`Source.sizeBytes`, which addons report for
+the file, not the pack). Several files in one torrent are fine as long as each is under 4 GiB. Pure `core/homedisk/DownloadPlacement`:
+
+1. File under 4 GiB (or size unknown) and the disk has room → **USB**.
+2. File 4 GiB or more:
+   - **Automatic picks** (My List "Download the best source", Auto-download, next-episode download) first look for a different
+     candidate (`DownloadPlacement.preferUnderLimit`): the **best-ranked** one that is a downloadable torrent with a **known size under
+     4 GiB** at the **same resolution or one step lower** (steps: 2160, 1440, 1080, 720, 576, 480; "unknown" only matches itself). If there
+     is one, it is downloaded to USB instead. If there is none, the pick is treated like an explicit one (next bullet).
+   - **A pick the user made** (Download button, "Save as download") goes to **internal storage if it fits** (free minus the TV's 1 GiB
+     floor, `CachePolicy.hardFloor`), because it is what they asked for. If it does not fit: refused with the message
+     **"Too big for the USB disk (over 4 GB). Pick a smaller source."** and nothing is added.
+   - A pick that is automatic and still too big after the swap: internal if it fits, else skipped (`ReelStats … why=too-big`, no message).
+3. Room on USB: free bytes of the volume minus the **2 GB floor** (`VolumeChoice.MIN_FREE`, the same "Full" line as Settings) must cover the
+   file (3 GiB assumed when unknown, as in §7.7). When it does not: a new download goes to internal if it fits there, else is refused with
+   "Not enough room on the USB disk". (A new download has nothing half-done to protect; an existing one is never moved, §24.6.)
+4. **Safety net once metadata is known** (a magnet's real file list arrives after the add): if any file the download wants is 4 GiB or
+   more and the torrent was put on USB, then with **nothing downloaded yet** and room on internal it is moved there (`moveStorage` of an
+   empty save), otherwise it is **paused** with the error "Too big for the USB disk (over 4 GB). Pick a smaller source." Pure
+   `DownloadPlacement.afterMetadata`. Never a silent move of data already written.
+5. **File names**: FAT refuses `< > : " | ? *`, control characters and trailing dots or spaces (Linux names are looser). At metadata, before data
+   is written, any file path component libtorrent could not create is renamed with `DiskLayout.clean` (`renameFile`, unique within the
+   torrent). Pure `UsbPaths.fatSafePaths`.
+
+### 24.4 Free-space checks use the target volume
+Next-episode download (`NextPrefetch.fits`) and the TV Sources page's size limit (`rankPrefs.maxBytes`, internal free minus 1 GiB, which
+applies to **streaming** the file) are unchanged for streaming. For downloads the check is the target's: USB free minus 2 GB when the
+disk is used, internal free minus the 1 GiB floor otherwise. Nothing is evicted for a prefetch (unchanged). The Sources page's size
+limit stays internal because Play streams through the internal cache; a source over it just ranks lower, and Download is still allowed.
+
+### 24.5 Unplugged **[Decided]**
+A missing volume is a normal state (§23.6). For downloads:
+- **Running**: the engine checks every 5 s and on every volume change callback. A download whose save path is on a volume that is no
+  longer mounted is **taken out of the libtorrent session without deleting anything** (resume data is saved first, files are left) and listed as
+  **paused with the notice "USB disk not plugged in"**. Taking it out (rather than pausing) is deliberate: with its folder gone, libtorrent
+  would see missing files at its next check and could throw away the progress it believes it has.
+- **TV starts with the disk missing**: those downloads are not added to the session at all; the list shows them with the same notice and
+  the progress last saved (`TorrentMeta.lastName / lastWanted / lastDone`, refreshed with the periodic resume save).
+- **Back (same volume)**: they are added again from their resume data the way a restart does it (`restoreOne`), keeping the user's own pause,
+  the overnight window and the network rule. libtorrent re-checks the files it finds.
+- **Never a silent fallback to internal** for a half-done download, and a torrent that is waiting is never re-added as a stream: starting
+  playback of it answers **"USB disk not plugged in"** instead of fetching it again into the internal cache or failing with a codec error.
+- Delete while unplugged removes the entry; the files cannot be deleted (the disk is away) and stay on the disk until it is cleaned by hand.
+  The notice says so. (Reasonable: it is a rare case, and the folder is a plain folder.)
+
+### 24.6 Moving what exists
+Existing internal downloads stay. A "Move to USB disk" action on a finished download (`moveStorage` copies across volumes) is **not built**:
+nobody asked for the files already on the TV to move, and a copy of several GB on a 32-bit TV is something to do only when asked.
+
+### 24.7 Screens
+Downloads (TV) names where a download lives in its status line only when a USB disk is in use at all: `Downloaded · 1.4 GB · USB disk` or
+`· This TV` for a finished, paused or errored row (rows that are moving data are already long). A waiting row shows the notice line
+the engine gives (`USB disk not plugged in`, caption, secondary colour, never red). The page's "Saving to …" line says "Saving to USB disk"
+while the disk is used. No other layout changes; the phone never shows any of it.
+
+### 24.8 Telemetry
+```
+ReelStats ev=dl-place src=button|mylist|auto|prefetch|keep|tv dev=tv place=usb|tv|none why=usb|no-usb|big-file|usb-full|too-big|no-room size=… usbFreeMb=… tvFreeMb=…
+ReelStats ev=dl-swap src=… from=<res>/<size MB> to=<res>/<size MB>       (a different candidate chosen to stay under 4 GiB)
+ReelStats ev=dl-meta key=… place=usb step=ok|moved-tv|paused-big maxFileMb=… renamed=n
+ReelStats ev=dl-disk key=… state=waiting|back vol=<8 chars of the uuid, no name>
+```
+No names, titles or paths.
+
+### 24.9 Code map
+- `core/homedisk/DownloadPlacement.kt` (pure, tested): `DownloadPlace`, `Placement`, `place`, `preferUnderLimit`, `afterMetadata`, the messages.
+- `core/homedisk/UsbPaths.kt` (pure, tested): `volumeIdOf`, `isMissing`, `fatSafePaths`.
+- `core/library/NextPrefetch` (`pick` swaps for size, `PrefetchWhy.TOO_BIG`), `MyListDownload.bestToDownload` and `AutoDownloader` call `preferUnderLimit`.
+- `app/homedisk/UsbDisk` (`downloads()`, `mountedIds()`), `app/homedisk/DownloadPlacer` (the one place that reads free space and logs `dl-place`),
+  `engine/DownloadVolumes` (what the engine may ask the disk), `TorrentEngine` (save path, metadata step, waiting list, `restoreOne`).
+- Test hook: `--es usbDownload start|status|unplug|replug|cleanup` (§24.10).
+
+### 24.10 Test and SourcesProbe
+`--es usbDownload start [--ei sample 0..2]` adds the legal Blender sample (default Sintel, ~130 MB) as a download through the **same placement** as the
+Download button, **returns at once** (never holds the broadcast) and logs `usbDownload start place=… path=…`. `status` logs the torrent's phase,
+progress, save path, and on the disk the files with sizes. `unplug` / `replug` make the app *believe* the volume is gone / back (no system
+call, nothing is unmounted) so the waiting path of §24.5 can be exercised; a real unplug is checked by hand. `cleanup` deletes the sample download
+and its origin, then logs the folder's remaining entries.

@@ -768,6 +768,15 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvSettingsStorageRules() = withNight {
         render("settings-storage-rules", tv = true, scrollToEnd = true, data = RenderData(installed = Fake.installed, store = Fake.store)) { TvSettingsOver(SettingsPage.Storage) }
     }
+    /** The USB disk in play (docs/HOME_DISK.md §24.7): two on the disk, one waiting for it to be plugged in, one still on the TV. */
+    private val usbTorrents get() = Fake.torrents.take(4).mapIndexed { i, t ->
+        when (i) {
+            0, 1 -> t.copy(onUsb = true)
+            2 -> t.copy(onUsb = true, waitingForDisk = true, phase = com.kirtanya.reel.engine.TorrentPhase.PAUSED, downBps = 0, peers = 0, seeds = 0, notice = "USB disk not plugged in", error = null)
+            else -> t
+        }
+    }
+    @Test @Config(qualifiers = TV) fun tvDownloadsUsb() = render("downloads-usb", tv = true, data = RenderData(torrents = usbTorrents, storage = 3_400_000_000L to 1_100_000_000L, usbFree = 412_000_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvDownloadsNight() = render("downloads-night", tv = true, data = RenderData(torrents = nightTorrents, storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorage() =
         render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvSettingsOver(SettingsPage.HomeStorage) }

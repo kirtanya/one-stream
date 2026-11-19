@@ -1,5 +1,6 @@
 package com.kirtanya.reel.core.library
 
+import com.kirtanya.reel.core.homedisk.DownloadPlacement
 import com.kirtanya.reel.core.launcher.LauncherPage
 import com.kirtanya.reel.core.playback.EpisodeNumber
 import com.kirtanya.reel.core.sources.Source
@@ -42,8 +43,11 @@ object MyListDownload {
      * SourceRanker order (the aggregator sorts it), so this only skips what can't be downloaded: service links
      * and trailers / extras.
      */
-    fun bestToDownload(ranked: List<Source>): Source? =
-        ranked.firstOrNull { it.kind != SourceKind.EXTERNAL && !it.isExtra && LauncherPage.downloadable(it) }
+    fun bestToDownload(ranked: List<Source>, underFatLimit: Boolean = false): Source? {
+        val best = ranked.firstOrNull { it.kind != SourceKind.EXTERNAL && !it.isExtra && LauncherPage.downloadable(it) } ?: return null
+        // TV with the USB disk (FAT32, docs/HOME_DISK.md §24.3): prefer a source under 4 GiB at the same or one-lower quality.
+        return if (underFatLimit) DownloadPlacement.preferUnderLimit(ranked, best) else best
+    }
 
     /** True when [origin] already has a download (running or finished), so adding doesn't start or ask for a second one. */
     fun alreadyDownloading(origin: DownloadOrigin, downloads: List<KnownDownload>): Boolean =

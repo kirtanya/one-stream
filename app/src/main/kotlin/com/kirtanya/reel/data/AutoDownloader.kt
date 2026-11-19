@@ -125,15 +125,27 @@ class AutoDownloader(private val app: ReelApp) {
         app.sources.ensureReady()
         val req = com.kirtanya.reel.ui.sources.requestFor(d, ep.season, ep.episode)
         val search = withTimeoutOrNull(LauncherPage.SOURCES_TIMEOUT_MS) {
-            app.aggregator.search(req, app.sources.providers(), com.kirtanya.reel.ui.sources.rankPrefs(app, app.isTv, com.kirtanya.reel.ui.sources.wantedLanguages(app, d))).first { it.done }
+            app.aggregator.search(req, app.sources.providers(), com.kirtanya.reel.ui.sources.rankPrefs(app, app.isTv, com.kirtanya.reel.ui.sources.wantedLanguages(app, d), forDownload = true)).first { it.done }
         } ?: return false
         val previous = app.history.entries.value.firstOrNull { it.playback.titleKey == "tv:${d.summary.ref.id}" && !it.playback.markedOnly }?.playback?.source
         val downloadable = search.sources.filter(LauncherPage::downloadable)
-        val source = pickNextSource(previous, downloadable) ?: return false
+        val plain = pickNextSource(previous, downloadable) ?: return false
+        // TV with the USB disk ready (docs/HOME_DISK.md §24.3): a file of 4 GiB or more cannot be saved there; prefer a smaller
+        // source at the same or one-lower quality. One that still cannot be placed is skipped, not counted as started.
+        val (source, refused) = withContext(Dispatchers.IO) {
+            if (!app.downloadPlacer.usbInPlay()) return@withContext plain to false
+            val swapped = com.kirtanya.reel.core.homedisk.DownloadPlacement.preferUnderLimit(downloadable, plain)
+            app.downloadPlacer.logSwap("auto", plain, swapped)
+            swapped to app.downloadPlacer.wouldRefuse(swapped.sizeBytes)
+        }
+        if (refused) {
+            com.kirtanya.reel.engine.EngineStats.log("dl-place", linkedMapOf("src" to "auto", "dev" to "tv", "place" to "none", "why" to "skipped", "size" to source.sizeBytes))
+            return false
+        }
         val label = "${d.summary.title} · ${ep.label}"
         Log.i(TAG, "auto-download $label → ${source.provider}")
         withContext(Dispatchers.Main) {
-            com.kirtanya.reel.ui.sources.download(app, source, label, DownloadOrigin("tv", d.summary.ref.id, ep.season, ep.episode, label), startedMessage = "Downloading $label (automatic)")
+            com.kirtanya.reel.ui.sources.download(app, source, label, DownloadOrigin("tv", d.summary.ref.id, ep.season, ep.episode, label), startedMessage = "Downloading $label (automatic)", placeSrc = "auto", automatic = true)
         }
         return true
     }

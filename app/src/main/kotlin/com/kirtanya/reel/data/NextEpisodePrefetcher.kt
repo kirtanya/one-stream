@@ -30,6 +30,8 @@ import com.kirtanya.reel.ui.sources.requestFor
 import com.kirtanya.reel.ui.sources.wantedLanguages
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 
@@ -117,16 +119,28 @@ class NextEpisodePrefetcher(private val app: ReelApp) {
         app.sources.ensureReady()
         val req = requestFor(d, next.season, next.episode)
         val search = withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
-            app.aggregator.search(req, app.sources.providers(), rankPrefs(app, app.isTv, wantedLanguages(app, d))).first { it.done }
+            app.aggregator.search(req, app.sources.providers(), rankPrefs(app, app.isTv, wantedLanguages(app, d), forDownload = true)).first { it.done }
         }
         val held = app.engine.torrents.value.mapTo(HashSet()) { it.infoHash.lowercase() }
-        val source = when (val pick = NextPrefetch.pick(current.source, search?.sources.orEmpty(), held)) {
+        // TV with the USB disk ready (docs/HOME_DISK.md §24): a file of 4 GiB or more cannot be saved there, so a smaller source
+        // at the same or one-lower quality is preferred, and the room check is the one of the volume it goes to.
+        val onUsb = withContext(Dispatchers.IO) { app.downloadPlacer.usbInPlay() }
+        val picked = when (val pick = NextPrefetch.pick(current.source, search?.sources.orEmpty(), held, underFatLimit = onUsb)) {
             is PrefetchPick.Chosen -> pick.source
             is PrefetchPick.None -> return skip(key, next, pick.why)
         }
-        val form = if (app.isTv) FormFactor.TV else FormFactor.PHONE
-        val free = runCatching { StatFs(app.engine.downloadsDir().path).availableBytes }.getOrDefault(0L)
-        if (!NextPrefetch.fits(source, free, form)) return skip(key, next, PrefetchWhy.NO_ROOM)
+        val source = picked
+        if (onUsb) (NextPrefetch.pick(current.source, search?.sources.orEmpty(), held) as? PrefetchPick.Chosen)?.let { app.downloadPlacer.logSwap("prefetch", it.source, source) }
+        var saveDir: java.io.File? = null
+        if (onUsb) {
+            val place = withContext(Dispatchers.IO) { app.downloadPlacer.decide("prefetch", source.sizeBytes) }
+            place.refused?.let { return skip(key, next, if (it.why == com.kirtanya.reel.core.homedisk.PlaceWhy.TOO_BIG) PrefetchWhy.TOO_BIG else PrefetchWhy.NO_ROOM) }
+            saveDir = place.saveDir
+        } else {
+            val form = if (app.isTv) FormFactor.TV else FormFactor.PHONE
+            val free = runCatching { StatFs(app.engine.downloadsDir().path).availableBytes }.getOrDefault(0L)
+            if (!NextPrefetch.fits(source, free, form)) return skip(key, next, PrefetchWhy.NO_ROOM)
+        }
 
         // Things moved while we searched (a network change, the user starting the same download): decide again.
         // The buffer was healthy when we started and the search is short, so it isn't asked again.
@@ -136,7 +150,7 @@ class NextEpisodePrefetcher(private val app: ReelApp) {
         val label = "${d.summary.title} · ${next.label}"
         tried[key] = System.currentTimeMillis()
         val hash = try {
-            app.engine.addMagnet(magnet, TorrentMode.DOWNLOAD, source.fileIdx, source.filename)
+            app.engine.addMagnet(magnet, TorrentMode.DOWNLOAD, source.fileIdx, source.filename, saveDir = saveDir)
         } catch (e: EngineException) {
             Log.w(TAG, "prefetch not added: ${e.message}")
             return

@@ -29,7 +29,9 @@ import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.engine.EngineException
 import com.kirtanya.reel.engine.TorrentMode
 import com.kirtanya.reel.player.PlayerActivity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 fun requestFor(d: TitleDetails, season: Int?, episode: Int?) = SourceRequest(
     tmdbId = d.summary.ref.id,
@@ -74,8 +76,12 @@ fun rememberSourceSearch(req: SourceRequest, isTv: Boolean, languages: List<Stri
  * TVs have little storage: torrents bigger than the free space can't be streamed there. On top: the
  * user's source preferences for this device (quality cap, never CAM, pinned / blocked providers).
  */
-fun rankPrefs(context: Context, isTv: Boolean, languages: List<String>? = null): RankPrefs {
-    val base = if (!isTv) RankPrefs() else RankPrefs(maxBytes = (StatFs(context.filesDir.path).availableBytes - (1L shl 30)).coerceAtLeast(0))
+fun rankPrefs(context: Context, isTv: Boolean, languages: List<String>? = null, forDownload: Boolean = false): RankPrefs {
+    val base = if (!isTv) RankPrefs() else {
+        val internalCap = (StatFs(context.filesDir.path).availableBytes - (1L shl 30)).coerceAtLeast(0)
+        // A download on the TV's USB disk is not limited by the internal storage (docs/HOME_DISK.md §24.4): a blocking read, only asked for downloads (never on the main thread).
+        RankPrefs(maxBytes = if (forDownload) ReelApp.get(context).downloadPlacer.downloadCap(internalCap) else internalCap)
+    }
     // Quick start's wanted languages for this title (QuickStart.wantedLanguages): the first one leads, the rest are fine to hear.
     val withLanguages = if (languages.isNullOrEmpty()) base else base.copy(language = languages.first(), alsoLanguages = languages.drop(1))
     return com.kirtanya.reel.ReelApp.get(context).sourcePrefs.applyTo(withLanguages)
@@ -144,9 +150,10 @@ private fun openExternal(context: Context, source: Source) {
  * Torrents → the engine (only the chosen file). Direct links → Android's download manager.
  * [origin] remembers the film / episode for "Change source". [replacing] (an info-hash) is the
  * download this one replaces: it's deleted only once the new one has started, so a failed start
- * leaves it alone (docs/STREAMING_V2.md §7.3a).
+ * leaves it alone (docs/STREAMING_V2.md §7.3a). On the TV with the USB disk ready a torrent is saved there when the file is
+ * under 4 GiB (docs/HOME_DISK.md §24.3); [automatic] picks that cannot be placed are skipped without a message.
  */
-fun download(context: Context, source: Source, title: String, origin: DownloadOrigin? = null, replacing: String? = null, startedMessage: String? = null) {
+fun download(context: Context, source: Source, title: String, origin: DownloadOrigin? = null, replacing: String? = null, startedMessage: String? = null, placeSrc: String = "button", automatic: Boolean = false) {
     val app = ReelApp.get(context)
     val main = android.os.Handler(context.mainLooper)
     fun dropOld(newHash: String?) {
@@ -160,7 +167,10 @@ fun download(context: Context, source: Source, title: String, origin: DownloadOr
     when (source.kind) {
         SourceKind.TORRENT -> app.appScope.launch {
             val msg = try {
-                val hash = app.engine.addMagnet(source.magnetUri() ?: return@launch, TorrentMode.DOWNLOAD, source.fileIdx, source.filename)
+                val magnet = source.magnetUri() ?: return@launch
+                val place = withContext(Dispatchers.IO) { app.downloadPlacer.decide(placeSrc, source.sizeBytes) }
+                place.refused?.let { if (automatic) return@launch else throw EngineException(it.message) }
+                val hash = app.engine.addMagnet(magnet, TorrentMode.DOWNLOAD, source.fileIdx, source.filename, saveDir = place.saveDir)
                 origin?.let { app.downloadOrigins.put(hash, it) }
                 dropOld(hash)
                 startedMessage ?: if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"

@@ -6,6 +6,9 @@ import android.os.Environment
 import android.os.StatFs
 import android.util.AtomicFile
 import android.util.Log
+import com.kirtanya.reel.core.homedisk.DownloadPlacement
+import com.kirtanya.reel.core.homedisk.MetaStep
+import com.kirtanya.reel.core.homedisk.UsbPaths
 import com.kirtanya.reel.core.magnet.DEFAULT_TRACKERS
 import com.kirtanya.reel.core.magnet.Magnet
 import com.kirtanya.reel.core.magnet.TrackerMerge
@@ -136,6 +139,8 @@ class TorrentEngine(private val context: Context) {
     private val disk = DiskBackend.forDevice(is64, Build.MANUFACTURER)
 
     private val metas = ConcurrentHashMap<String, TorrentMeta>()
+    /** Downloads whose USB disk is not plugged in: out of the session, files untouched (docs/HOME_DISK.md §24.5). */
+    private val waiting: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val errors = ConcurrentHashMap<String, String>()
     private val stalls = ConcurrentHashMap<String, Int>()
     /** One per torrent; completed by METADATA_RECEIVED. Waiters never remove it (lost-wakeup fix). */
@@ -302,15 +307,17 @@ class TorrentEngine(private val context: Context) {
      * For downloads, [onlyFileIndex] / [onlyFileHint] add one file (e.g. one episode of a season pack)
      * to what's wanted; earlier choices are kept.
      */
-    suspend fun addMagnet(uri: String, mode: TorrentMode, onlyFileIndex: Int? = null, onlyFileHint: String? = null): String =
-        addMagnetInternal(uri, mode, onlyFileIndex, onlyFileHint, streamFileIdx = null).first
+    suspend fun addMagnet(uri: String, mode: TorrentMode, onlyFileIndex: Int? = null, onlyFileHint: String? = null, saveDir: File? = null): String =
+        addMagnetInternal(uri, mode, onlyFileIndex, onlyFileHint, streamFileIdx = null, saveDir = saveDir).first
 
     /** Returns (key, created). [streamFileIdx] lets a fresh stream add download nothing but that file. */
-    private suspend fun addMagnetInternal(uri: String, mode: TorrentMode, onlyFileIndex: Int?, onlyFileHint: String?, streamFileIdx: Int?): Pair<String, Boolean> =
+    private suspend fun addMagnetInternal(uri: String, mode: TorrentMode, onlyFileIndex: Int?, onlyFileHint: String?, streamFileIdx: Int?, saveDir: File? = null): Pair<String, Boolean> =
         withContext(Dispatchers.IO) {
             start()
             val magnet = Magnet.parse(uri) ?: throw EngineException("That isn't a valid magnet link")
             val hash = magnet.infoHash
+            // Its disk is away: it is already ours; nothing is added a second time (§24.5).
+            if (waiting.contains(hash)) return@withContext hash to false
             find(hash)?.let { existing ->
                 if (mode == TorrentMode.DOWNLOAD) wantForDownload(existing, hash, onlyFileIndex, onlyFileHint)
                 return@withContext hash to false
@@ -324,12 +331,12 @@ class TorrentEngine(private val context: Context) {
             params.setTrackers(TrackerMerge.merge(own))
             // Seeing how many a bad torrent really announces to (and whether the cap bit) is the first question on a stall.
             EngineStats.log("trackers", mapOf("key" to hash.take(12), "own" to own.size, "used" to params.getTrackers().size))
-            add(hash, params, mode, onlyFileIndex, onlyFileHint, streamFileIdx)
+            add(hash, params, mode, onlyFileIndex, onlyFileHint, streamFileIdx, saveDir)
             hash to true
         }
 
     /** Adds a `.torrent` file's bytes. Returns the info-hash. */
-    suspend fun addTorrentFile(bytes: ByteArray, mode: TorrentMode): String = withContext(Dispatchers.IO) {
+    suspend fun addTorrentFile(bytes: ByteArray, mode: TorrentMode, saveDir: File? = null): String = withContext(Dispatchers.IO) {
         start()
         val info = try {
             TorrentInfo.bdecode(bytes)
@@ -337,6 +344,7 @@ class TorrentEngine(private val context: Context) {
             throw EngineException("That .torrent file is damaged")
         }
         val hash = keyOf(info.infoHashes())
+        if (waiting.contains(hash)) return@withContext hash
         find(hash)?.let { existing ->
             if (mode == TorrentMode.DOWNLOAD) wantForDownload(existing, hash, null, null)
             return@withContext hash
@@ -345,12 +353,12 @@ class TorrentEngine(private val context: Context) {
         params.setTorrentInfo(info)
         // Public trackers only for public torrents: a private one would leak to them.
         if (!info.isPrivate) params.setTrackers(TrackerMerge.merge(params.getTrackers()))
-        add(hash, params, mode)
+        add(hash, params, mode, saveDir = saveDir)
         hash
     }
 
-    private fun add(hash: String, params: AddTorrentParams, mode: TorrentMode, onlyFileIndex: Int? = null, onlyFileHint: String? = null, streamFileIdx: Int? = null) {
-        val save = saveDirFor(hash, mode)
+    private fun add(hash: String, params: AddTorrentParams, mode: TorrentMode, onlyFileIndex: Int? = null, onlyFileHint: String? = null, streamFileIdx: Int? = null, saveDir: File? = null) {
+        val save = saveDirFor(hash, mode, saveDir)
         params.setSavePath(save.absolutePath)
         var flags = flagsFor(mode, params.getFlags())
         // Home disk P2P rule (docs/HOME_DISK.md §5.3): a download added where it must wait starts paused, with no traffic.
@@ -420,10 +428,68 @@ class TorrentEngine(private val context: Context) {
         saveMeta(meta.copy(pendingFileIntent = false))
     }
 
-    private fun saveDirFor(hash: String, mode: TorrentMode): File = when (mode) {
-        TorrentMode.STREAM -> File(streamDir, hash)
-        TorrentMode.DOWNLOAD -> downloadsDir()
-    }.apply { mkdirs() }
+    /**
+     * A download saved on a USB disk, file list just known and nothing written yet (docs/HOME_DISK.md §24.3): a wanted file of
+     * 4 GiB or more cannot live on FAT32 (moved to the internal Downloads folder when nothing is downloaded and it fits, else
+     * paused with the plain message), and names FAT would refuse are renamed.
+     */
+    private fun usbMetadataStep(h: TorrentHandle, key: String) {
+        val meta = metas[key] ?: return
+        val dir = meta.savePath ?: return
+        if (meta.mode != TorrentMode.DOWNLOAD || UsbPaths.volumeIdOf(dir) == null) return
+        val info = h.torrentFile() ?: return
+        val fs = info.files()
+        val prios = runCatching { h.filePriorities().map { it.swig().toInt() } }.getOrDefault(emptyList())
+        val real = (0 until fs.numFiles()).filterNot { fs.padFileAt(it) }
+        val wantedFiles = real.filter { prios.getOrElse(it) { 4 } > 0 }
+        val maxFile = wantedFiles.maxOfOrNull { fs.fileSize(it) } ?: 0L
+        val st = runCatching { h.status() }.getOrNull()
+        val downloaded = st?.totalDone() ?: 0L
+        val wanted = wantedFiles.sumOf { fs.fileSize(it) }
+        val tvFree = DownloadVolumes.freeBytes(downloadsDir())
+        val step = DownloadPlacement.afterMetadata(true, maxFile, downloaded, wanted, tvFree)
+        var renamed = 0
+        if (step == MetaStep.Keep) {
+            val paths = real.map { fs.filePath(it) }
+            val fixed = UsbPaths.fatSafePaths(paths)
+            for ((i, newPath) in fixed) {
+                runCatching { h.renameFile(real[i], newPath); renamed++ }.onFailure { Log.w(TAG, "rename failed", it) }
+            }
+        }
+        val tag = when (step) {
+            MetaStep.Keep -> "ok"
+            MetaStep.MoveToTv -> "moved-tv"
+            MetaStep.PauseTooBig -> "paused-big"
+        }
+        EngineStats.log("dl-meta", mapOf("key" to key.take(12), "place" to "usb", "step" to tag, "maxFileMb" to (maxFile / (1024L * 1024L)), "renamed" to renamed))
+        when (step) {
+            MetaStep.Keep -> Unit
+            MetaStep.MoveToTv -> {
+                val tv = downloadsDir()
+                h.moveStorage(tv.absolutePath, org.libtorrent4j.MoveFlags.FAIL_IF_EXIST)
+                saveMeta(meta.copy(savePath = tv.absolutePath))
+            }
+            MetaStep.PauseTooBig -> {
+                h.unsetFlags(TorrentFlags.AUTO_MANAGED)
+                h.pause()
+                errors[key] = DownloadPlacement.TOO_BIG_MESSAGE
+                saveMeta(meta.copy(userPaused = true, blocked = DownloadPlacement.TOO_BIG_MESSAGE))
+            }
+        }
+        refreshSnapshotsSoon()
+    }
+
+    /** Streams always cache internally; a download goes where the caller decided ([saveDir], §24.2), else the internal Downloads folder. */
+    private fun saveDirFor(hash: String, mode: TorrentMode, saveDir: File? = null): File {
+        val dir = when (mode) {
+            TorrentMode.STREAM -> File(streamDir, hash)
+            TorrentMode.DOWNLOAD -> saveDir ?: downloadsDir()
+        }
+        dir.mkdirs()
+        // A USB folder that cannot be made means the disk went away between the decision and now.
+        if (!dir.isDirectory) throw EngineException(DownloadPlacement.UNPLUGGED)
+        return dir
+    }
 
     /** Public Downloads/Reel when "All files access" is granted, else the app's own folder. */
     fun downloadsDir(): File {
@@ -453,6 +519,8 @@ class TorrentEngine(private val context: Context) {
     }
 
     fun resume(hash: String) {
+        // A download stopped for good (4 GiB or more on the USB disk) says so again instead of failing on the disk.
+        metas[hash]?.blocked?.let { errors[hash] = it; refreshSnapshotsSoon(); return }
         val h = find(hash) ?: return
         errors.remove(hash)
         runCatching { h.swig().clear_error() }
@@ -501,6 +569,8 @@ class TorrentEngine(private val context: Context) {
         metadataWaiters.remove(hash)?.completeExceptionally(EngineException("This stream was removed"))
         errors.remove(hash)
         metas.remove(hash)
+        // A download waiting for its USB disk: only the entry goes, the files are on the disk that is away (§24.5).
+        waiting.remove(hash)
         // libtorrent deletes the files itself (DELETE_FILES); the stream folder is swept when empty.
         if (h != null) {
             if (deleteFiles) handles.removeTorrent(h, SessionHandle.DELETE_FILES) else handles.removeTorrent(h)
@@ -595,15 +665,35 @@ class TorrentEngine(private val context: Context) {
         // Never overwrite a file of the same name already in Downloads. A download that was kept as
         // stream cache never left the Downloads folder (§7.3a): nothing to move.
         val current = meta.savePath?.let { runCatching { File(it).canonicalPath }.getOrNull() }
-        if (current != downloadsDir().canonicalPath) h.moveStorage(downloadsDir().absolutePath, org.libtorrent4j.MoveFlags.FAIL_IF_EXIST)
+        // Where it goes: the TV with a USB disk asks the app (the size rule, §24.3); everything else is the internal Downloads folder.
+        val target = try {
+            keepTarget(h, meta, keepWanted = intent)
+        } catch (e: EngineException) {
+            errors[key] = e.message ?: DownloadPlacement.TOO_BIG_MESSAGE
+            refreshSnapshotsSoon()
+            return
+        }
+        if (current != target.canonicalPath) h.moveStorage(target.absolutePath, org.libtorrent4j.MoveFlags.FAIL_IF_EXIST)
         h.setFlags(TorrentFlags.AUTO_MANAGED)
         h.resume()
         // A stream added for one file downloads nothing else: say explicitly what Keep wants.
         val keepIntent = if (intent.fullTorrent || (intent.wantedFiles.isEmpty() && intent.wantedHints.isEmpty())) intent.copy(fullTorrent = true) else intent
-        saveMeta(meta.copy(mode = TorrentMode.DOWNLOAD, savePath = downloadsDir().absolutePath, pendingFileIntent = true, keepPending = false, cachePending = false).withIntent(keepIntent))
+        saveMeta(meta.copy(mode = TorrentMode.DOWNLOAD, savePath = target.absolutePath, pendingFileIntent = true, keepPending = false, cachePending = false).withIntent(keepIntent))
         applyFileIntent(h)
         // Now a download: the overnight window applies from here on.
         kickRules()
+    }
+
+    /** The folder a stream torrent is kept in (docs/HOME_DISK.md §24.2): asked of the app on the TV, else the internal Downloads folder. */
+    private fun keepTarget(h: TorrentHandle, meta: TorrentMeta, keepWanted: com.kirtanya.reel.core.stream.FileIntent): File {
+        val provider = targets ?: return downloadsDir()
+        val biggest = runCatching {
+            val fs = h.torrentFile()?.files() ?: return@runCatching null
+            val all = (0 until fs.numFiles()).filterNot { fs.padFileAt(it) }
+            val picked = if (keepWanted.fullTorrent || keepWanted.wantedFiles.isEmpty()) all else all.filter { it in keepWanted.wantedFiles }
+            (picked.ifEmpty { all }).maxOfOrNull { fs.fileSize(it) }
+        }.getOrNull()
+        return (provider.forKeep(biggest) ?: downloadsDir()).also { it.mkdirs() }
     }
 
     fun files(hash: String): List<TorrentFileEntry> {
@@ -722,6 +812,8 @@ class TorrentEngine(private val context: Context) {
      */
     suspend fun startStream(magnet: String, fileIdx: Int?, filenameHint: String?, tapMs: Long = EngineStats.now()): StreamInfo {
         val hash = Magnet.parse(magnet)?.infoHash ?: throw EngineException("That isn't a valid magnet link")
+        // A finished or half-done download whose USB disk is away: say so, never fetch it again into the cache (§24.5).
+        if (waiting.contains(hash)) throw EngineException(DownloadPlacement.UNPLUGGED)
         // Under the lock, so a cache trim that's mid-removal finishes first and then sees the claim.
         synchronized(streamLock) { starting.merge(hash, 1, Int::plus) }
         var created = false
@@ -1330,6 +1422,79 @@ class TorrentEngine(private val context: Context) {
         // Wrapped: an exception would cancel a fixed-delay task for good.
         engineExec.scheduleWithFixedDelay({ runCatching { evaluateNight() }.onFailure { Log.w(TAG, "night rule failed", it) } }, 30, 30, TimeUnit.SECONDS)
         engineExec.scheduleWithFixedDelay({ runCatching { govern() }.onFailure { Log.w(TAG, "governor failed", it) } }, 2, 2, TimeUnit.SECONDS)
+        engineExec.scheduleWithFixedDelay({ runCatching { evaluateVolumes() }.onFailure { Log.w(TAG, "volume check failed", it) } }, 5, 5, TimeUnit.SECONDS)
+    }
+
+    /** A USB volume was mounted or ejected (the app's StorageVolumeCallback): look now instead of at the next 5 s tick. */
+    fun volumesChanged() {
+        if (!started) return
+        runCatching { engineExec.execute { runCatching { evaluateVolumes() }.onFailure { Log.w(TAG, "volume check failed", it) } } }
+    }
+
+    /** Downloads on a USB disk that is not plugged in wait, out of the session; they come back with the disk (docs/HOME_DISK.md §24.5). Engine thread. */
+    private fun evaluateVolumes() {
+        if (metas.isEmpty()) return
+        val mounted = DownloadVolumes.mountedIds(context)
+        for (meta in metas.values.toList()) {
+            val dir = meta.savePath ?: continue
+            val id = UsbPaths.volumeIdOf(dir) ?: continue
+            val key = meta.infoHash
+            if (id in mounted) {
+                if (waiting.contains(key)) returnFromDisk(meta, id)
+            } else if (!waiting.contains(key)) {
+                leaveForDisk(meta, id)
+            }
+        }
+    }
+
+    private fun leaveForDisk(meta: TorrentMeta, volumeId: String) {
+        val key = meta.infoHash
+        waiting.add(key)
+        errors.remove(key)
+        // A player reading it gets the plain message, not a codec error.
+        val gone = StreamGoneException(DownloadPlacement.UNPLUGGED)
+        streams.remove(key)?.let { release(it, gone) }
+        gates.remove(key)?.close(gone)
+        preGate.remove(key)
+        val h = find(key)
+        if (h != null) {
+            val st = runCatching { h.status() }.getOrNull()
+            val known = if (st != null && st.totalWanted() > 0) meta.copy(lastName = st.name().ifBlank { meta.lastName }, lastWanted = st.totalWanted(), lastDone = st.totalWantedDone()) else meta
+            if (known != meta) saveMeta(known)
+            // Fresh resume data first, then out of the session without deleting a byte: with its folder gone libtorrent would
+            // see missing files at the next check and could drop the progress it believes it has.
+            runCatching { h.saveResumeData(TorrentHandle.SAVE_INFO_DICT) }
+            engineExec.schedule({
+                if (waiting.contains(key)) find(key)?.let { runCatching { handles.removeTorrent(it) } }
+                refreshSnapshotsSoon()
+            }, 1500, TimeUnit.MILLISECONDS)
+        }
+        EngineStats.log("dl-disk", mapOf("key" to key.take(12), "state" to "waiting", "vol" to volumeId.take(8)))
+        refreshSnapshotsSoon()
+    }
+
+    private fun returnFromDisk(meta: TorrentMeta, volumeId: String) {
+        val key = meta.infoHash
+        // The disk came back before the torrent was taken out: it simply carries on.
+        if (find(key) == null) {
+            val ok = runCatching { restoreOne(meta) }.isSuccess && find(key) != null
+            if (!ok) { metas[key] = meta; return } // not added: stay waiting, try again at the next tick
+        }
+        waiting.remove(key)
+        errors.remove(key)
+        EngineStats.log("dl-disk", mapOf("key" to key.take(12), "state" to "back", "vol" to volumeId.take(8)))
+        refreshSnapshotsSoon()
+    }
+
+    /** The name and size last seen of every download on a USB disk, so the list can show it while the disk is away. */
+    private fun rememberUsbDownloads() {
+        for (s in _torrents.value) {
+            if (!s.onUsb || s.waitingForDisk || !s.hasMetadata) continue
+            val m = metas[s.infoHash] ?: continue
+            if (m.lastName != s.name || m.lastWanted != s.wantedBytes || m.lastDone != s.doneBytes) {
+                saveMeta(m.copy(lastName = s.name, lastWanted = s.wantedBytes, lastDone = s.doneBytes))
+            }
+        }
     }
 
     /** Re-runs the overnight window on the engine thread (EngineService calls this from the window-edge alarm). */
@@ -1496,6 +1661,7 @@ class TorrentEngine(private val context: Context) {
                 val key = h.key()
                 metadataWaiters[key]?.complete(Unit)
                 applyFileIntent(h)
+                usbMetadataStep(h, key)
                 h.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
             }
             AlertType.SAVE_RESUME_DATA -> {
@@ -1569,13 +1735,31 @@ class TorrentEngine(private val context: Context) {
                 handles.torrents().filter { it.isValid && it.needSaveResumeData() }
                     .forEach { it.saveResumeData(TorrentHandle.SAVE_INFO_DICT.or_(TorrentHandle.ONLY_IF_MODIFIED)) }
             }
+            runCatching { rememberUsbDownloads() }
             // The DHT table every ~10 min: the TV process is often killed without a shutdown.
             if (++ticks % (if (formFactor == FormFactor.TV) 20 else 10) == 0) saveSessionState()
         }
     }
 
+    /** The list row of a download whose USB disk is away: last seen name and progress, paused, with the plain notice (§24.5). */
+    private fun waitingSnapshot(meta: TorrentMeta): TorrentSnapshot {
+        val done = meta.lastWanted > 0 && meta.lastDone >= meta.lastWanted
+        return TorrentSnapshot(
+            infoHash = meta.infoHash,
+            name = meta.lastName ?: meta.infoHash.take(8),
+            mode = meta.mode,
+            phase = if (done) TorrentPhase.FINISHED else TorrentPhase.PAUSED,
+            progress = if (meta.lastWanted > 0) (meta.lastDone.toFloat() / meta.lastWanted).coerceIn(0f, 1f) else 0f,
+            wantedBytes = meta.lastWanted, doneBytes = meta.lastDone, downBps = 0, upBps = 0, peers = 0, seeds = 0,
+            hasMetadata = meta.lastWanted > 0, savePath = meta.savePath.orEmpty(),
+            fileIndex = meta.streamFileIndex ?: meta.wantedFiles.singleOrNull(),
+            userPaused = meta.userPaused, notice = DownloadPlacement.UNPLUGGED, onUsb = true, waitingForDisk = true,
+        )
+    }
+
     private fun refreshSnapshots() {
-        _torrents.value = handles.torrents().filter { it.isValid }.mapNotNull { h ->
+        val away = waiting.mapNotNull { metas[it] }.map(::waitingSnapshot)
+        _torrents.value = (handles.torrents().filter { it.isValid && !waiting.contains(it.key()) }.mapNotNull { h ->
             val hash = h.key()
             val meta = metas[hash] ?: return@mapNotNull null
             val st = h.status()
@@ -1600,7 +1784,7 @@ class TorrentEngine(private val context: Context) {
                 seeds = st.numSeeds(),
                 hasMetadata = st.hasMetadata(),
                 savePath = h.savePath(),
-                error = errors[hash],
+                error = errors[hash] ?: meta.blocked,
                 stalledForSec = stalled,
                 fileIndex = meta.streamFileIndex ?: meta.wantedFiles.singleOrNull(),
                 userPaused = meta.userPaused,
@@ -1611,8 +1795,9 @@ class TorrentEngine(private val context: Context) {
                     hash in cappedKeys -> "Slowed while you watch"
                     else -> null
                 },
+                onUsb = UsbPaths.volumeIdOf(h.savePath()) != null,
             )
-        }.sortedByDescending { metas[it.infoHash]?.addedAt ?: 0 }
+        } + away).sortedByDescending { metas[it.infoHash]?.addedAt ?: 0 }
     }
 
     private fun phaseOf(h: TorrentHandle, st: TorrentStatus): TorrentPhase = when {
@@ -1661,62 +1846,74 @@ class TorrentEngine(private val context: Context) {
             runCatching { json.decodeFromString(TorrentMeta.serializer(), String(readAtomic(file) ?: return@mapNotNull null)).migrated() }
                 .onFailure { Log.w(TAG, "meta ${file.name} unreadable", it) }.getOrNull()
         }.sortedBy { it.addedAt }
+        val mounted = DownloadVolumes.mountedIds(context)
+        for (meta0 in loaded) {
+            // Saved on a USB disk that is not plugged in: not added (libtorrent would find the files missing); it waits (§24.5).
+            val dir = meta0.savePath
+            if (dir != null && UsbPaths.isMissing(dir, mounted)) {
+                metas[meta0.infoHash] = meta0
+                waiting.add(meta0.infoHash)
+                EngineStats.log("dl-disk", mapOf("key" to meta0.infoHash.take(12), "state" to "waiting", "vol" to UsbPaths.volumeIdOf(dir)?.take(8), "at" to "start"))
+                continue
+            }
+            runCatching { restoreOne(meta0) }.onFailure { Log.w(TAG, "restore ${meta0.infoHash.take(8)} failed", it) }
+        }
+    }
+
+    /** Re-adds one saved torrent from its resume data (or its bare magnet); the flags are [RestorePolicy]'s. Throws when it cannot be added. */
+    private fun restoreOne(meta0: TorrentMeta) {
         val night = rulesStore.rules.value.night
         val minute = minuteNow()
-        for (meta0 in loaded) {
-            runCatching {
-                var meta = meta0
-                val raw = readAtomic(File(stateDir, "${meta.infoHash}.resume"))?.let { bytes ->
-                    val ec = error_code()
-                    libtorrent.read_resume_data_ex(Vectors.bytes2byte_vector(bytes), ec).takeIf { ec.value() == 0 }
-                }
-                val params = if (raw != null) {
-                    AddTorrentParams(raw).also { p ->
-                        // Hybrid torrents used to be saved under their v2 hash: move them to the canonical key.
-                        val key = runCatching { keyOf(p.getInfoHashes()) }.getOrNull()
-                        if (key != null && key != meta.infoHash) meta = migrateKey(meta, key, p.getSavePath())
-                    }
-                } else {
-                    Log.w(TAG, "resume data for ${meta.infoHash.take(8)} missing; re-adding from its magnet")
-                    AddTorrentParams.parseMagnetUri("magnet:?xt=urn:btih:${meta.infoHash}").also { p ->
-                        p.setTrackers(DEFAULT_TRACKERS)
-                        p.setSavePath(meta.savePath ?: saveDirFor(meta.infoHash, meta.mode).absolutePath)
-                        if (meta.mode == TorrentMode.DOWNLOAD) meta = meta.copy(pendingFileIntent = true)
-                    }
-                }
-                val saved = params.getFlags()
-                // Finished downloads aren't known yet (no status before add): the first rules run releases those.
-                val nightHold = NightRule.holds(night, minute, meta.mode == TorrentMode.DOWNLOAD, meta.startNow, finished = false, claimed = false)
-                val decided = RestorePolicy.restore(
-                    RestoreFlags(
-                        autoManaged = saved.and_(TorrentFlags.AUTO_MANAGED).non_zero(),
-                        paused = saved.and_(TorrentFlags.PAUSED).non_zero(),
-                        sequential = saved.and_(TorrentFlags.SEQUENTIAL_DOWNLOAD).non_zero(),
-                    ),
-                    RestoreMeta(meta.mode == TorrentMode.DOWNLOAD, meta.userPaused, meta.seedingDone, meta.pausedForSpace, meta.pausedForStream, meta.wasAutoManaged,
-                        pausedForNight = meta.pausedForNight, nightHold = nightHold),
-                )
-                var flags = saved.without(TorrentFlags.AUTO_MANAGED).without(TorrentFlags.PAUSED).without(TorrentFlags.SEQUENTIAL_DOWNLOAD)
-                if (decided.autoManaged) flags = flags.or_(TorrentFlags.AUTO_MANAGED)
-                if (decided.paused) flags = flags.or_(TorrentFlags.PAUSED)
-                // Home disk P2P rule (§5.3): a download restored on a network where it must wait comes back paused.
-                else if (meta.mode == TorrentMode.DOWNLOAD && downloadHold(meta.infoHash)) flags = flags.without(TorrentFlags.AUTO_MANAGED).or_(TorrentFlags.PAUSED)
-                if (raw == null && (meta.mode == TorrentMode.STREAM || !meta.intent.fullTorrent)) flags = flags.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
-                params.setFlags(flags)
-                // libtorrent saves these in resume data: never let an old throttle or cap come back.
-                params.setDownloadLimit(0)
-                params.setUploadLimit(0)
-                params.setMaxConnections(-1)
-                params.piecePriorities(arrayOf<Priority>())
-                val heldForNight = nightHold && !meta.userPaused && !meta.seedingDone && !meta.pausedForSpace
-                meta = meta.copy(pausedForStream = false, pausedForNight = heldForNight, wasAutoManaged = null, savePath = meta.savePath ?: params.getSavePath())
-                metas[meta.infoHash] = meta
-                if (meta != meta0) saveMeta(meta)
-                metadataWaiters.getOrPut(meta.infoHash) { CompletableDeferred() }
-                val handle = handles.addTorrent(params, ErrorCode(error_code()))
-                if (!handle.isValid) metas.remove(meta.infoHash)
-            }.onFailure { Log.w(TAG, "restore ${meta0.infoHash.take(8)} failed", it) }
+        var meta = meta0
+        val raw = readAtomic(File(stateDir, "${meta.infoHash}.resume"))?.let { bytes ->
+            val ec = error_code()
+            libtorrent.read_resume_data_ex(Vectors.bytes2byte_vector(bytes), ec).takeIf { ec.value() == 0 }
         }
+        val params = if (raw != null) {
+            AddTorrentParams(raw).also { p ->
+                // Hybrid torrents used to be saved under their v2 hash: move them to the canonical key.
+                val key = runCatching { keyOf(p.getInfoHashes()) }.getOrNull()
+                if (key != null && key != meta.infoHash) meta = migrateKey(meta, key, p.getSavePath())
+            }
+        } else {
+            Log.w(TAG, "resume data for ${meta.infoHash.take(8)} missing; re-adding from its magnet")
+            AddTorrentParams.parseMagnetUri("magnet:?xt=urn:btih:${meta.infoHash}").also { p ->
+                p.setTrackers(DEFAULT_TRACKERS)
+                p.setSavePath(meta.savePath ?: saveDirFor(meta.infoHash, meta.mode).absolutePath)
+                if (meta.mode == TorrentMode.DOWNLOAD) meta = meta.copy(pendingFileIntent = true)
+            }
+        }
+        val saved = params.getFlags()
+        // Finished downloads aren't known yet (no status before add): the first rules run releases those.
+        val nightHold = NightRule.holds(night, minute, meta.mode == TorrentMode.DOWNLOAD, meta.startNow, finished = false, claimed = false)
+        val decided = RestorePolicy.restore(
+            RestoreFlags(
+                autoManaged = saved.and_(TorrentFlags.AUTO_MANAGED).non_zero(),
+                paused = saved.and_(TorrentFlags.PAUSED).non_zero(),
+                sequential = saved.and_(TorrentFlags.SEQUENTIAL_DOWNLOAD).non_zero(),
+            ),
+            RestoreMeta(meta.mode == TorrentMode.DOWNLOAD, meta.userPaused, meta.seedingDone, meta.pausedForSpace, meta.pausedForStream, meta.wasAutoManaged,
+                pausedForNight = meta.pausedForNight, nightHold = nightHold),
+        )
+        var flags = saved.without(TorrentFlags.AUTO_MANAGED).without(TorrentFlags.PAUSED).without(TorrentFlags.SEQUENTIAL_DOWNLOAD)
+        if (decided.autoManaged) flags = flags.or_(TorrentFlags.AUTO_MANAGED)
+        if (decided.paused) flags = flags.or_(TorrentFlags.PAUSED)
+        // Home disk P2P rule (§5.3): a download restored on a network where it must wait comes back paused.
+        else if (meta.mode == TorrentMode.DOWNLOAD && downloadHold(meta.infoHash)) flags = flags.without(TorrentFlags.AUTO_MANAGED).or_(TorrentFlags.PAUSED)
+        if (raw == null && (meta.mode == TorrentMode.STREAM || !meta.intent.fullTorrent)) flags = flags.or_(TorrentFlags.DEFAULT_DONT_DOWNLOAD)
+        params.setFlags(flags)
+        // libtorrent saves these in resume data: never let an old throttle or cap come back.
+        params.setDownloadLimit(0)
+        params.setUploadLimit(0)
+        params.setMaxConnections(-1)
+        params.piecePriorities(arrayOf<Priority>())
+        val heldForNight = nightHold && !meta.userPaused && !meta.seedingDone && !meta.pausedForSpace
+        meta = meta.copy(pausedForStream = false, pausedForNight = heldForNight, wasAutoManaged = null, savePath = meta.savePath ?: params.getSavePath())
+        metas[meta.infoHash] = meta
+        if (meta != meta0) saveMeta(meta)
+        metadataWaiters.getOrPut(meta.infoHash) { CompletableDeferred() }
+        val handle = handles.addTorrent(params, ErrorCode(error_code()))
+        if (!handle.isValid) metas.remove(meta.infoHash)
     }
 
     private fun migrateKey(meta: TorrentMeta, key: String, savePath: String?): TorrentMeta {
@@ -1796,6 +1993,9 @@ class TorrentEngine(private val context: Context) {
          * true = this download must wait on the current network, so it is added / restored paused.
          */
         @Volatile var downloadHold: (String) -> Boolean = { false }
+
+        /** Where "Keep" puts a stream that becomes a download (docs/HOME_DISK.md §24.2); set by the app on the TV. Null = the internal Downloads folder. */
+        @Volatile var targets: DownloadTargets? = null
 
         /** The canonical key ([TorrentKey]) of a libtorrent info-hash pair. */
         fun keyOf(ih: InfoHash): String = TorrentKey.canonical(if (ih.hasV1()) ih.v1.toHex() else null, ih.best.toHex())

@@ -1,5 +1,6 @@
 package com.kirtanya.reel.core.library
 
+import com.kirtanya.reel.core.homedisk.DownloadPlacement
 import com.kirtanya.reel.core.homedisk.P2pRule
 import com.kirtanya.reel.core.homedisk.P2pVerdict
 import com.kirtanya.reel.core.magnet.Magnet
@@ -24,6 +25,7 @@ enum class PrefetchWhy(val tag: String) {
     NO_SOURCE("no-source"),
     NOT_TORRENT("not-torrent"),
     NO_ROOM("no-room"),
+    TOO_BIG("too-big"),
 }
 
 sealed interface PrefetchStep {
@@ -97,13 +99,15 @@ object NextPrefetch {
     /**
      * Autoplay-next's pick ([pickNextSource]: same binge group, then same provider and resolution…), minus torrents the
      * engine already holds ([heldHashes], lower case): adding a file to the pack being streamed would turn that stream
-     * into a download. Only a torrent can be downloaded this way.
+     * into a download. Only a torrent can be downloaded this way. [underFatLimit] (TV with the USB disk, docs/HOME_DISK.md §24.3):
+     * swap a 4 GiB or bigger pick for a smaller source at the same or one-lower quality, when there is one.
      */
-    fun pick(previous: Source?, ranked: List<Source>, heldHashes: Set<String>): PrefetchPick {
+    fun pick(previous: Source?, ranked: List<Source>, heldHashes: Set<String>, underFatLimit: Boolean = false): PrefetchPick {
         val candidates = ranked.filterNot { it.kind == SourceKind.TORRENT && hashOf(it) in heldHashes }
         val source = pickNextSource(previous, candidates) ?: return PrefetchPick.None(PrefetchWhy.NO_SOURCE)
         if (source.kind != SourceKind.TORRENT || source.magnetUri() == null) return PrefetchPick.None(PrefetchWhy.NOT_TORRENT)
-        return PrefetchPick.Chosen(source)
+        // On the USB disk (FAT32) a file of 4 GiB or more cannot be saved: a smaller one at the same or one-lower quality wins.
+        return PrefetchPick.Chosen(if (underFatLimit) DownloadPlacement.preferUnderLimit(candidates, source) else source)
     }
 
     /** Free space after the reserve covers the file; nothing is evicted for a prefetch. */

@@ -74,6 +74,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     }
     /** Home disk: settings, Keystore secrets, connection manager, phone requests / TV agent (docs/HOME_DISK.md). */
     val home by lazy { com.kirtanya.reel.homedisk.Home(this) }
+    /** Where a new download is saved: the TV's USB disk when it is ready (docs/HOME_DISK.md §24). */
+    val downloadPlacer by lazy { com.kirtanya.reel.homedisk.DownloadPlacer(this) }
     val tvSync by lazy { com.kirtanya.reel.data.sync.TvSync(this, sources, watchlist, watched, hidden) }
     val phoneSync by lazy {
         val syncHttp = http.newBuilder().readTimeout(2, java.util.concurrent.TimeUnit.MINUTES).build()

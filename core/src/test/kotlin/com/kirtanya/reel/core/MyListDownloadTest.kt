@@ -56,6 +56,16 @@ class MyListDownloadTest {
         assertNull(MyListDownload.bestToDownload(listOf(service, trailer, noLink)))
     }
 
+    @Test fun bestOnUsbSkipsA4GibFileWhenASmallerOneIsCloseInQuality() {
+        fun t(h: String, q: Int, gb: Long) = torrent(h, q).copy(sizeBytes = gb * 1024 * 1024 * 1024, magnet = "magnet:?xt=urn:btih:" + "ab".repeat(20))
+        val ranked = listOf(t("big", 2160, 9), t("uhdSmall", 2160, 3), t("fhd", 1080, 2))
+        assertEquals("big", MyListDownload.bestToDownload(ranked)?.infoHash)
+        assertEquals("uhdSmall", MyListDownload.bestToDownload(ranked, underFatLimit = true)?.infoHash)
+        // Two steps down is too far: keep the big one (the placement then sends it to internal or refuses it).
+        val far = listOf(t("big", 2160, 9), t("sd", 1080, 1))
+        assertEquals("big", MyListDownload.bestToDownload(far, underFatLimit = true)?.infoHash)
+    }
+
     private fun dl(origin: DownloadOrigin, finished: Boolean) = KnownDownload("h${origin.hashCode()}", origin, finished)
     private val film = DownloadOrigin("movie", 550, null, null, "Fight Club")
     private fun ep(season: Int, episode: Int) = DownloadOrigin("tv", 7, season, episode, "Show")
