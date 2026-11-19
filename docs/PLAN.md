@@ -167,7 +167,7 @@ One libtorrent session (libtorrent4j) inside a foreground service. Every torrent
 - Reel publishes **Watch Next** programs for its own Continue watching (Android allows an app to write its own), so Google TV's system row can show them.
 
 ### 1.10 Settings
-- **Playback:** preferred quality, auto-play best source, autoplay next episode, subtitle style, default audio language, external player.
+- **Playback:** preferred quality, auto-play best source, autoplay next episode, download the next episode while watching (default on; STREAMING_V2 §7.7), subtitle style, default audio language, external player.
 - **Sources:** plugin repos (add/remove/refresh, per-plugin toggle and settings), addons (add by URL, reorder), Files-search providers (Torznab URL+key, Internet Archive, RSS), source priority order.
 - **Engine:** profile, upload, limits, cache budget (with a "Clear cache" button showing GB used), network rules, ports.
 - **Downloads:** folder, max active, seeding rules.

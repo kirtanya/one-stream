@@ -53,6 +53,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val sourcePrefs by lazy { com.kirtanya.reel.data.SourcePrefsStore(this) }
     val titlePrefs by lazy { com.kirtanya.reel.data.TitlePrefsStore(this) }
     val autoDownloader by lazy { com.kirtanya.reel.data.AutoDownloader(this) }
+    /** "Download the next episode while watching" (docs/STREAMING_V2.md §7.7); the player feeds it. */
+    val nextPrefetch by lazy { com.kirtanya.reel.data.NextEpisodePrefetcher(this) }
     /** The phone as the TV's remote (wake + "Send to TV"). */
     val tvRemote by lazy { com.kirtanya.reel.tvremote.TvRemote(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }

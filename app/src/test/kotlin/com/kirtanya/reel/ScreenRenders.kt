@@ -748,6 +748,7 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvSettingsAppearance() = tvSettingsPage(SettingsPage.Appearance)
     @Test @Config(qualifiers = TV) fun tvSettingsAddons() = tvSettingsPage(SettingsPage.Addons)
     @Test @Config(qualifiers = TV) fun tvSettingsSubtitles() = tvSettingsPage(SettingsPage.Subtitles)
+    @Test @Config(qualifiers = TV) fun tvSettingsPlayback() = tvSettingsPage(SettingsPage.Playback)
     @Test @Config(qualifiers = TV) fun tvSettingsStore() = tvSettingsPage(SettingsPage.Store)
     @Test @Config(qualifiers = TV) fun tvSettingsStoreFiltered() = render(
         "settings-store-filtered", tv = true,

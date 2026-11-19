@@ -1198,6 +1198,22 @@ reclaimable  = Σ size of candidates (protection ignored)
 - `StreamInfo.candidateIndex` lets PlayerActivity write the winning source into history.
 - With no alternates, a single candidate runs with the 45 s / 90 s metadata rule.
 
+### 7.7 Next-episode download ("Download the next episode while watching", addendum 2026-11-19)
+A user setting (Settings → Playback, `PlaybackPrefs.prefetchNext`, **default on**). While an episode of a series plays, the next one is fetched in the background as an ordinary **download** (Downloads folder, origin recorded), so that when it plays it starts from the file on disk. It is not the §7.5 prefetch overlay: that one only warms a torrent the player already has. Pure decision logic: `core/library/NextPrefetch`, `BufferWatch`; the wiring is `data/NextEpisodePrefetcher` (one per app), fed by the player's 10 s progress tick.
+
+- **When** (all must hold; `NextPrefetch.check`):
+  1. the setting is on;
+  2. the playing item is a TMDB episode and `Playback.next` exists (never a movie, never the last aired episode; the unaired check is the one Up next uses);
+  3. no download (running or finished) is known for that episode (`AutoDownload.missing` on the origins of the engine's DOWNLOAD torrents), and none was tried in the last 6 h (a deleted or failed prefetch is not retried in a loop);
+  4. the network rule allows a download **now** (`P2pRule.downloadsAllowed(P2pGate.verdict(DOWNLOAD))`; the TV always). It never prompts and never uses "Start now anyway": a verdict that is not Allow just waits and is asked again on the next tick;
+  5. the overnight window does not hold a new download now (`NightRule.holds`; the user's "only overnight" rule wins);
+  6. **the current episode has a healthy buffer** (`BufferWatch`): the player is READY with at least **15 s buffered ahead** (`totalBufferedDuration`; the TV's load control holds 30 s, the phone's 50 s), continuously for **30 s**. A stall, a seek that empties the buffer, or leaving READY restarts the 30 s. The download therefore never competes with the stream's start-up or a struggling stream.
+- **Which source** (`NextPrefetch.pick`): exactly what autoplay-next does, `pickNextSource(previous = current source, ranked search for the next episode)` (same binge group → same provider and resolution → same provider → best), with one exclusion: a torrent whose info-hash the engine already holds (the pack being streamed, or the user's own download) is not a candidate, because adding a file to an existing STREAM torrent would convert it to a download (`wantForDownload` → `keepInternal`) under the player's feet. If the pick is not a torrent (direct / debrid link) nothing is downloaded. The choice is remembered (`chosenFor(nextKey)`) and the player's autoplay-next uses it, so the file played is the file fetched.
+- **Room** (`NextPrefetch.fits`): free space at the downloads folder minus `CachePolicy.hardFloor` must cover the source's size (3 GiB assumed when unknown). Nothing is evicted for a prefetch.
+- **How:** `TorrentEngine.addMagnet(magnet, DOWNLOAD, fileIdx, filename)` + `DownloadOriginStore.put`, the same calls as the Sources page's Download. So everything in §8 applies unchanged: while the current episode is watched the §8.3 B watch cap (default AUTO, 25 % of the measured link) shares bandwidth with it, the P2P gate pauses it when the network stops allowing downloads, and the free-space and night rules hold it. Nothing is paused, removed or cancelled by the prefetch, and a download the user started is never touched; turning the setting off stops new prefetches only.
+- **Playing it:** the next episode's `startStream` finds the torrent already in the engine (§7.2 `find(hash)`), so the file's finished or partial pieces on disk are used at once and only the missing ones are fetched, with deadlines as for any stream.
+- **ReelStats:** `ev=nextPrefetch state=start key=<hash12> ep=s1e4 prov=… res=… size=… bufMs=…`; `ev=nextPrefetch state=done key=… ms=… bytes=…` when the torrent finishes (`gone` if removed first, `timeout` after 12 h); `ev=nextPrefetch state=skip why=<reason> ep=…` once per reason per episode for the decisions that are not plain waits (`already-have`, `no-source`, `not-torrent`, `no-room`, `last-episode` is silent).
+
 ---
 
 ## 8. Bandwidth governance and session settings
@@ -1487,6 +1503,7 @@ ReelStats ev=wait p=… ms=… pl=… fileReady=0|1 flush=0|1      (each reader 
 ReelStats ev=rebuf n=… ms=… pos=… ahead=… down=… peers=…
 ReelStats ev=seek from=… to=… left=0|1 ms=…              (seek → next READY)
 ReelStats ev=stall state=… ms=… ; ev=gov mode=… paused=… upCap=… ; ev=hedge … ; ev=grace start|end ; ev=perf code=…
+ReelStats ev=nextPrefetch state=start|done|gone|timeout|skip key=… ep=… (7.7)
 ReelStats ev=missedWake p=… ; ev=finishedWhileClaimed key=… ; ev=keep pieces=a/b state=… ; ev=subDropped ; ev=handoff
 ReelStats ev=tick peers=… seeds=… conns=… down=… up=… streamDown=… B=… aheadSec=… blockedMs=… deadlines=… ops/s=… jni/s=… alerts/s=… tcEmpty=… flushWaits=… guard=… heapMb=… freeMb=…   (every 5 s while ACTIVE)
 ReelStats ev=end ttm=… ttfp=… ttff=… rebuf=n/Σms/max seeks=n p50=… p90=… waits=n/max fatalSlow=0 missedWake=0 avgDown=… peakPeers=… bytes=… govPaused=… grace=…

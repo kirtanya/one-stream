@@ -37,6 +37,27 @@ Evidence: `source-options` TV render, `TvSourceOptionsTest`.
 ---
 
 
+**2026-11-19 · "Download the next episode while watching" (Settings → Playback, default on)**
+User: while watching a series, the next episode should start downloading by itself and be on disk, so it starts
+seamlessly. Spec: STREAMING_V2 §7.7; logic + tests: `core/library/NextPrefetch` (decision, source pick, room) and
+`BufferWatch`; wiring: `data/NextEpisodePrefetcher`, fed by the player's 10 s tick.
+- It is an ordinary download (`addMagnet(DOWNLOAD)` + origin), not a new engine mode: the §8.3 watch cap shares the
+  link with the stream, the P2P gate / overnight window / storage rules apply unchanged, and nothing is paused,
+  removed or cancelled by it. The next episode's `startStream` finds the torrent already in the engine and uses the
+  pieces on disk.
+- Starts only after 15 s buffered ahead continuously for 30 s (never while the stream is starting or struggling);
+  only when the network rule says Allow right now (no prompts, no "Start now anyway"); never for films, the last
+  episode, or an episode that already has a download; not again within 6 h of a try.
+- Source = autoplay-next's pick (same binge group / provider / resolution), except a torrent the engine already holds
+  is skipped: adding a file to the pack being streamed would convert that stream into a download. A link (debrid)
+  pick downloads nothing. Autoplay-next then plays the very source that was fetched.
+- Room: free space minus the storage floor must cover the file (nothing is evicted for it). On the TV (1.7 GB free)
+  this means prefetch mostly stays off until space is freed; the setting still shows the same.
+- ReelStats `ev=nextPrefetch state=start|done|gone|timeout|skip`. Evidence: unit tests only (no device / P2P from the
+  Mac); device check at home pending.
+
+---
+
 **2026-11-16 · TV Home: one row in view, the backdrop smaller and top-right, a black foot**
 User: the backdrop was hidden behind the rail and the title text, and two rows showed. Now the info block and rows sit
 `Cinema.tvHomeDrop` (72 dp) lower so the focused row is the one fully in view; the backdrop is 90 % of the width and
