@@ -724,6 +724,8 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvRailFocused() = render("rail-focused", tv = true, history = true, focusLeft = 1, content = tvApp())
     /** ◄ then ► returns to the card you left. */
     @Test @Config(qualifiers = TV) fun tvRailBack() = behaviour().let { render("rail-back", tv = true, history = true, focusRight = 2, focusLeft = 3, thenRight = 1, content = tvApp()) }
+    /** ► along a row to its end: focus rests on the "View all" card. */
+    @Test @Config(qualifiers = TV) fun tvHomeViewAll() = behaviour().let { render("home-view-all", tv = true, history = true, focusDown = 3, focusRight = 30, content = tvApp()) }
     private fun tvHomeCards(name: String, shape: com.kirtanya.reel.ui.home.TvCardShape, size: com.kirtanya.reel.ui.home.TvCardSize) {
         com.kirtanya.reel.ui.home.HomeLayout.init(app); com.kirtanya.reel.ui.home.HomeLayout.reset()
         com.kirtanya.reel.ui.home.HomeLayout.chooseTvCardShape(shape)
