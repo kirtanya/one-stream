@@ -7,6 +7,11 @@ Engine behaviour stays governed by `docs/STREAMING_V2.md`; this spec adds the ho
 the engine changes it needs (§8.8, §18). Written 2026-10-21 against libtorrent4j 2.1.0-39, media3 1.11.1,
 NanoHTTPD 2.3.1 and org.codelibs:jcifs 3.0.4 (APIs checked in the jars, §20).
 
+**Revision 2 (2026-11-19): a second backend, "USB disk on this TV" (§23).** The router turned out to have no SMB
+(only FTP), so the library can also live on a USB drive plugged into the TV. §3 (layout, manifests, piece map,
+lease, invariants) and §7–§15 hold for both backends; §4–§6 (SMB client, home detection, credentials) are the
+**Network folder** backend only. Everything FAT32-specific (4 GB files, names, power cuts) is in §23.
+
 Hard rules, unchanged and binding here too:
 - **No BitTorrent traffic from the work Mac or the office network.** The phone's own downloads follow the
   network rule in §5.3; the TV only ever downloads at home. Tests that move P2P traffic run at home only.
@@ -956,8 +961,9 @@ Order: 2 (now) → 1.1–1.3 (when the disk exists) → 3 → 4 → 5 → 6 → 
 ## 21. Open questions
 
 **For the user (product):** answered 2026-10-21 (DECISIONS.md) except Q1, which waits for the disk:
-1. Router model and what the share speaks (Phase 0 / 1.1). The disk must be exFAT or NTFS, not FAT32 (4 GB
-   file limit; the Test checks).
+1. ~~Router model and what the share speaks~~ **[Decided 2026-11-19]** the Airtel AOT-4221SR has no SMB (FTP only), so
+   the disk goes into the TV (§23). On the network-folder backend the disk must still be exFAT or NTFS (the Test
+   checks); on the TV's USB backend FAT32 is fine because big files are split (§23.5).
 2. ~~Mobile data~~ **[Decided]** wait for Wi-Fi by default; "Start now anyway" per download; a switch.
 3. ~~Other Wi-Fi~~ **[Decided]** ask once per network (remembered); office: never ("Download at home instead").
 4. ~~Play~~ **[Decided]** follows the rule: blocked at work (offer Download at home), unknown Wi-Fi asks once.
@@ -988,3 +994,181 @@ Tailscale throughput from the R4, reconnect ramp after a reset, disk spin-up del
 | Seeding from the disk | Extra traffic and complexity for a personal library; the TV stops at finish |
 | Transcoding on the TV for away playback | The 32-bit TV can't do it in real time |
 | A small always-on box (Pi / NAS) next to the router | Would make all of this simpler, but it is new hardware; noted for the user if the conveyor disappoints |
+
+---
+
+## 23. USB disk on this TV (second backend) **[Decided 2026-11-19]**
+
+### 23.1 Why, and what stays the same
+- The Airtel AOT-4221SR router has no SMB, only FTP (FTP has no random access worth building on). The user
+  plugged a 512 GB PiBOX SSD into the Acer R4 instead. The TV is already the home agent (§2): always on, at home,
+  owner of downloads, index, retention and every outside connection. Putting the disk in it removes the network
+  hop between the conveyor and the disk: the TV writes the disk like a local folder. (The conveyor's slice budget of
+  §8 is still needed, because libtorrent keeps its own local slice on the TV's small internal storage, and
+  the rolling reset still frees it.)
+- The user picks the backend in Settings → Home storage: **USB disk on this TV** or **Network folder**
+  (`HomeSettings.backend`, default Network so existing set-ups don't change). Only one backend is active; the
+  other's settings stay saved. The choice is sent to the TV in `home.config` (`backend`, additive) and is shown
+  on the phone's page too (worded "USB disk on your TV").
+- Same layout (§3.1), manifests (§3.2), piece maps (§3.3), lease (§3.4), invariants I1–I5, retention (§13),
+  delete-where (§14). I6 (no sign-in off the home network) does not apply: nothing is signed into and nothing
+  crosses a network. Home detection (§5.2) is still done, the phone's P2P rule needs it.
+- Everything the app does to the disk goes through one small interface, `HomeStore` (§23.9), with a USB
+  implementation (plain files, split pieces) and an SMB one (jcifs). Nothing else in the app knows which is active.
+
+### 23.2 Choosing the volume
+- Source: `StorageManager`. For each folder in `getExternalFilesDirs(null)` (one per mounted volume the app can use;
+  index 0 is the internal "emulated" storage) the app asks `StorageManager.getStorageVolume(File)` and builds
+  `VolumeFacts` (id = the volume's UUID such as `37EE-1DEE`, description = the name Android shows, removable,
+  emulated, primary, mounted, the folder, free and total bytes of that folder's file system). `StorageVolume.getDirectory()`
+  is not needed (API 30+; the app dir already tells the mount point).
+- Rule (pure, `core/homedisk/VolumeChoice`):
+  1. Candidates: mounted, **removable**, **not emulated / primary**, with an app folder. (The TV's own storage is
+     never a home disk: it is the 1.7 GB the conveyor is built to avoid.)
+  2. The volume used last time (remembered id, `HomeSettings.usbVolume`) when it is a candidate.
+  3. Otherwise the candidate with the most total bytes, then the most free bytes, then the smaller id.
+  4. The chosen id is remembered the first time it is used. Another disk plugged in later does not take over from
+     the remembered one while that one is present; when the remembered one is absent and another candidate is
+     there, the other one is used and remembered (a different disk is just a different library, its own
+     `disk.json` says which; nothing is lost).
+- Fewer than 2 GB free = "Full" (the same threshold the Test uses for refusing to start a job). No candidate =
+  "Not plugged in". Android's own state words (unmounted, checking, ejecting, bad removal, unmountable) all fold
+  into "Not plugged in" except **unmountable** (a disk Android can't read): "Can't read this disk. Format it
+  FAT32 or exFAT on a computer".
+- Re-evaluated when a volume changes state (`StorageManager.registerStorageVolumeCallback`, API 30+, registered by
+  `HomeDisk` on the TV), when Settings opens, when the backend or its settings change, and every 15 min (covers a TV that
+  doesn't report a change). minSdk is 28: below 30 only the other moments apply.
+
+### 23.3 Write access on Android TV: the app's own folder on the volume **[Decided]**
+- Location: `<volume>/Android/data/com.kirtanya.reel/files/OneStream/…` (the folder `getExternalFilesDirs` returns for
+  that volume, plus `OneStream/`; everything in §3.1 hangs below it). No permission, no dialog, no Settings trip, works
+  on the R4 (Android 14) with a plain `java.io.File`. The FUSE layer the volume is mounted through (checked: `/dev/fuse
+  on /storage/37EE-1DEE`) passes ordinary random-access reads and writes through.
+- Rejected, with reasons:
+  | Alternative | Why not |
+  |---|---|
+  | A visible `OneStream/` folder at the disk's root with `MANAGE_EXTERNAL_STORAGE` | The "All files access" screen is often missing on Android TV builds and needs a mouse-like flow; Google Play restricts the permission (this is a personal app, but the TV's Settings route is the problem); and one wrong grant dialog on a TV with only a remote is a dead end. |
+  | SAF (`ACTION_OPEN_DOCUMENT_TREE`) | Needs a picker UI the TV may not have, every call goes through a ContentResolver (slow for 4 GB streaming reads, no `RandomAccessFile`), and the grant is lost when the disk is reformatted. |
+  | Raw `/dev/block` or USB host mass-storage access | Needs the user to approve each plug-in and a file-system driver in the app. Far too much. |
+- **The cost, and why it is accepted:** Android deletes `Android/data/<package>/` on the disk when the app is
+  uninstalled (and `adb uninstall` does it too). The library would go with it. Mitigations, all part of the decision:
+  1. The app is only ever updated with `install -r` (same signing key; the key rotation of 2026-11 already makes the
+     release script the only way to ship). A signature mismatch is the one realistic reason to uninstall: never
+     uninstall the TV app without copying `library/` first.
+  2. The folder is an ordinary, readable folder: plug the disk into a Mac or Windows PC (FAT32, both write it) and
+     copy `library/` anywhere. On the disk it shows as `Android/data/com.kirtanya.reel/files/OneStream/library/`
+     (the README.txt at `OneStream/README.txt` says so).
+  3. Only `library/` is irreplaceable; `cache/` and `incoming/` are rebuildable by design.
+  4. **[Open, later]** an "Export library to a visible folder" action and `android:hasFragileUserData="true"` (Android
+     prompts to keep app data on uninstall) can narrow the risk further. Not built now.
+
+### 23.4 Files on the volume
+- Same tree as §3.1, rooted at `files/OneStream/`. A logical file `X` is stored as `X` (one piece) or `X.001`, `X.002`, …
+  (§23.5). While it is being written it carries `.part`: `X.part` or `X.001.part`, `X.002.part`, … (§23.6).
+- Data files are **not** pre-sized with `setLength` on this backend (§3.1 says "created at their final size"): FAT32
+  has no sparse files, so extending a file writes real zeros (about 4 GB of them for one piece). A piece grows as bytes
+  are written; a write past the end zero-fills the gap (the file system does it), which only happens with out-of-order
+  pieces and is the cost of the format. Readers never read unmapped ranges (I4), so the zeros are never trusted.
+- **Names (FAT32 rules, pure `core/homedisk/FatNames`)**, on top of `DiskLayout.clean` (which already removes
+  `< > : " / \ | ? *` and control characters, trailing dots / spaces, and caps a component at 120 characters, so the
+  255-character FAT limit holds even with `.001.part` added):
+  - a stem that is a Windows device name (`CON PRN AUX NUL COM1–9 LPT1–9`, any case, with or without an extension) gets
+    a `_` appended to the stem: the Windows PC the user may plug the disk into can't open those;
+  - a name ending in `.` + three digits, or in `.part`, gets `_` appended, so it can never be mistaken for a piece or a
+    part file (a torrent's own `movie.7z.001` is stored as `movie.7z.001_`; the manifest keeps the original name);
+  - names are compared case-insensitively (as in §3.1); the total path under `OneStream/` stays ≤ 240.
+
+### 23.5 FAT32's 4 GB limit: split files **[Decided]**
+- FAT32 holds at most 4 GiB − 1 bytes per file. A film in 4K easily exceeds it. Any logical file larger than one piece
+  is stored as numbered pieces **`name.mkv.001`, `.002`, …**; a file that fits in one piece is stored whole under its own name.
+- **Piece size = 4095 MiB (4,293,918,720 bytes)**, a safe 1 MiB under the FAT32 maximum (some stacks, including
+  Windows tools and FUSE layers, mishandle a file of exactly the maximum). Every piece except the last has exactly this
+  size; the last has `size − (n − 1) × piece` bytes (1 … piece). The number of pieces `n = ceil(size / piece)`
+  (size 0 → one empty whole file). Three digits cover 999 pieces ≈ 4 TB, more than any disk this app will see.
+- **Offset maths** (pure `core/homedisk/SplitMath`, all with tests): logical offset `o` lives in piece index
+  `o / piece` (0-based; the file name carries index + 1) at local offset `o % piece`. A read of `[o, o + len)` is cut at every
+  multiple of `piece` into runs `(pieceIndex, localOffset, length)`; the reader serves them in order and the caller sees
+  one continuous stream. Seeking is free (no state): a read at any offset opens its piece directly.
+- Where it is read: every home-disk file read goes through `HomeStore.read`, so the player's disk source (`SmbDataSource`
+  in §10.2 becomes `HomeDataSource` over a `HomeStore`), the TV's `HomeStreamServer` (§11) and the hybrid reader (§10.4) all
+  get seeking across pieces without knowing about them. `ChunkReader`'s 1 MiB chunks (§10.2) sit on top and never see a
+  boundary. `TorrentDataSource` (the swarm reader, in-app) is untouched: it reads libtorrent's local files, not the disk.
+- A file's completeness is decided by piece count and sizes: listing shows a split file only when piece `.001` exists and
+  every later piece up to `n` exists with full size (the last one non-empty), there are at least two pieces (a lone full-size
+  `.001` is not a file: a file that small is stored whole) and no higher-numbered piece is left after a gap; an orphan `.002`
+  without `.001` is ignored (§23.6). An empty file is one empty whole file (its part file is created by the first, empty, write).
+- Writing: `HomeStore.write(path, pos, bytes)` cuts the write at piece boundaries the same way. The file's total size
+  is known up front (manifest) so the writer knows `n`; it is not needed for a read.
+- The SMB backend never splits (exFAT / NTFS share, the Test's big-file check says so); the interface hides the difference.
+
+### 23.6 Power cuts and unplugging **[Decided]**
+- **Write to part files, flush often, rename on completion.** Data goes to `X.part` / `X.001.part`…; a durability point
+  (§4.4's idea, here `FileDescriptor.sync()` on each touched piece) comes before the `.parts` map is written (I1); a map is written
+  with the existing atomic rename (§3.3, which FAT32 supports: `rename` over an existing file is a replace on this
+  stack, and the `.prev` fallback covers the gap). Flush every 32 MiB or 10 s (§8.4) and at file end.
+- **Commit** = rename `.part` away. The rename order is pieces `n … 2` first and `.001` last: `.001` is the commit mark
+  (§23.5), so a listing never shows a half-committed file. `rename` is atomic per piece on FAT. A cut in the middle leaves
+  `X.001.part` plus some committed later pieces: the next start sees the manifest still says `incoming` and finishes the
+  renames (idempotent: it renames whatever `.part` is left). Moving to `library/` is the same rename with a new
+  folder (same volume, so a rename, never a copy).
+- **A volume that disappears (unplugged, TV off, disk sleeps and drops) is a normal state, not an error:**
+  - Settings shows plainly "Not plugged in" (grey, no red), jobs go to `WAITING_DISK` (§15), the conveyor holds as in §15,
+    playback from the disk falls to "Other sources" with the reason "Disk not plugged in".
+  - A write or read that fails with an I/O error while the volume is no longer mounted is treated as that state, not
+    logged as a failure; one while it is mounted is an error (`Error(text)`).
+  - When the volume is back (same id), the health check sees it and everything resumes; the mover re-verifies the last 16
+    pieces it wrote (§8.5) because FAT's write ordering is not guaranteed after a cut.
+  - FAT32 has no journal: after an unclean unplug Android may mark the volume "needs checking". The first Test / health check
+    after that verifies `disk.json`, and the verify pass of §8.4 re-reads every piece before a title is declared complete.
+
+### 23.7 The phone reaches the library through the TV
+- The phone never reads the USB disk. On the **USB** backend the §10.1 routing loses rule 2 (SMB at home): every disk
+  play is rule 3, `home.stream` → token URL → HTTP from the TV (§11) on the LAN at home, over Tailscale away. The TV's
+  `HomeStreamServer` reads the disk through `HomeStore.read`, seeking across pieces.
+- Downloads, library, delete and jobs use the existing `home.*` RPC (§9), unchanged. The phone → disk copy job (§7) on this
+  backend uploads through the TV instead of over SMB: it sends chunks with the same 8 MiB chunk + hash scheme to a new
+  `home.put` operation on the TV (Phase 4 work; until then the phone's "Copy phone downloads to the home disk" stays idle
+  on this backend, and Settings says "Copied through your TV" as a hint). The phone's "At home" sheet counts as set up when the backend is USB and a TV is paired.
+- `HomeSummary` in the TV's hello carries the disk state and free bytes, so the phone can show "USB disk on your TV · Ready · 477 GB free".
+- The Mac reaches the library by plugging the disk in (FAT32 reads on macOS and Windows).
+
+### 23.8 Settings copy (TV page; sentence case, short)
+- Choice, two rows: **USB disk on this TV** — "A drive plugged into the TV. No network folder needed." ·
+  **Network folder** — "A shared folder on your router."
+- USB card: disk name (e.g. "PiBOX SSD"), "477 GB free of 512 GB", status **Ready** / **Not plugged in** / **Full** /
+  "Can't read this disk". Buttons: **Test** (write + read back + split check), no password fields. Hint when not plugged
+  in: "Plug a drive into the TV. Use FAT32 or exFAT; FAT32 works on Mac and Windows too."
+- The network fields (address, folder, user, password) show only when Network folder is chosen.
+
+### 23.9 Code map and the interface
+- `core/homedisk/` (pure, tested): `HomeBackend`, `SplitMath`, `FatNames`, `VolumeChoice` (+ `VolumeFacts`, `VolumeState`), `HomeStore`
+  (interface: `freeBytes`, `totalBytes`, `exists`, `size`, `list`, `read`, `write`, `flush`, `commit`, `rename`, `delete`, `mkdirs`),
+  `UsbStore` (the file implementation over a root folder with an injectable piece size, so tests exercise splitting with tiny
+  pieces) and `UsbTest` (§23.10, also pure: it runs on a temp folder in unit tests).
+- `app/homedisk/`: `UsbDisk` (StorageManager → `VolumeFacts`, the chosen volume's `OneStream` folder, the state callback),
+  `HomeDisk` (state, Test and stats for either backend), `Home.usb`. **`SmbStore`** (the jcifs implementation of `HomeStore`, no
+  splitting) is written together with the conveyor (Phase 5), the first code that reads or writes the disk through the
+  interface; until then the network backend only has the Test of §4.5 and nothing else would call it.
+- `HomeDiskState.Connected(protocol = "USB", …)` carries the disk name; `NotConnectedReason.NO_USB` / `UNREADABLE`;
+  `HomeDiskState.OnTv` is the phone's state on this backend. `HomeConfig.backend` carries the choice to the TV (on USB the
+  phone's network fields are not applied, so the TV keeps its saved ones).
+
+### 23.10 Test and SourcesProbe
+- The USB Test (Settings button, and `--es home test` when the backend is USB) never signs in, so it runs anywhere:
+  1. 8 MiB written to `OneStream/.onestream/test/test.bin.part`, flushed, committed, read back, SHA-256 compared; MB/s each way.
+  2. **Split round trip with a 4 MiB piece size**: a 10 MiB synthetic file written as three pieces in an awkward write order
+     (across both boundaries), read back across the boundaries at odd offsets, compared byte for byte. Proves the split code on
+     the real file system in about a second.
+  3. Rename with replace; delete everything it made (also after a failure).
+  The result line: "Ready · USB · write 31 MB/s · read 38 MB/s · 477 GB free · files over 4 GB are split".
+- `--es home test --ez big true` adds the **real** boundary check: it writes a file of `piece + 3 MiB` (the last 2 MiB of the first
+  4095 MiB piece and 3 MiB of the second, in a pattern; on FAT32 the rest of the first piece is real zeros, so it takes about a
+  minute on an SSD), reads across the boundary at several offsets, checks a single file past 4 GiB is refused (`setLength` fails on
+  vfat), and deletes everything. Never part of the Settings Test. (The default check uses small pieces because FAT32 has no
+  sparse files: a split set needs full-size pieces, so a "just over 4 GB" file can't be made cheaply.)
+- `--es home backend --es backend usb|network` switches the backend from adb (the same choice as the Settings buttons).
+
+### 23.11 Telemetry
+`ReelStats ev=hd-connect dev=tv src=usb ok=1|0 err=NoUsb|Unreadable|Full|Other` (once per change of state, not per refresh) and
+`ev=hd-test dev=tv src=usb ok=1|0 state=… writeMBps=… readMBps=… splitOk=1|0 ms=…` (no volume names or paths).
+

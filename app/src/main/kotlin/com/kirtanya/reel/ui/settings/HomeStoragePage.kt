@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.Send
+import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -37,7 +38,9 @@ import com.kirtanya.reel.core.homedisk.BadgeTone
 import com.kirtanya.reel.core.homedisk.DiskTest
 import com.kirtanya.reel.core.homedisk.DownloadWhere
 import com.kirtanya.reel.core.homedisk.HomeBadges
+import com.kirtanya.reel.core.homedisk.HomeBackend
 import com.kirtanya.reel.core.homedisk.HomeDiskState
+import com.kirtanya.reel.core.homedisk.NotConnectedReason
 import com.kirtanya.reel.core.homedisk.RetentionSettings
 import com.kirtanya.reel.core.homedisk.TitleWhere
 import com.kirtanya.reel.homedisk.TestOutcome
@@ -66,8 +69,14 @@ internal fun homeStorageSummary(v: HomeView, isTv: Boolean): String = when {
  * before the disk exists; the status says "Not connected" until it does.
  */
 internal fun LazyListScope.homeStorageItems(isTv: Boolean) {
-    item(key = "home-status") { StatusCard(isTv) }
-    item(key = "home-disk") { DiskCard(isTv) }
+    // The first card is the disk's status either way; on USB it also holds the disk's name, free space and Test.
+    item(key = "home-status") { if (rememberHomeView().settings.backend == HomeBackend.USB) UsbCard(isTv) else StatusCard(isTv) }
+    item(key = "home-backend") {
+        Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
+            BackendCard(isTv)
+            if (rememberHomeView().settings.backend == HomeBackend.NETWORK) DiskCard(isTv)
+        }
+    }
     if (isTv) item(key = "home-jobs") { TvJobsCard() } else item(key = "home-downloads") { DownloadsCard() }
     item(key = "home-cache") { CacheCard() }
     if (!isTv) item(key = "home-away") { AwayCard() }
@@ -91,6 +100,68 @@ private fun StatusCard(isTv: Boolean) {
         }
         Text(homeLine, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
     }
+}
+
+/** Where the library lives (docs/HOME_DISK.md §23.8): a drive in the TV, or a shared folder on the router. */
+@Composable
+private fun BackendCard(isTv: Boolean) {
+    val app = ReelApp.get(LocalContext.current)
+    val v = rememberHomeView()
+    val chosen = v.settings.backend
+    Section("Where to keep it") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+            HomeBackend.entries.forEach { b ->
+                val label = if (b == HomeBackend.USB && !isTv) "USB disk in your TV" else b.label
+                ReelButton(
+                    label, { app.home.update { it.copy(backend = b) } },
+                    kind = if (chosen == b) ButtonKind.Primary else ButtonKind.Ghost,
+                    icon = if (b == HomeBackend.USB) Icons.Rounded.Usb else Icons.Rounded.NetworkCheck,
+                )
+            }
+        }
+        Text(chosen.blurb, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
+    }
+}
+
+/**
+ * The USB disk's card, first on the page: status, name, free space, last test and Test (docs/HOME_DISK.md §23.8).
+ * A USB disk signs into nothing, so there's no home-network line. On the phone the drive is out of sight: it only
+ * says where the disk is and sends the choice to the TV.
+ */
+@Composable
+private fun UsbCard(isTv: Boolean) {
+    val app = ReelApp.get(LocalContext.current)
+    val v = rememberHomeView()
+    var note by remember { mutableStateOf<String?>(null) }
+    val state = v.disk.state
+    val connected = state as? HomeDiskState.Connected
+    val status = DiskTest.status(state, "").substringBefore(" · ")
+    Section(note = if (isTv) usbHint(state) else "Its status and Test are on the TV.") {
+        Text(status, style = Tokens.Type.heading, color = if (connected != null) Tokens.Colors.text else Tokens.Colors.textSecondary)
+        val name = connected?.name ?: (state as? HomeDiskState.NotConnected)?.takeIf { it.reason == NotConnectedReason.FULL }?.detail
+        name?.let { Text(it, style = Tokens.Type.label, color = Tokens.Colors.text) }
+        connected?.let { Text("${gb(it.freeBytes)} GB free" + (it.totalBytes?.let { t -> " of ${gb(t)} GB" } ?: ""), style = Tokens.Type.body, color = Tokens.Colors.textSecondary) }
+        v.disk.lastTest?.takeIf { isTv }?.let { Text("Last test: $it", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary) }
+        if (isTv) {
+            ReelButton(
+                if (v.disk.testing) "Testing…" else "Test",
+                { app.appScope.launch { note = (app.home.disk.test(confirmedHome = false) as? TestOutcome.Refused)?.line } },
+                kind = ButtonKind.Primary, icon = Icons.Rounded.NetworkCheck, enabled = !v.disk.testing,
+            )
+        } else if (v.tvPaired) {
+            ReelButton("Send to TV", { app.appScope.launch { note = app.home.client.sendConfig() } }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Send)
+        }
+        note?.let { Text(it, style = Tokens.Type.label, color = Tokens.Colors.accentBright) }
+    }
+}
+
+private fun gb(bytes: Long) = bytes / 1_000_000_000L
+
+private fun usbHint(s: HomeDiskState): String? = when ((s as? HomeDiskState.NotConnected)?.reason) {
+    NotConnectedReason.NO_USB -> "Plug a drive into the TV. Use FAT32 or exFAT; FAT32 works on Mac and Windows too."
+    NotConnectedReason.UNREADABLE -> "Format the drive FAT32 or exFAT on a computer, then plug it in again."
+    NotConnectedReason.FULL -> "Less than 2 GB free. Free some space or use a bigger drive."
+    else -> null
 }
 
 @Composable

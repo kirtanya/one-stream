@@ -36,6 +36,7 @@ class Home(private val app: ReelApp) {
         SyncClient(OkHttpFetcher(http, null))
     }
 
+    val usb by lazy { UsbDisk(app, this) }
     val disk by lazy { HomeDisk(app, this) }
     val gate by lazy { P2pGate(app, this) }
     val client by lazy { HomeClient(app, this) }
@@ -58,8 +59,8 @@ class Home(private val app: ReelApp) {
         _passwordSaved.value = !password.isNullOrEmpty()
     }
 
-    /** Set up = address, folder, user and password all there. */
-    val setUp: Boolean get() = settings.value.filledIn && passwordSaved.value
+    /** Set up = a USB disk chosen, or address, folder, user and password all there. */
+    val setUp: Boolean get() = settings.value.setUp(passwordSaved.value)
 
     /** Problem reports hide the password (lines dropped) and the user name and folder (masked), §6. */
     fun redactor(): Redactor {

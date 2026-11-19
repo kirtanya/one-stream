@@ -125,7 +125,7 @@ class HomeClient(private val app: ReelApp, private val home: Home) {
      */
     suspend fun sendConfig(): String {
         val s = home.settings.value
-        val body = HomeConfig(s.address, s.share, s.user, null, s.smb1, s.retention.days, s.retention.cacheSharePct, s.retention, atHome = home.disk.ui.value.home?.isHome == true)
+        val body = HomeConfig(s.address, s.share, s.user, null, s.smb1, s.retention.days, s.retention.cacheSharePct, s.retention, atHome = home.disk.ui.value.home?.isHome == true, backend = s.backend)
         // One pending config at a time: the newest replaces any older one.
         setOutbox(_outbox.value.filterNot { it.request.op == HomeOps.CONFIG })
         val req = HomeRpc.request(UUID.randomUUID().toString(), HomeOps.CONFIG, HomeConfig.serializer(), body)

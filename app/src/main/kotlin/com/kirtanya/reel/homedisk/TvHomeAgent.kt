@@ -2,6 +2,7 @@ package com.kirtanya.reel.homedisk
 
 import android.util.Log
 import com.kirtanya.reel.ReelApp
+import com.kirtanya.reel.core.homedisk.HomeBackend
 import com.kirtanya.reel.core.homedisk.HomeDiskState
 import com.kirtanya.reel.core.homedisk.HomeNetwork
 import com.kirtanya.reel.core.sync.HomeAgent
@@ -52,7 +53,10 @@ class TvHomeAgent(private val app: ReelApp, private val home: Home) {
     private suspend fun config(request: RpcRequest): RpcReply {
         val c = runCatching { HomeRpc.bodyOf(request, HomeConfig.serializer()) }.getOrNull() ?: return HomeRpc.error(request.id, "Bad settings")
         home.update { s ->
-            s.copy(address = c.address, share = c.share, user = c.user, smb1 = c.smb1, retention = c.retention ?: s.retention.copy(days = c.retentionDays, cacheSharePct = c.cacheShare))
+            val retention = c.retention ?: s.retention.copy(days = c.retentionDays, cacheSharePct = c.cacheShare)
+            // On the USB backend the phone has no network folder to send: keep the one saved here (§23.1: "the other's settings stay saved").
+            if (c.backend == HomeBackend.USB) s.copy(backend = c.backend, retention = retention)
+            else s.copy(backend = c.backend, address = c.address, share = c.share, user = c.user, smb1 = c.smb1, retention = retention)
         }
         c.password?.let(home::savePassword)
         // The phone proved it's at home with this TV, so the TV's first Test may sign in (I6) and saves this network.

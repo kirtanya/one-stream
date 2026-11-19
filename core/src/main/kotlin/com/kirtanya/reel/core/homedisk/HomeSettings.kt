@@ -36,6 +36,10 @@ data class RetentionSettings(
  */
 @Serializable
 data class HomeSettings(
+    /** Where the library lives (§23). Network stays the default so existing set-ups don't change. */
+    val backend: HomeBackend = HomeBackend.NETWORK,
+    /** The USB volume used last (its UUID); preferred while it is plugged in. TV only. */
+    val usbVolume: String? = null,
     val address: String = DEFAULT_ADDRESS,
     val share: String = "",
     val user: String = "",
@@ -51,6 +55,9 @@ data class HomeSettings(
     val networks: List<KnownNetwork> = emptyList(),
     val retention: RetentionSettings = RetentionSettings(),
 ) {
+    /** USB needs nothing typed in; a network folder needs address, folder, user and password. */
+    fun setUp(passwordSaved: Boolean): Boolean = backend == HomeBackend.USB || (filledIn && passwordSaved)
+
     /** Address, folder and user filled in (the password is checked separately). */
     val filledIn: Boolean get() = address.isNotBlank() && share.isNotBlank() && user.isNotBlank()
 

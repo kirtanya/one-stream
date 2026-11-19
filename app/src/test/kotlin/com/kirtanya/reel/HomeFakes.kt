@@ -3,6 +3,7 @@ package com.kirtanya.reel
 import com.kirtanya.reel.core.homedisk.DiskTest
 import com.kirtanya.reel.core.homedisk.DiskTestFacts
 import com.kirtanya.reel.core.homedisk.DownloadWhere
+import com.kirtanya.reel.core.homedisk.HomeBackend
 import com.kirtanya.reel.core.homedisk.HomeDecision
 import com.kirtanya.reel.core.homedisk.HomeDiskState
 import com.kirtanya.reel.core.homedisk.HomeReason
@@ -78,4 +79,31 @@ object FakeHome {
             TvJob("j2", listOf("r3"), "c9e15763f722f23e98a29decdfae341b98d53056", "The Night Manager · S2 E6", state = JobState.WAITING_DISK, createdAt = NOW - 1000, updatedAt = NOW),
         ),
     )
+
+    // ─── USB disk on the TV (docs/HOME_DISK.md §23) ─────────────────────────────────────────
+
+    private val usbSettings = HomeSettings(backend = HomeBackend.USB, usbVolume = "37EE-1DEE", downloadWhere = DownloadWhere.AT_HOME)
+    private val gb = 1_000_000_000L
+
+    /** The TV with the PiBOX SSD plugged in and tested. */
+    val usbReady = HomeView(
+        settings = usbSettings, isTv = true, tvPaired = true, network = NetworkNow(Transport.WIFI, fingerprint = HOME),
+        disk = DiskUi(
+            HomeDiskState.Connected("USB", 477 * gb, 512 * gb, smb1 = false, name = "PiBOX SSD"),
+            lastTest = "Ready · USB · write 38 MB/s · read 41 MB/s · 477 GB free · files over 4 GB are split", lastTestAt = NOW,
+            home = HomeDecision(true, HomeReason.FINGERPRINT),
+        ),
+    )
+
+    /** The drive is out: a normal state, said plainly with how to fix it. */
+    val usbUnplugged = usbReady.copy(disk = DiskUi(HomeDiskState.NotConnected(NotConnectedReason.NO_USB), home = HomeDecision(true, HomeReason.FINGERPRINT)))
+
+    /** Android sees a drive it can't mount (exFAT on this TV, or a damaged one). */
+    val usbUnreadable = usbReady.copy(disk = DiskUi(HomeDiskState.NotConnected(NotConnectedReason.UNREADABLE), home = HomeDecision(true, HomeReason.FINGERPRINT)))
+
+    /** Under 2 GB free. */
+    val usbFull = usbReady.copy(disk = DiskUi(HomeDiskState.NotConnected(NotConnectedReason.FULL, "PiBOX SSD"), home = HomeDecision(true, HomeReason.FINGERPRINT)))
+
+    /** The phone: the drive is in the TV, so the status is read there. */
+    val usbOnPhone = usbReady.copy(isTv = false, disk = DiskUi(HomeDiskState.OnTv, home = HomeDecision(true, HomeReason.FINGERPRINT), tvReachable = true))
 }

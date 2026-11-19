@@ -72,7 +72,7 @@ data class HomeView(
     val tvJobs: List<TvJob> = emptyList(),
     val isTv: Boolean = false,
 ) {
-    val setUp: Boolean get() = settings.filledIn && passwordSaved
+    val setUp: Boolean get() = settings.setUp(passwordSaved)
 }
 
 @Composable

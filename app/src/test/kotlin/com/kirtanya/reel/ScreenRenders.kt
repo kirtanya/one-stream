@@ -495,6 +495,7 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun settingsHomeStorage() = homePage("settings-homestorage", FakeHome.notConnected)
     @Test fun settingsHomeStorageNotSetUp() = homePage("settings-homestorage-not-set-up", FakeHome.notSetUp)
     @Test fun settingsHomeStorageNewWifi() = homePage("settings-homestorage-new-wifi", FakeHome.newWifi)
+    @Test fun settingsHomeStorageUsb() = homePage("settings-homestorage-usb", FakeHome.usbOnPhone)
     @Test fun downloadWhere() = render("download-where", windows = true, data = RenderData(home = FakeHome.newWifi)) {
         com.kirtanya.reel.ui.homedisk.DownloadWhereSheetView(pickOnly = false, onPick = { _, _ -> }, onDismiss = {})
     }
@@ -751,6 +752,14 @@ open class ScreenRenders(protected val variant: Variant) {
         render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvSettingsOver(SettingsPage.HomeStorage) }
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageNotSetUp() =
         render("settings-homestorage-not-set-up", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.notSetUp.copy(isTv = true))) { TvSettingsOver(SettingsPage.HomeStorage) }
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageUsb() =
+        render("settings-homestorage-usb", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.usbReady)) { TvSettingsOver(SettingsPage.HomeStorage) }
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageUsbUnplugged() =
+        render("settings-homestorage-usb-unplugged", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.usbUnplugged)) { TvSettingsOver(SettingsPage.HomeStorage) }
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageUsbUnreadable() =
+        render("settings-homestorage-usb-unreadable", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.usbUnreadable)) { TvSettingsOver(SettingsPage.HomeStorage) }
+    @Test @Config(qualifiers = TV) fun tvSettingsHomeStorageUsbFull() =
+        render("settings-homestorage-usb-full", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.usbFull)) { TvSettingsOver(SettingsPage.HomeStorage) }
     @Test @Config(qualifiers = TV) fun tvAddSourceLinks() = render("add-source-links", tv = true, windows = true, data = RenderData(linkPreviews = severalPreviews.take(4))) {
         Box(Modifier.fillMaxSize()) { AddSourceLinksSheet(severalLinks.take(4), isTv = true, onDone = {}) }
     }

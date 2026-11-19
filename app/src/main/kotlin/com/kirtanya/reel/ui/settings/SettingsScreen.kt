@@ -440,7 +440,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
         SettingsPage.Plugins -> "Plugin repositories (Nuvio format) run small scripts on this device to find sources."
         SettingsPage.PhoneTv -> if (isTv) "Get addons and plugins from your phone, so you never type on the TV." else "Set sources up once on the phone; your TV gets them too."
         SettingsPage.Storage -> "Streams are cached on this device and trimmed automatically."
-        SettingsPage.HomeStorage -> "A USB disk on your router: your library and stream cache, shared by your devices."
+        SettingsPage.HomeStorage -> "Where your library and stream cache live: a USB disk in the TV, or a folder on your router."
         else -> null
     }
 

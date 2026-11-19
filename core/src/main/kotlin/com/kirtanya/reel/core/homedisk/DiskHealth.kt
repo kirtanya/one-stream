@@ -13,6 +13,10 @@ enum class NotConnectedReason {
     FULL,
     /** On the TV: the saved home network changed (new router?). */
     NEW_NETWORK,
+    /** USB backend: no suitable drive is plugged into the TV (docs/HOME_DISK.md §23). A normal state. */
+    NO_USB,
+    /** USB backend: Android sees a drive but can't mount it. */
+    UNREADABLE,
     ERROR,
 }
 
@@ -22,7 +26,10 @@ sealed interface HomeDiskState {
     /** Not at home: the phone never signs in from here; the TV can still reach the disk. */
     data object Away : HomeDiskState
     data object Checking : HomeDiskState
-    data class Connected(val protocol: String, val freeBytes: Long, val totalBytes: Long?, val smb1: Boolean) : HomeDiskState
+    /** [name]: the USB disk's name ("PiBOX SSD"); null for a network folder. */
+    data class Connected(val protocol: String, val freeBytes: Long, val totalBytes: Long?, val smb1: Boolean, val name: String? = null) : HomeDiskState
+    /** Phone, USB backend: the disk is in the TV, so its state is read on the TV. */
+    data object OnTv : HomeDiskState
     data class NotConnected(val reason: NotConnectedReason, val detail: String? = null) : HomeDiskState
 }
 
@@ -93,12 +100,16 @@ object DiskTest {
         HomeDiskState.NotSetUp -> "Not set up"
         HomeDiskState.Away -> "Away from home · your TV can reach the disk"
         HomeDiskState.Checking -> "Checking…"
-        is HomeDiskState.Connected -> "Connected · ${gb(s.freeBytes)} GB free" + (s.totalBytes?.let { " of ${gb(it)} GB" } ?: "")
+        HomeDiskState.OnTv -> "USB disk on your TV · see the TV for its status"
+        is HomeDiskState.Connected -> if (s.protocol == VolumeChoice.PROTOCOL) "Ready" + " · ${gb(s.freeBytes)} GB free" + (s.totalBytes?.let { " of ${gb(it)} GB" } ?: "")
+        else "Connected · ${gb(s.freeBytes)} GB free" + (s.totalBytes?.let { " of ${gb(it)} GB" } ?: "")
         is HomeDiskState.NotConnected -> when (s.reason) {
             NotConnectedReason.NOT_TESTED -> "Not connected yet · press Test when you're at home"
             NotConnectedReason.NO_ANSWER -> "Not connected — nothing at $address yet. You can set everything up now."
             NotConnectedReason.NO_SHARE -> "Not connected — the router has no such shared folder"
             NotConnectedReason.PASSWORD_REJECTED -> "Password rejected"
+            NotConnectedReason.NO_USB -> "Not plugged in"
+            NotConnectedReason.UNREADABLE -> "Can't read this disk · format it FAT32 or exFAT on a computer"
             NotConnectedReason.FULL -> "Home disk is full"
             NotConnectedReason.NEW_NETWORK -> "New router? Test the disk again"
             NotConnectedReason.ERROR -> "Not connected" + (s.detail?.let { " — $it" } ?: "")

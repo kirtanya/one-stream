@@ -5,6 +5,30 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-19 · Home disk: a second backend, a USB disk on the TV (FAT32, split big files, app folder on the volume)**
+The router (Airtel AOT-4221SR) has no SMB, only FTP, so the user plugged a 512 GB PiBOX SSD into the Acer R4
+(volume `public:8,1`, `/storage/37EE-1DEE`, formatted FAT32 by the TV because the TV can't mount exFAT and FAT32 is
+writable from Mac, Windows and the TV). Spec: `docs/HOME_DISK.md` §23.
+- **Backend choice** in Settings → Home storage: USB disk on this TV / Network folder (`HomeSettings.backend`); both go through
+  one small `HomeStore` interface (list, read-at, write, flush, commit, rename, delete, free space). Only the USB side is
+  written now; the SMB side arrives with the conveyor, the first code that reads or writes the disk through it.
+- **Volume**: `StorageManager` via `getExternalFilesDirs` + `getStorageVolume(File)`; only mounted, removable, non-emulated
+  volumes; the remembered one first, else the biggest. Unplugged = "Not plugged in", a normal state.
+- **Where**: the app's own folder on the volume (`<volume>/Android/data/com.kirtanya.reel/files/OneStream/`): no permission, no
+  dialog, plain `File` I/O works on the R4's Android 14. Rejected: `MANAGE_EXTERNAL_STORAGE` (the "All files access" screen
+  is unreliable on Android TV, one bad dialog is a dead end with a remote) and SAF (slow, no random access, grant lost on
+  reformat). Cost: Android wipes that folder when the app is uninstalled; accepted because the app is only ever
+  updated with `install -r`, the folder is a plain folder the Mac can copy, and only `library/` is irreplaceable.
+- **FAT32's 4 GB limit**: files over one piece (4095 MiB, 1 MiB under the FAT32 maximum) are stored as `name.mkv.001`, `.002`, …
+  and read back as one stream by `HomeStore.read` (offset → piece + local offset), so the player, the HTTP server and
+  the hybrid reader all seek across pieces.
+- **Power cuts**: `.part` files, fsync before the piece map, commit by rename (last piece first, `.001` last); a missing
+  volume is shown plainly, never as an error.
+Evidence: `core` tests (`SplitMathTest`, `UsbStoreTest`, `VolumeChoiceTest`, `FatNamesTest`), renders
+`settings-homestorage-usb*`, and the SourcesProbe `--es home test` run on the TV (see the commit message).
+
+---
+
 **2026-11-16 · TV Home: one row in view, the backdrop smaller and top-right, a black foot**
 User: the backdrop was hidden behind the rail and the title text, and two rows showed. Now the info block and rows sit
 `Cinema.tvHomeDrop` (72 dp) lower so the focused row is the one fully in view; the backdrop is 90 % of the width and

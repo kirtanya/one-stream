@@ -1,5 +1,6 @@
 package com.kirtanya.reel.core.sync
 
+import com.kirtanya.reel.core.homedisk.HomeBackend
 import com.kirtanya.reel.core.homedisk.ManifestOrigin
 import com.kirtanya.reel.core.homedisk.RetentionSettings
 import com.kirtanya.reel.core.magnet.Magnet
@@ -101,6 +102,8 @@ data class HomeConfig(
     val retention: RetentionSettings? = null,
     /** The phone just proved it's at home with this TV (its HMAC proof on the LAN): the TV may run its first Test (I6). */
     val atHome: Boolean = false,
+    /** Where the library lives (§23). Older phones don't send it: network folder. */
+    val backend: HomeBackend = HomeBackend.NETWORK,
 )
 
 @Serializable data class HomeConfigReply(val ok: Boolean, val test: String? = null)

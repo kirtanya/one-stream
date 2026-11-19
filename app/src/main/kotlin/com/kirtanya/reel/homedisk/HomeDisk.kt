@@ -5,6 +5,8 @@ import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.homedisk.ConnectPolicy
 import com.kirtanya.reel.core.homedisk.DiskTest
 import com.kirtanya.reel.core.homedisk.DiskTestFacts
+import com.kirtanya.reel.core.homedisk.BigFacts
+import com.kirtanya.reel.core.homedisk.HomeBackend
 import com.kirtanya.reel.core.homedisk.HomeDecision
 import com.kirtanya.reel.core.homedisk.HomeDiskState
 import com.kirtanya.reel.core.homedisk.HomeNetwork
@@ -12,8 +14,11 @@ import com.kirtanya.reel.core.homedisk.HomeReason
 import com.kirtanya.reel.core.homedisk.NetworkFingerprint
 import com.kirtanya.reel.core.homedisk.NetworkNow
 import com.kirtanya.reel.core.homedisk.NotConnectedReason
+import com.kirtanya.reel.core.homedisk.UsbTest
+import com.kirtanya.reel.core.homedisk.UsbTestFacts
 import com.kirtanya.reel.engine.EngineStats
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,9 +71,19 @@ class HomeDisk(private val app: ReelApp, private val home: Home) {
             home.network.now.map { it.fingerprint to it.transport }.distinctUntilChanged().collect { refresh(deep = false) }
         }
         app.appScope.launch {
-            home.settings.map { listOf(it.address, it.share, it.user, it.smb1.toString()) }.distinctUntilChanged().collect {
+            home.settings.map { listOf(it.backend.name, it.address, it.share, it.user, it.smb1.toString()) }.distinctUntilChanged().collect {
                 policy.reset()
                 refresh(deep = false)
+            }
+        }
+        if (home.isTv) {
+            // A plugged-in or pulled-out disk shows up at once; the slow loop covers TVs that don't report it (§23.2).
+            home.usb.watch { app.appScope.launch { if (usbChosen()) refresh(deep = false) } }
+            app.appScope.launch {
+                while (true) {
+                    delay(USB_RECHECK_MS)
+                    if (usbChosen()) refresh(deep = false)
+                }
             }
         }
     }
@@ -121,6 +136,10 @@ class HomeDisk(private val app: ReelApp, private val home: Home) {
             _ui.value = _ui.value.copy(state = HomeDiskState.NotSetUp)
             return@withLock
         }
+        if (usbChosen()) {
+            _ui.value = _ui.value.copy(state = usbState())
+            return@withLock
+        }
         val saved = home.settings.value.homeFingerprint
         val state = when {
             d.isHome -> health()
@@ -131,6 +150,24 @@ class HomeDisk(private val app: ReelApp, private val home: Home) {
         }
         _ui.value = _ui.value.copy(state = state)
     }
+
+    private fun usbChosen() = home.settings.value.backend == HomeBackend.USB
+
+    /** The phone never sees the drive: it is in the TV (§23.7). The TV looks at its volumes; nothing is signed into, so I6 doesn't apply. */
+    private suspend fun usbState(): HomeDiskState {
+        if (!home.isTv) return HomeDiskState.OnTv
+        val found = withContext(Dispatchers.IO) { home.usb.find() }
+        val state = found.state
+        // The first disk that works is remembered, so a second one plugged in later doesn't take over (§23.2).
+        if (state is HomeDiskState.Connected && found.volumeId != null && found.volumeId != home.settings.value.usbVolume) {
+            home.update { it.copy(usbVolume = found.volumeId) }
+        }
+        // One stats line per change, not one per refresh (free space moves all the time).
+        if (usbKind(state) != usbKind(_ui.value.state)) usbConnectStats(state)
+        return state
+    }
+
+    private fun usbKind(s: HomeDiskState) = if (s is HomeDiskState.NotConnected) "no-${s.reason}" else s::class.simpleName
 
     private suspend fun health(): HomeDiskState {
         val s = home.settings.value
@@ -157,6 +194,7 @@ class HomeDisk(private val app: ReelApp, private val home: Home) {
      * saved yet). A successful Test saves this network as home and writes disk.json.
      */
     suspend fun test(confirmedHome: Boolean): TestOutcome = lock.withLock {
+        if (usbChosen()) return@withLock testUsb()
         val s = home.settings.value
         val password = home.password()
         if (!s.filledIn || password.isNullOrEmpty()) return@withLock TestOutcome.Refused("Fill in the address, shared folder, user and password first.")
@@ -190,6 +228,36 @@ class HomeDisk(private val app: ReelApp, private val home: Home) {
         TestOutcome.Done(line, facts)
     }
 
+    /**
+     * The Test on the USB backend (§23.10): write 8 MiB and read it back, rename, and a split round-trip over three
+     * small pieces. Only the TV has the drive. No sign-in, so no home check.
+     */
+    private suspend fun testUsb(): TestOutcome {
+        if (!home.isTv) return TestOutcome.Refused("The USB disk is in your TV. Test it on the TV: Settings → Home storage.")
+        _ui.value = _ui.value.copy(testing = true)
+        val started = EngineStats.now()
+        val found = withContext(Dispatchers.IO) { home.usb.find() }
+        val facts = found.root?.let { root -> withContext(Dispatchers.IO) { UsbTest.run(root) } }
+        val line = facts?.let(UsbTest::line) ?: (DiskTest.status(found.state, "") + hintFor(found.state))
+        val ok = facts != null && UsbTest.succeeded(facts)
+        if (ok && found.volumeId != null) home.update { it.copy(usbVolume = found.volumeId) }
+        usbTestStats(found.state, facts, EngineStats.now() - started)
+        val now = System.currentTimeMillis()
+        prefs().edit().putString("lastTest", line).putLong("lastTestAt", now).apply()
+        _ui.value = _ui.value.copy(testing = false, lastTest = line, lastTestAt = now, state = found.state)
+        Log.i(TAG, "test usb: ok=$ok state=${found.state::class.simpleName}")
+        return if (facts == null) TestOutcome.Refused(line) else TestOutcome.Done(line, null)
+    }
+
+    private fun hintFor(s: HomeDiskState) =
+        if (s is HomeDiskState.NotConnected && s.reason == NotConnectedReason.NO_USB) ". Plug a drive into the TV, then test again." else ""
+
+    /** The opt-in real-boundary check (adb probe only): a file past the first 4095 MiB piece, written and read across it. */
+    suspend fun testUsbBig(): BigFacts? {
+        val root = withContext(Dispatchers.IO) { home.usb.find().root } ?: return null
+        return withContext(Dispatchers.IO) { UsbTest.big(root) }
+    }
+
     /** "Forget home network": the next Test asks again whether you're at home. */
     fun forgetHome() {
         home.update { it.copy(homeFingerprint = null, homeSavedAt = 0) }
@@ -213,7 +281,27 @@ class HomeDisk(private val app: ReelApp, private val home: Home) {
         }
     }
 
+    private fun usbConnectStats(state: HomeDiskState) {
+        val err = when ((state as? HomeDiskState.NotConnected)?.reason) {
+            null -> null
+            NotConnectedReason.NO_USB -> "NoUsb"
+            NotConnectedReason.UNREADABLE -> "Unreadable"
+            NotConnectedReason.FULL -> "Full"
+            else -> "Other"
+        }
+        EngineStats.log("hd-connect", linkedMapOf("dev" to "tv", "src" to "usb", "ok" to if (state is HomeDiskState.Connected) 1 else 0, "err" to err))
+    }
+
+    private fun usbTestStats(state: HomeDiskState, f: UsbTestFacts?, ms: Long) {
+        EngineStats.log("hd-test", linkedMapOf(
+            "dev" to "tv", "src" to "usb", "ok" to if (f != null && UsbTest.succeeded(f)) 1 else 0, "state" to state::class.simpleName,
+            "writeMBps" to f?.writeMBps?.let { "%.1f".format(it) }, "readMBps" to f?.readMBps?.let { "%.1f".format(it) },
+            "splitOk" to f?.splitOk?.let { if (it) 1 else 0 }, "ms" to ms,
+        ))
+    }
+
     companion object {
         private const val TAG = "ReelHome"
+        private const val USB_RECHECK_MS = 15 * 60_000L
     }
 }

@@ -378,18 +378,37 @@ class SourcesProbe : BroadcastReceiver() {
      * `--es home jobs`    phone: polls the TV's jobs; TV: lists its jobs
      * `--es home config`  phone: sends the disk settings to the TV and logs the TV's Test line
      * `--es home net`     the network facts and what the rule says for downloads and plays
+     * `--es home backend --es backend usb|network`   choose where the library lives
+     * `--es home test [--ez big true]`   on the USB backend: write/read/split check on the disk (big = real 4095 MiB boundary)
      */
     private fun homeProbe(app: ReelApp, cmd: String, intent: Intent, pending: PendingResult) {
         val home = app.home
+        var answered = false
         app.appScope.launch {
             try {
                 when (cmd) {
                     "open" -> app.startActivity(com.kirtanya.reel.MainActivity.openHomeStorage(app))
-                    "test" -> Log.i(TAG, "home test: " + when (val o = home.disk.test(intent.getBooleanExtra("confirmHome", false))) {
-                        is com.kirtanya.reel.homedisk.TestOutcome.Done -> o.line
-                        is com.kirtanya.reel.homedisk.TestOutcome.Refused -> "refused: ${o.line}"
-                        com.kirtanya.reel.homedisk.TestOutcome.NeedsConfirm -> "no home network saved yet: add --ez confirmHome true (only at home)"
-                    })
+                    "test" -> {
+                        Log.i(TAG, "home test: " + when (val o = home.disk.test(intent.getBooleanExtra("confirmHome", false))) {
+                            is com.kirtanya.reel.homedisk.TestOutcome.Done -> o.line
+                            is com.kirtanya.reel.homedisk.TestOutcome.Refused -> "refused: ${o.line}"
+                            com.kirtanya.reel.homedisk.TestOutcome.NeedsConfirm -> "no home network saved yet: add --ez confirmHome true (only at home)"
+                        })
+                        // USB disk only: the real 4095 MiB piece boundary (about a minute on an SSD, cleans up after itself).
+                        if (intent.getBooleanExtra("big", false) && home.settings.value.backend == com.kirtanya.reel.core.homedisk.HomeBackend.USB) {
+                            // Hand the broadcast back first: Android stops an app whose receiver is still busy after
+                            // ~10-60 s (an ANR, seen on the TV 2026-11-19), and this takes minutes. The work goes on in appScope.
+                            if (!answered) { answered = true; pending.finish() }
+                            Log.i(TAG, "home test big: " + (home.disk.testUsbBig()?.let { "ok=${it.ok} ms=${it.millis} oneFileOver4GRefused=${it.oneBigFileRefused} ${it.detail}" } ?: "no usb disk"))
+                        }
+                    }
+                    // `--es backend usb|network` picks where the library lives (the same choice as Settings → Home storage).
+                    "backend" -> {
+                        val b = com.kirtanya.reel.core.homedisk.HomeBackend.entries.firstOrNull { it.name.equals(intent.getStringExtra("backend"), ignoreCase = true) }
+                        if (b != null) home.update { it.copy(backend = b) }
+                        home.disk.refresh(deep = false)
+                        Log.i(TAG, "home backend=${home.settings.value.backend} disk=${home.disk.ui.value.state}")
+                    }
                     "request" -> {
                         val magnet = intent.getStringExtra("magnet") ?: com.kirtanya.reel.ui.SAMPLE_TORRENTS[0].magnet
                         val id = home.client.requestDownload(magnet, null, null, intent.getStringExtra("label") ?: "Probe: Big Buck Bunny", null)
@@ -410,7 +429,7 @@ class SourcesProbe : BroadcastReceiver() {
                     else -> {
                         home.disk.refresh(deep = false)
                         val s = home.settings.value
-                        Log.i(TAG, "home settings address=${s.address} shareSet=${s.share.isNotEmpty()} userSet=${s.user.isNotEmpty()} passwordSaved=${home.passwordSaved.value} keystore=${home.secrets.available} homeSaved=${s.homeFingerprint != null} where=${s.downloadWhere} mobileData=${s.mobileData} networks=${s.networks.size} retention=${s.retention}")
+                        Log.i(TAG, "home settings backend=${s.backend} usbVolume=${s.usbVolume} address=${s.address} shareSet=${s.share.isNotEmpty()} userSet=${s.user.isNotEmpty()} passwordSaved=${home.passwordSaved.value} keystore=${home.secrets.available} homeSaved=${s.homeFingerprint != null} where=${s.downloadWhere} mobileData=${s.mobileData} networks=${s.networks.size} retention=${s.retention}")
                         Log.i(TAG, "home disk ${home.disk.ui.value.state} lastTest=${home.disk.ui.value.lastTest}")
                         if (app.isTv) Log.i(TAG, "home tv jobs=${home.agent.state.value.jobs.size} addrs=${home.agent.addresses()}")
                         else Log.i(TAG, "home outbox=${home.client.outbox.value.size} jobs=${home.client.jobs.value.size} tv=${home.client.pairedTv()?.name} waiting=${home.gate.waiting.value}")
@@ -419,7 +438,7 @@ class SourcesProbe : BroadcastReceiver() {
             } catch (e: Exception) {
                 Log.w(TAG, "home $cmd failed: ${e.javaClass.simpleName}: ${e.message}")
             } finally {
-                pending.finish()
+                if (!answered) pending.finish()
             }
         }
     }
