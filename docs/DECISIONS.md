@@ -5,6 +5,23 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-19 · My list downloads what you add, and a "Downloaded" badge marks what is fully on the device**
+User: adding to My list should start a download or ask which source, and a completed download should be visible on the
+card and inside the title. Settings → Storage → "When I add to My list" has three choices (`OnAddToList`): *Ask which
+source* (default; opens the Sources page in download mode with "Added to My list. Choose a source to download", closing
+it keeps the title on the list), *Download the best source* (the ranker's top downloadable pick, not a service link or an
+extra; on the phone it goes through the same At home / network rule as the Download button, so nothing starts on the
+office network) and *Just add*. A series downloads **one episode, not the whole show**: the first unwatched aired
+episode after the last one watched, or S1 E1 when nothing is watched; nothing when caught up or nothing has aired
+(`MyListDownload.episodeFor`). A title that already has a download (running or finished) is not asked about again.
+The badge is one green disc with the download-done mark (`ui/common/DownloadedBadge.kt`), on poster / wide / Continue
+watching cards (top-right, opposite the IMDb pill), on the title page as a pill beside the title, and on every fully
+downloaded episode row. Only complete downloads count (finished or seeding with a known title); a show gets the pill
+only when every aired episode is downloaded, a film when its file is. Source of truth: `DownloadedStore` (engine
+torrents + download origins; it never creates the engine). The disc is a plain background (no clip layer or stroked
+path), the mark is the canvas colour on the status green, so it holds in light and dark and on any picture.
+Evidence: `MyListDownloadTest`, renders `*-downloaded` / `sources-added-to-list` (phone + TV); no baseline grown.
+
 **2026-11-16 · TV Home: one row in view, the backdrop smaller and top-right, a black foot**
 User: the backdrop was hidden behind the rail and the title text, and two rows showed. Now the info block and rows sit
 `Cinema.tvHomeDrop` (72 dp) lower so the focused row is the one fully in view; the backdrop is 90 % of the width and

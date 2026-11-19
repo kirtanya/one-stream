@@ -14,6 +14,8 @@ data class AutoDownloadSettings(
     val deleteWatchedAfterDays: Int? = null,
     /** Stream cache limit in GB; null = the engine's own default. */
     val cacheLimitGb: Int? = null,
+    /** What adding a title to My list does about downloading it (ask which source / best source / nothing). */
+    val onAddToList: OnAddToList = OnAddToList.DEFAULT,
 ) {
     companion object {
         val KEEP_CHOICES = listOf(1, 2, 3, 5)

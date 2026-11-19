@@ -101,6 +101,9 @@ fun PhoneApp(
 
     val back: () -> Unit = { nav.back() }
     val open: (Dest) -> Unit = { nav.open(it) }
+    // "When I add to My list → Ask which source": the Sources page in download mode.
+    val myListAsks = LocalContext.current.let { ReelApp.get(it).myListDownloader.asks }
+    LaunchedEffect(Unit) { myListAsks.collect { nav.open(it) } }
 
     // An outer host wins (screen renders put one in to show the Undo state).
     val undo = com.kirtanya.reel.ui.common.LocalUndo.current ?: com.kirtanya.reel.ui.common.rememberUndoHost()
@@ -117,7 +120,7 @@ fun PhoneApp(
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
                     PhoneTitle(screen.ref, screen.season, onBack = back, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
                 }
-                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs)
+                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = false, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs, addedToList = screen.addedToList)
                 is Dest.Collection -> saveable.SaveableStateProvider(collectionKey(screen)) { CollectionScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { PersonScreen(screen, isTv = false, onBack = back, onOpen = openTitle) }
                 // Categories is a TV page; the phone never opens one.

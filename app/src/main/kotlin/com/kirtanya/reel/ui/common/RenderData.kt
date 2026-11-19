@@ -31,6 +31,8 @@ class RenderData(
     val storeQuery: com.kirtanya.reel.core.store.StoreQuery? = null,
     /** Home disk: settings, disk state, at-home jobs, held downloads. */
     val home: com.kirtanya.reel.ui.homedisk.HomeView? = null,
+    /** What is completely downloaded (the "Downloaded" badge on cards, title pages and episodes). */
+    val downloaded: com.kirtanya.reel.core.library.DownloadedSet? = null,
 )
 
 val LocalRenderData = staticCompositionLocalOf<RenderData?> { null }
