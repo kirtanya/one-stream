@@ -201,6 +201,7 @@ private fun ContinueCard(
         Box(frame) {
             picture()
             if (item is ContinueItem.Resume) ProgressStrip(item.entry.progress, Modifier.align(Alignment.BottomCenter))
+            if (continueDownloaded(item)) DownloadedBadge(Modifier.align(Alignment.TopEnd).padding(Tokens.Space.xs))
         }
         return
     }
@@ -217,6 +218,7 @@ private fun ContinueCard(
             if (item is ContinueItem.UpNext) {
                 Pill("Up next · ${item.next.label}", Modifier.align(Alignment.TopStart).padding(Tokens.Space.s), accent = true)
             }
+            if (continueDownloaded(item)) DownloadedBadge(Modifier.align(Alignment.TopEnd).padding(Tokens.Space.s))
             if (item is ContinueItem.Resume) {
                 GradientProgress(item.entry.progress, Modifier.align(Alignment.BottomCenter).padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.xs), height = 3.dp, track = Color.White.copy(alpha = 0.18f))
             }
@@ -226,6 +228,17 @@ private fun ContinueCard(
         // textTertiary at ~3.2:1, design rule 3).
         Text(continueDetail(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
     }
+}
+
+/** Whether what this card plays (the film, or the episode it resumes / queues) is completely downloaded. */
+@Composable
+private fun continueDownloaded(item: ContinueItem): Boolean {
+    val p = item.entry.playback
+    val id = p.tmdbId ?: return false
+    val set = rememberDownloaded()
+    if (p.tmdbType != "tv") return set.movie(id)
+    val episode = (item as? ContinueItem.UpNext)?.next ?: p.episode ?: return false
+    return set.episode(id, episode)
 }
 
 /** TV: watched share, drawn in one pass (dark track, white fill) flush at the card's bottom edge. */

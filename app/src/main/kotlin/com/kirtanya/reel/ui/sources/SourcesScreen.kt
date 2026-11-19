@@ -105,6 +105,8 @@ fun SourcesScreen(
     replacing: String? = null,
     /** The player's position when it asked for another source (its Change source): the pick plays from there. */
     resumeAtMs: Long? = null,
+    /** Opened right after adding to My list: the header says so. */
+    addedToList: Boolean = false,
 ) {
     val (load, retry) = rememberTitle(ref)
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas)) {
@@ -112,7 +114,7 @@ fun SourcesScreen(
             // Phone: the page's own shape (header, switch, pick, rows) shimmering; TV keeps the plain spinner (nothing animates there).
             Load.Loading -> if (isTv) LoadingBox() else SourcesSkeleton()
             is Load.Failed -> ErrorBox(load.message, { retry() })
-            is Load.Ready -> SourcesBody(load.value, season, episode, isTv, download || replacing != null, replacing, resumeAtMs, onBack)
+            is Load.Ready -> SourcesBody(load.value, season, episode, isTv, download || replacing != null, replacing, resumeAtMs, onBack, addedToList)
         }
         if (!isTv) com.kirtanya.reel.ui.common.TopFade()
         if (!isTv) GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack, Modifier.statusBarsPadding().padding(Tokens.Space.s))
@@ -120,7 +122,7 @@ fun SourcesScreen(
 }
 
 @Composable
-private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Boolean, startDownload: Boolean, replacing: String?, resumeAtMs: Long?, onDone: () -> Unit) {
+private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Boolean, startDownload: Boolean, replacing: String?, resumeAtMs: Long?, onDone: () -> Unit, addedToList: Boolean = false) {
     val context = LocalContext.current
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
@@ -241,7 +243,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
             contentPadding = PaddingValues(bottom = bottom),
             verticalArrangement = Arrangement.spacedBy(Tokens.Space.m),
         ) {
-            item(key = "header") { Header(d, epNumber, ep?.name, art, action, isTv, side, maxWidth) }
+            item(key = "header") { Header(d, epNumber, ep?.name, art, action, isTv, side, maxWidth, addedToList) }
             item(key = "mode") {
                 Column(Modifier.padding(horizontal = side).widthIn(max = maxWidth), verticalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                     if (replacing == null) {
@@ -370,13 +372,14 @@ private fun Header(
     isTv: Boolean,
     side: androidx.compose.ui.unit.Dp,
     maxWidth: androidx.compose.ui.unit.Dp,
+    addedToList: Boolean = false,
 ) {
     val heading = @Composable {
         Column(Modifier.widthIn(max = maxWidth), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
             Text(
                 when (action) {
                     SourceAction.PLAY -> "Choose a source to play"
-                    SourceAction.DOWNLOAD -> "Choose a source to download"
+                    SourceAction.DOWNLOAD -> if (addedToList) "Added to My list. Choose a source to download" else "Choose a source to download"
                     SourceAction.REPLACE -> "Choose a new source for this download"
                 },
                 // On the picture: full text colour, like the title and episode under it.

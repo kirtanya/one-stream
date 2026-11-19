@@ -187,6 +187,9 @@ fun TvApp(
     ) {
     val back: () -> Unit = { nav.back() }
     val open: (Dest) -> Unit = { nav.open(it) }
+    // "When I add to My list → Ask which source": the Sources page in download mode.
+    val myListAsks = com.kirtanya.reel.ReelApp.get(LocalContext.current).myListDownloader.asks
+    LaunchedEffect(Unit) { myListAsks.collect { nav.open(it) } }
     Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas).idleWatch(idle)) {
         // Screen to screen: the old one goes at once, the new one fades in over [TvMotion.pageEnterMs]. A plain `when`
         // keyed on the screen (not AnimatedContent): no second screen composed during the fade, no transition scope; each
@@ -198,7 +201,7 @@ fun TvApp(
                 is Dest.Title -> saveable.SaveableStateProvider("title:${screen.ref}") {
                     TvTitle(screen.ref, screen.season, onPlay = { s, e -> nav.open(Dest.Sources(screen.ref, s, e)) }, onOpen = openTitle, onOpenDest = open)
                 }
-                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs)
+                is Dest.Sources -> SourcesScreen(screen.ref, screen.season, screen.episode, isTv = true, onBack = back, download = screen.download, replacing = screen.replacing, resumeAtMs = screen.resumeAtMs, addedToList = screen.addedToList)
                 is Dest.Collection -> saveable.SaveableStateProvider(com.kirtanya.reel.ui.phone.collectionKey(screen)) { CollectionScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }
                 is Dest.Category -> saveable.SaveableStateProvider("category:${screen.category.key}") { TvCategoryPage(screen, onOpen = openTitle) }
                 is Dest.Person -> saveable.SaveableStateProvider("person:${screen.id}") { com.kirtanya.reel.ui.common.PersonScreen(screen, isTv = true, onBack = back, onOpen = openTitle) }

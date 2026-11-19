@@ -864,6 +864,39 @@ open class ScreenRenders(protected val variant: Variant) {
         compose.onRoot().captureRoboImage("build/screens/brand-logo.png")
     }
 
+    // ─── My list → download, and the "Downloaded" badge ───────────────────────────────────────
+
+    /** Films / episodes on screen that are completely downloaded: some home cards, the film, the resumed episode, a few episodes. */
+    private val someDownloaded get() = com.kirtanya.reel.core.library.DownloadedSet(
+        setOf(
+            "movie:10000", "movie:10002", "movie:10003", "movie:10701", "movie:10704", "movie:${Fake.FILM_ID}",
+            "tv:${Fake.SHOW_ID}:s2e5", "tv:${Fake.SHOW_ID}:s1e1", "tv:${Fake.SHOW_ID}:s1e2", "tv:${Fake.SHOW_ID}:s1e4", "tv:${Fake.SHOW_ID}:s2e1", "tv:${Fake.SHOW_ID}:s2e2",
+        ),
+    )
+
+    /** Every aired episode of the show: the show itself counts as downloaded. */
+    private val wholeShowDownloaded get() = Fake.details(Fake.show).let { d ->
+        com.kirtanya.reel.core.library.DownloadedSet(com.kirtanya.reel.core.library.Watched.allEpisodes(d.seasons, d.lastAired).map { com.kirtanya.reel.core.library.Watched.episodeKey(Fake.SHOW_ID, it) }.toSet())
+    }
+
+    /** Home: poster and wide cards and Continue watching, some with the badge. */
+    @Test fun homeDownloaded() = render("home-downloaded", history = true, scrollDp = 520, data = RenderData(downloaded = someDownloaded), content = phone())
+    @Test fun searchResultsDownloaded() = render("search-results-downloaded", data = RenderData(downloaded = someDownloaded)) { PhoneTab(Tab.Search) { PhoneSearch(onOpen = {}, initialQuery = "dune") } }
+    /** The film's page: the pill beside the title. */
+    @Test fun titleFilmDownloaded() = render("title-film-downloaded", history = true, data = RenderData(downloaded = someDownloaded), content = phone { open(Dest.Title(Fake.film)) })
+    /** A show with every aired episode downloaded: the pill on the show; its episodes carry the badge too. */
+    @Test fun titleShowDownloaded() = render("title-show-downloaded", history = true, data = RenderData(downloaded = wholeShowDownloaded), content = phone { open(Dest.Title(Fake.show)) })
+    /** A show with some episodes downloaded: no pill on the show, a badge on each downloaded episode. */
+    @Test fun titleShowEpisodesDownloaded() = render("title-show-episodes-downloaded", history = true, scrollDp = 560, data = RenderData(downloaded = someDownloaded), content = phone { open(Dest.Title(Fake.show)) })
+    /** My list's "Ask which source": the Sources page in download mode, saying the title is on the list. */
+    @Test fun sourcesAddedToList() = render("sources-added-to-list", data = RenderData(sourceSearch = { Fake.manySources }), content = phone { open(Dest.Sources(Fake.show, 2, 6, download = true, addedToList = true)) })
+
+    @Test @Config(qualifiers = TV) fun tvHomeDownloaded() = render("home-downloaded", tv = true, history = true, data = RenderData(downloaded = someDownloaded), content = tvApp())
+    @Test @Config(qualifiers = TV) fun tvTitleFilmDownloaded() = render("title-film-downloaded", tv = true, history = true, data = RenderData(sourceSearch = { Fake.manySources }, downloaded = someDownloaded), content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleShowDownloaded() = render("title-show-downloaded", tv = true, history = true, data = RenderData(sourceSearch = { Fake.manySources }, downloaded = someDownloaded), content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvTitleShowWholeDownloaded() = render("title-show-whole-downloaded", tv = true, history = true, data = RenderData(sourceSearch = { Fake.manySources }, downloaded = wholeShowDownloaded), content = tvApp { open(Dest.Title(Fake.show)) })
+    @Test @Config(qualifiers = TV) fun tvSourcesAddedToList() = render("sources-added-to-list", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.show, 2, 6, download = true, addedToList = true)) })
+
     private val castFilm get() = com.kirtanya.reel.core.launcher.CastRequest(false, Fake.film, null, null, com.kirtanya.reel.core.launcher.CastHint())
     private val castShow get() = com.kirtanya.reel.core.launcher.CastRequest(false, Fake.show, 2, 6, com.kirtanya.reel.core.launcher.CastHint())
 

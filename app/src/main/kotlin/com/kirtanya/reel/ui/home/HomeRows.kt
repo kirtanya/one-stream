@@ -172,6 +172,7 @@ private fun WideCard(
         Box(frame) {
             RemoteImage(TmdbImages.backdrop(item.backdropPath, "w500") ?: TmdbImages.poster(item.posterPath, "w342"), Modifier.fillMaxSize())
             TvCardOverlay(item.title, imdb)
+            if (com.kirtanya.reel.ui.common.rememberTitleDownloaded(item.ref)) com.kirtanya.reel.ui.common.DownloadedBadge(Modifier.align(Alignment.TopEnd).padding(Tokens.Space.xs))
         }
         return
     }
@@ -184,6 +185,7 @@ private fun WideCard(
                 modifier = Modifier.align(Alignment.BottomStart).padding(Tokens.Space.s),
             )
             com.kirtanya.reel.ui.common.PosterImdbBadge(item.ref, Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs))
+            if (com.kirtanya.reel.ui.common.rememberTitleDownloaded(item.ref)) com.kirtanya.reel.ui.common.DownloadedBadge(Modifier.align(Alignment.TopEnd).padding(Tokens.Space.s - Tokens.Space.xxs))
         }
         Text(metaLine(item), style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

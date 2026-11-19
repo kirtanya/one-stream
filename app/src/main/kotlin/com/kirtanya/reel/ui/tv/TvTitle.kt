@@ -257,6 +257,7 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                                 TitleLogo(d.logoPath, d.summary.title, Tokens.Type.hero, LOGO_WIDTH, LOGO_HEIGHT, textMaxLines = 2)
                                 // One line: ★ rating · year · runtime or seasons · certificate · genres.
                                 MetaLine(d.summary.rating, detailsParts(d) + listOfNotNull(d.genres.take(2).joinToString(", ").ifBlank { null }), maxLines = 1)
+                                if (com.kirtanya.reel.ui.common.rememberTitleDownloaded(d.summary.ref)) com.kirtanya.reel.ui.common.DownloadedPill()
                                 if (d.summary.overview.isNotBlank()) {
                                     Text(d.summary.overview, style = Tokens.Type.body, color = Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
@@ -423,6 +424,7 @@ private fun Series(
             is Load.Ready -> EpisodeRows(
                 episodes.value, progress, focusNumber, autoFocus, onAutoFocused, episodeFocus, onPick, onOptions, onFocusEpisode,
                 multiSeason = d.seasons.size > 1, next = next, onStepSeason = onStepSeason, modifier = Modifier.weight(1f).fillMaxWidth(),
+                tvId = d.summary.ref.id,
             )
         }
     }
@@ -443,6 +445,7 @@ private fun EpisodeRows(
     next: com.kirtanya.reel.core.tmdb.SeasonSummary?,
     onStepSeason: (Int) -> Boolean,
     modifier: Modifier,
+    tvId: Int,
 ) {
     val state = rememberLazyListState()
     // ◄ / ► jump a season (long anime lists): only with more than one season, and only on the key press.
@@ -473,6 +476,7 @@ private fun EpisodeRows(
                     e, progress[EpisodeNumber(e.season, e.number)],
                     (if (e.number == target) Modifier.focusRequester(focus) else Modifier).then(seasonKeys),
                     onClick = { onPick(e) }, onLongClick = { onOptions(e) }, onFocus = { onFocusEpisode(e) },
+                    downloaded = com.kirtanya.reel.ui.common.rememberEpisodeDownloaded(tvId, e.season, e.number),
                 )
             }
             // The season's end: straight on to the next one.
@@ -488,7 +492,7 @@ private val ROW_SHAPE = RoundedCornerShape(Tokens.Radius.media)
  * its number and name, the runtime, and "Resume 42:10" when part-way. One small image per row (w185), no effects.
  */
 @Composable
-private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: () -> Unit) {
+private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: () -> Unit, downloaded: Boolean = false) {
     val finished = watched?.finished == true
     val inProgress = watched != null && !finished && ContinueWatching.resumePositionMs(watched) > 0
     val line = Tokens.Colors.hairlineStrong
@@ -527,6 +531,7 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onC
             inProgress -> Text(TitleSources.resumeLabel(watched.positionMs), style = Tokens.Type.label, color = Tokens.Colors.accentBright, maxLines = 1)
             else -> e.runtimeMin?.takeIf { it > 0 }?.let { Text("${it}m", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1) }
         }
+        if (downloaded) com.kirtanya.reel.ui.common.DownloadedBadge()
     }
 }
 

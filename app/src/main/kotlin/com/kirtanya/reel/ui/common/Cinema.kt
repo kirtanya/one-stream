@@ -297,6 +297,7 @@ fun rememberWatchlistToggle(title: TitleSummary): Pair<Boolean, () -> Unit> {
     return saved to {
         val now = store.toggle(title)
         Toast.makeText(context, if (now) "Added to My list" else "Removed from My list", Toast.LENGTH_SHORT).show()
+        if (now) ReelApp.get(context).myListDownloader.added(title)
     }
 }
 
@@ -309,6 +310,7 @@ fun rememberWatchlistToggler(): (TitleSummary) -> Unit {
         { title ->
             val now = store.toggle(title)
             Toast.makeText(context, if (now) "Added “${title.title}” to My list" else "Removed “${title.title}” from My list", Toast.LENGTH_SHORT).show()
+            if (now) ReelApp.get(context).myListDownloader.added(title)
         }
     }
 }

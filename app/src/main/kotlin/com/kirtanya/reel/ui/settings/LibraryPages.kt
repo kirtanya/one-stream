@@ -169,6 +169,17 @@ internal fun LazyListScope.sourcePrefsItems(isTv: Boolean) {
 
 /** Settings → Storage: next episodes downloaded by themselves, watched ones cleaned up, the stream-cache size. */
 internal fun LazyListScope.autoDownloadItems(isTv: Boolean) {
+    item(key = "mylist") {
+        val app = ReelApp.get(LocalContext.current)
+        val s by app.autoDownloader.settings.collectAsState()
+        Section("When I add to My list", note = s.onAddToList.note + " A series downloads one episode, not the whole show.") {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
+                com.kirtanya.reel.core.library.OnAddToList.entries.forEach { c ->
+                    ReelButton(c.label, { app.autoDownloader.update { it.copy(onAddToList = c) } }, kind = if (s.onAddToList == c) ButtonKind.Primary else ButtonKind.Ghost)
+                }
+            }
+        }
+    }
     item(key = "auto") {
         val app = ReelApp.get(LocalContext.current)
         val s by app.autoDownloader.settings.collectAsState()

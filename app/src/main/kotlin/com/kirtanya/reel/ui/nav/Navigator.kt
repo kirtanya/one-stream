@@ -32,6 +32,8 @@ sealed interface Dest {
         val download: Boolean = false,
         val replacing: String? = null,
         val resumeAtMs: Long? = null,
+        /** Opened right after adding to My list ("Ask which source"): the header says it's on the list. */
+        val addedToList: Boolean = false,
     ) : Dest {
         /** The same page, whatever position it carries. */
         fun samePage(other: Dest) = other is Sources && other.copy(resumeAtMs = null) == copy(resumeAtMs = null)

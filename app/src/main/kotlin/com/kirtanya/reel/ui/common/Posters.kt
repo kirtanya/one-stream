@@ -98,6 +98,7 @@ internal fun PosterCardBody(
         val corner = Modifier.align(Alignment.TopStart).padding(Tokens.Space.s - Tokens.Space.xxs)
         if (imdb != null) imdb()?.let { ImdbPill(it, corner, onPoster = true) }
         else if (badge) PosterImdbBadge(item.ref, corner)
+        if (rememberTitleDownloaded(item.ref)) DownloadedBadge(Modifier.align(Alignment.TopEnd).padding(Tokens.Space.s - Tokens.Space.xxs))
     }
     if (!showText) {
         Box(frame) { image() }

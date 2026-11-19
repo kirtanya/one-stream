@@ -149,6 +149,7 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                         com.kirtanya.reel.ui.common.Eyebrow(d)
                         TitleLogo(d.logoPath, d.summary.title, Tokens.Type.display, Tokens.Cinema.logoMaxWidthPhone, Tokens.Cinema.logoMaxHeightPhone)
                         com.kirtanya.reel.ui.common.RatingsRow(ratings, d.summary.rating)
+                        if (com.kirtanya.reel.ui.common.rememberTitleDownloaded(d.summary.ref)) com.kirtanya.reel.ui.common.DownloadedPill()
                     }
                 }
             }
@@ -218,7 +219,7 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                     Load.Loading -> item(key = "episodes-loading") { EpisodesSkeleton(Modifier.padding(horizontal = gutter)) }
                     is Load.Failed -> item(key = "episodes-failed") { ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = gutter), kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh) }
                     is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
-                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], episodeImdb[e.number], Modifier.padding(horizontal = gutter), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
+                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], episodeImdb[e.number], Modifier.padding(horizontal = gutter), downloaded = com.kirtanya.reel.ui.common.rememberEpisodeDownloaded(d.summary.ref.id, e.season, e.number), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
                     }
                 }
             }
@@ -265,7 +266,7 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
 
 /** Episode card: still (with progress or a watched tick), number + name, runtime, two lines of story. */
 @Composable
-private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier: Modifier = Modifier, onLongClick: () -> Unit, onClick: () -> Unit) {
+private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier: Modifier = Modifier, downloaded: Boolean = false, onLongClick: () -> Unit, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val stillShape = RoundedCornerShape(Tokens.Radius.m)
     Row(
@@ -279,6 +280,7 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier
                 watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.xs), icon = Icons.Rounded.Check, accent = true)
                 watched != null -> GradientProgress(watched.progress, Modifier.align(Alignment.BottomCenter).padding(Tokens.Space.s), height = 3.dp, track = Color.White.copy(alpha = 0.2f))
             }
+            if (downloaded) com.kirtanya.reel.ui.common.DownloadedBadge(Modifier.align(Alignment.TopEnd).padding(Tokens.Space.xs))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
             Text(com.kirtanya.reel.core.tmdb.EpisodeFacts.title(e), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
