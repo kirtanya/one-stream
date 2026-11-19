@@ -167,6 +167,25 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     /** Placeholders already switched away from before this player (PlaceholderCheck.MAX_SWITCHES). */
     private val placeholderHops by lazy { intent.getIntExtra(EXTRA_HOPS, 0) }
 
+    // ---- the start / buffering block and the patient source switch (core/player/BufferInfo, SourcePatience)
+    /** A torrent is starting (or ran dry mid-film): the info card is wanted until ExoPlayer is ready. */
+    private var bufferWanted = false
+    /** Seconds in a row ExoPlayer has been buffering after the first frame (the card waits for 2: a seek isn't a stall). */
+    private var rebufferTicks = 0
+    private var lastSample = com.kirtanya.reel.core.player.BufferSample(false, 0, 0, 0, 0)
+    /** The file's bytes on disk when its info arrived, and what the first frame needs on top (an estimate). */
+    private var bufferBaseline: Long? = null
+    private var bufferTarget: Long? = null
+    private val patience = com.kirtanya.reel.core.player.SourcePatience()
+    /** Time spent waiting in the foreground, ms: the patience clock (a backgrounded player doesn't run out of patience). */
+    private var waitedMs = 0L
+    /** This film's other torrents, searched for when the source is close to being given up on. */
+    private var alternates: List<Source>? = null
+    private var alternatesJob: Job? = null
+    /** Automatic switches before this player, and every source already tried (this one included). */
+    private val autoSwitches by lazy { intent.getIntExtra(EXTRA_AUTO_SWITCHES, 0) }
+    private val triedSources by lazy { intent.getStringArrayExtra(EXTRA_TRIED).orEmpty().toSet() + playback.source.key }
+
     private lateinit var playerView: PlayerView
     /** Cinema mode: the glow in the bars around the video. */
     private lateinit var ambient: AmbientGlow
@@ -247,6 +266,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         startAtMs = resumeAt
         if (placeholderCandidate) expectedRuntime = lifecycleScope.async { expectedRuntimeMs() }
         intent.getStringExtra(EXTRA_NOTE)?.let(::showNotice)
+        if (playback.source.kind == SourceKind.TORRENT) loadBufferBackdrop()
         lifecycleScope.launch {
             try {
                 // A raw torrent / file / link: look its name up on TMDB while peers are found, so subtitles
@@ -317,7 +337,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     private suspend fun prepareTorrent(source: Source): String {
-        showStatus("Finding peers…")
+        bufferWanted = true
+        showBuffer()
         // Off the main thread: a cold start (straight from One Launcher) builds and starts the engine here.
         val engine = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { app.engine.also { it.start() } }
         val magnet = source.magnetUri() ?: error("No magnet for this torrent")
@@ -538,6 +559,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             when (state) {
                 Player.STATE_READY -> {
                     status.visibility = View.GONE
+                    hideBuffer()
                     directRetries = 0
                     stats { s ->
                         s.ready(now())
@@ -546,7 +568,11 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                     }
                 }
                 Player.STATE_BUFFERING -> {
-                    if (hash != null) status.visibility = View.VISIBLE
+                    if (hash != null) {
+                        // A torrent: the info card before the first frame; after it, the chip for a blink (a seek) and the card for a stall.
+                        bufferWanted = true
+                        if (!firstFrameShown) showBuffer() else status.apply { text = "Buffering…"; visibility = View.VISIBLE }
+                    }
                     stats { it.bufferingStart(now()) }
                 }
                 Player.STATE_ENDED -> {
@@ -992,7 +1018,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             return true
         }
         val overlayUp = nextCard.visibility == View.VISIBLE || resumeChip.visibility == View.VISIBLE || errorPanel.visibility == View.VISIBLE ||
-            overlays.stillCard.visibility == View.VISIBLE || overlays.notReady.visibility == View.VISIBLE
+            overlays.stillCard.visibility == View.VISIBLE || overlays.notReady.visibility == View.VISIBLE || overlays.bufferActionsShown
         val controls = tvControls
         // TV: the strip takes OK/↑/↓/Back/media keys first (unless a chip or card holds the remote).
         if (controls != null && exo != null && errorPanel.visibility != View.VISIBLE && overlays.notReady.visibility != View.VISIBLE &&
@@ -1071,18 +1097,120 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         statsJob?.cancel()
         statsJob = lifecycleScope.launch {
             while (isActive) {
-                val s = app.engine.snapshot(h)
-                if (s != null && status.visibility == View.VISIBLE && player?.playbackState != Player.STATE_READY) {
-                    val line = when {
-                        s.phase == TorrentPhase.METADATA -> "Finding peers… ${s.peers} connected"
-                        player == null -> "Preparing · ${s.peers} peers"
-                        else -> "${formatBytes(s.downBps.toLong())}/s · ${s.peers} peers"
-                    }
-                    showStatus(line)
-                }
+                onStartStats(app.engine.snapshot(h))
                 delay(1000)
             }
         }
+    }
+
+    /** One tick a second while the film isn't playing: refresh the info card and let [patience] decide about leaving. */
+    private fun onStartStats(s: com.kirtanya.reel.engine.TorrentSnapshot?) {
+        val exo = player
+        if (!bufferWanted || exo?.playbackState == Player.STATE_READY || leavingForNext || isFinishing ||
+            errorPanel.visibility == View.VISIBLE || overlays.notReady.visibility == View.VISIBLE
+        ) return
+        val sample = s?.let { com.kirtanya.reel.core.player.BufferSample(it.hasMetadata, it.peers, it.seeds, it.downBps.toLong(), it.doneBytes) } ?: lastSample
+        lastSample = sample
+        if (sample.hasMetadata && bufferBaseline == null) {
+            bufferBaseline = sample.doneBytes
+            val file = preparedStream?.file
+            bufferTarget = com.kirtanya.reel.core.player.BufferInfoBuilder.startTargetBytes(
+                file?.size ?: playback.source.sizeBytes, app.history.get(playback.key)?.durationMs, playback.source.quality.label, file?.extension ?: "mkv",
+            )
+        }
+        // Mid-film: the card only for a real stall (two ticks), and never a switch.
+        if (firstFrameShown) {
+            if (++rebufferTicks >= 2) showBuffer(overVideo = true)
+            return
+        }
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
+        val searchable = autoSwitches < com.kirtanya.reel.core.player.TorrentFallback.MAX_AUTO_SWITCHES && playback.tmdbId != null
+        val next = nextTorrent()
+        val verdict = patience.update(
+            com.kirtanya.reel.core.player.StartSample(waitedMs, sample.hasMetadata, sample.peers, sample.downBps, sample.doneBytes),
+            canSwitch = searchable && next != null, searchable = searchable,
+        )
+        waitedMs += 1000
+        if (verdict.findAlternates) searchAlternates()
+        when (verdict.action) {
+            com.kirtanya.reel.core.player.PatienceAction.SWITCH -> if (next != null) return switchToTorrent(next, verdict.reason)
+            com.kirtanya.reel.core.player.PatienceAction.COUNTDOWN -> {
+                val was = overlays.bufferActionsShown
+                showBuffer(com.kirtanya.reel.core.player.BufferInfoBuilder.facts(next!!).let {
+                    BufferCountdown(verdict.secondsLeft, verdict.reason?.text.orEmpty(), it.takeIf { f -> f.isNotBlank() })
+                })
+                // TV: the remote lands on "Keep waiting" the moment the question appears.
+                if (!was && isTelevision()) overlays.bufferKeep.requestFocus()
+                return
+            }
+            com.kirtanya.reel.core.player.PatienceAction.WAIT -> Unit
+        }
+        showBuffer()
+    }
+
+    /** The torrent that would take over now: the best other one of this film / episode not tried yet. */
+    private fun nextTorrent(): Source? {
+        val ranked = alternates ?: return null
+        val avoidAv1 = rankPrefs(this, isTelevision()).avoidAv1
+        return com.kirtanya.reel.core.player.TorrentFallback.pick(playback.source, ranked, triedSources, skip = { avoidAv1 && it.quality.av1 })
+    }
+
+    /** Looks for other sources of this film / episode (once); the list is what [nextTorrent] picks from. */
+    private fun searchAlternates() {
+        if (alternates != null || alternatesJob?.isActive == true) return
+        alternatesJob = lifecycleScope.launch { alternates = rankedAlternatives() ?: emptyList() }
+    }
+
+    /** Draws the card from the latest sample ([countdown]: the switch question instead of the stage). */
+    private fun showBuffer(countdown: BufferCountdown? = null, overVideo: Boolean = false) {
+        val ahead = if (overVideo) player?.let { (it.bufferedPosition - it.currentPosition).coerceAtLeast(0) } else null
+        val info = com.kirtanya.reel.core.player.BufferInfoBuilder.build(
+            playback.source, preparedStream?.file?.size, lastSample, bufferBaseline, bufferTarget, rebufferAheadMs = ahead,
+        )
+        status.visibility = View.GONE
+        overlays.bindBuffer(info, countdown, overVideo)
+    }
+
+    private fun hideBuffer() {
+        bufferWanted = false
+        rebufferTicks = 0
+        val hadFocus = overlays.bufferActionsShown
+        overlays.hideBuffer()
+        if (hadFocus && isTelevision()) playerView.requestFocus()
+    }
+
+    /** "Keep waiting": the question goes away and the source gets another 30 s. */
+    private fun keepWaiting() {
+        patience.keepWaiting(waitedMs)
+        stat("keepWaiting", mapOf("waitedS" to waitedMs / 1000, "peers" to lastSample.peers, "meta" to lastSample.hasMetadata))
+        showBuffer()
+        if (isTelevision()) playerView.requestFocus()
+    }
+
+    /** The next player starts this film at the same place with [alt]; this one's stream stops in onDestroy. */
+    private fun switchToTorrent(alt: Source, reason: com.kirtanya.reel.core.player.GiveUpReason?) {
+        if (leavingForNext || isFinishing) return
+        leavingForNext = true
+        stat("sourceSwitch", mapOf(
+            "reason" to reason?.name, "waitedS" to waitedMs / 1000, "meta" to lastSample.hasMetadata, "peers" to lastSample.peers,
+            "doneKB" to ((lastSample.doneBytes - (bufferBaseline ?: 0)) / 1024), "from" to playback.source.key, "to" to alt.key, "hops" to autoSwitches + 1,
+        ))
+        startActivity(forPlayback(this, playback.copy(source = alt), startAtMs)
+            .putExtra(EXTRA_NOTE, com.kirtanya.reel.core.player.TorrentFallback.switchNote(alt))
+            .putExtra(EXTRA_AUTO_SWITCHES, autoSwitches + 1)
+            .putExtra(EXTRA_TRIED, (triedSources + alt.key).toTypedArray())
+            .putExtra(EXTRA_UNTOUCHED, untouchedBefore)
+            .apply { if (sleepChoice.minutes != null) putExtra(EXTRA_SLEEP, sleepChoice.name).putExtra(EXTRA_SLEEP_AT, sleepSetAt) })
+        finish()
+    }
+
+    /** The title's backdrop behind the start card (decoration: no backdrop, no problem). */
+    private fun loadBufferBackdrop() {
+        val url = com.kirtanya.reel.core.tmdb.TmdbImages.backdrop(playback.backdropPath ?: playback.stillPath) ?: return
+        val request = coil3.request.ImageRequest.Builder(this).data(url)
+            .target(onSuccess = { overlays.bufferBackdrop.setImageDrawable(it.asDrawable(resources)) })
+            .build()
+        coil3.SingletonImageLoader.get(this).enqueue(request)
     }
 
     private fun showStatus(text: String) {
@@ -1102,6 +1230,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun showError(text: String, allowExternal: Boolean = true) {
         reportError(text)
         status.visibility = View.GONE
+        hideBuffer()
         nextCancelled = true
         hideNextCard()
         errorText.text = text
@@ -1295,19 +1424,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
      */
     private suspend fun findAlternative(): Source? {
         val notReady = { key: String -> NotReadyMemory.isNotReady(key) }
-        val ranked: List<Source> = intent.getStringExtra(EXTRA_ALTERNATIVES)?.let { list ->
-            runCatching { json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Source.serializer()), list) }.getOrDefault(emptyList())
-        } ?: run {
-            val req = sourceRequest(playback.episode) ?: return null
-            var latest: List<Source> = emptyList()
-            app.sources.ensureReady()
-            withTimeoutOrNull(15_000) {
-                app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision(), wantedSourceLanguages()))
-                    .transformWhile { emit(it); !it.done }
-                    .collect { latest = it.sources }
-            }
-            latest
-        }
+        val ranked = rankedAlternatives() ?: return null
         val avoidAv1 = rankPrefs(this, isTelevision()).avoidAv1
         val candidates = com.kirtanya.reel.core.player.PlaceholderFallback
             .candidates(playback.source, ranked, notReady, skip = { avoidAv1 && it.quality.av1 })
@@ -1334,6 +1451,27 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         ))
         return pick
     }
+
+    /**
+     * The ranked sources of this film / episode: the test hook's list, else a fresh search (up to 15 s, whatever has
+     * answered by then). Null when there is nothing to search for.
+     */
+    private suspend fun rankedAlternatives(): List<Source>? =
+        intent.getStringExtra(EXTRA_ALTERNATIVES)?.let { list ->
+            runCatching { json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Source.serializer()), list) }.getOrDefault(emptyList())
+        } ?: run {
+            val req = sourceRequest(playback.episode) ?: return null
+            // The Sources page's finished search for this title answers at once.
+            com.kirtanya.reel.ui.sources.cachedSearch(req.key)?.let { return it.sources }
+            var latest: List<Source> = emptyList()
+            app.sources.ensureReady()
+            withTimeoutOrNull(15_000) {
+                app.aggregator.search(req, app.sources.providers(), rankPrefs(this@PlayerActivity, isTelevision(), wantedSourceLanguages()))
+                    .transformWhile { emit(it); !it.done }
+                    .collect { latest = it.sources }
+            }
+            latest
+        }
 
     /** Plays [alt] from where this one was to start, with a chip saying why (Change source's hand-over). */
     private fun switchTo(alt: Source) {
@@ -1362,6 +1500,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     /** The Not ready card; [searching] = still looking for another source (no buttons yet). */
     private fun showNotReady(searching: Boolean) {
         status.visibility = View.GONE
+        hideBuffer()
         overlays.notReadyText.text = com.kirtanya.reel.core.player.PlaceholderCheck.notReadyText(addonName()) +
             if (searching) "\n\nLooking for another source…" else ""
         overlays.notReadyButtons.visibility = if (searching) View.GONE else View.VISIBLE
@@ -2242,7 +2381,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 loadTitleLogo(it)
             }
             setPanelRows()
-            overlays.addTo(root)
+            overlays.addTo(root, backIndex = root.indexOfChild(playerView) + 1)
             wireOverlays()
             buildErrorPanel(root)
             return root
@@ -2294,7 +2433,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             overlays.placeSkipChip(phoneControls?.coveredBottomPx() ?: 0)
         }
         // The same small chips as the TV, top right (the phone controls keep the top clear); Skip above the band.
-        overlays.addTo(root)
+        overlays.addTo(root, backIndex = root.indexOfChild(playerView) + 1)
         wireOverlays()
         buildErrorPanel(root)
         return root
@@ -2318,6 +2457,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             finish()
         }
         overlays.notReadyBack.setOnClickListener { finish() }
+        overlays.bufferKeep.setOnClickListener { keepWaiting() }
+        overlays.bufferSwitch.setOnClickListener { nextTorrent()?.let { switchToTorrent(it, null) } }
     }
 
     private fun buildErrorPanel(root: FrameLayout) {
@@ -2371,6 +2512,9 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         private const val EXTRA_NOTE = "placeholderNote"
         /** Placeholders switched away from so far (PlaceholderCheck.MAX_SWITCHES). */
         private const val EXTRA_HOPS = "placeholderHops"
+        /** Torrent switches made on the way to this player (TorrentFallback.MAX_AUTO_SWITCHES) and the source keys already tried. */
+        private const val EXTRA_AUTO_SWITCHES = "autoSwitches"
+        private const val EXTRA_TRIED = "triedSources"
         /** How long the start waits for a raw file's TMDB match (it runs alongside finding peers). */
         private const val ART_MATCH_WAIT_MS = 1_500L
         /** Test hook (SourcesProbe placeholderTest): the expected runtime instead of TMDB's. */

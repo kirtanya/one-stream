@@ -55,6 +55,15 @@ class PhoneControlsRender {
     @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortraitNotReady130() = render("phone_portrait_not_ready_130", panel = false, overlay = PlayerScenes.Overlay.NOT_READY)
     @Test fun renderPhonePlaceholderSwitch() = render("phone_placeholder_switch", panel = false, overlay = PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
     @Test @Config(qualifiers = PORT) fun renderPortraitPlaceholderSwitch() = render("phone_portrait_placeholder_switch", panel = false, overlay = PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
+    // The start block (landscape, portrait, 130 %): finding peers, buffering with stats, a stall mid-film, the switch question.
+    @Test fun renderPhoneBufferFinding() = render("phone_buffer_finding", panel = false, overlay = PlayerScenes.Overlay.BUFFER_FINDING)
+    @Test fun renderPhoneBufferStats() = render("phone_buffer_stats", panel = false, overlay = PlayerScenes.Overlay.BUFFER_STATS)
+    @Test fun renderPhoneSwitchCountdown() = render("phone_switch_countdown", panel = false, overlay = PlayerScenes.Overlay.SWITCH_COUNTDOWN)
+    @Test @Config(qualifiers = PORT) fun renderPortraitBufferStats() = render("phone_portrait_buffer_stats", panel = false, overlay = PlayerScenes.Overlay.BUFFER_STATS)
+    @Test @Config(qualifiers = PORT) fun renderPortraitBufferRebuffer() = render("phone_portrait_buffer_rebuffer", panel = false, overlay = PlayerScenes.Overlay.BUFFER_REBUFFER)
+    @Test @Config(qualifiers = PORT) fun renderPortraitSwitchCountdown() = render("phone_portrait_switch_countdown", panel = false, overlay = PlayerScenes.Overlay.SWITCH_COUNTDOWN)
+    @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortraitSwitchCountdown130() = render("phone_portrait_switch_countdown_130", panel = false, overlay = PlayerScenes.Overlay.SWITCH_COUNTDOWN)
+    @Test @Config(qualifiers = PORT, fontScale = 1.3f) fun renderPortraitBufferStats130() = render("phone_portrait_buffer_stats_130", panel = false, overlay = PlayerScenes.Overlay.BUFFER_STATS)
     @Test fun renderPhoneAudioDelay() = render("phone_controls_audio_delay", panel = true, slider = "Audio delay")
     @Test @Config(qualifiers = PORT) fun renderPortraitSubtitleDelay() = render("phone_controls_portrait_subtitle_delay", panel = true, slider = "Subtitle delay")
 

@@ -42,6 +42,12 @@ class TvControlsRender {
     @Test fun renderUpNextCredits() = render("tv_up_next_credits", PlayerScenes.MID, overlay = PlayerScenes.Overlay.UP_NEXT_CREDITS)
     @Test fun renderNotReady() = render("tv_not_ready", PlayerScenes.MID, overlay = PlayerScenes.Overlay.NOT_READY)
     @Test fun renderPlaceholderSwitch() = render("tv_placeholder_switch", PlayerScenes.MID, overlay = PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
+    // The start block: finding peers, getting info, buffering with stats, a stall mid-film, the switch question (Keep waiting focused).
+    @Test fun renderBufferFinding() = render("tv_buffer_finding", PlayerScenes.MID, overlay = PlayerScenes.Overlay.BUFFER_FINDING)
+    @Test fun renderBufferInfo() = render("tv_buffer_info", PlayerScenes.MID, overlay = PlayerScenes.Overlay.BUFFER_INFO)
+    @Test fun renderBufferStats() = render("tv_buffer_stats", PlayerScenes.MID, overlay = PlayerScenes.Overlay.BUFFER_STATS)
+    @Test fun renderBufferRebuffer() = render("tv_buffer_rebuffer", PlayerScenes.BRIGHT, overlay = PlayerScenes.Overlay.BUFFER_REBUFFER)
+    @Test fun renderSwitchCountdown() = render("tv_switch_countdown", PlayerScenes.MID, overlay = PlayerScenes.Overlay.SWITCH_COUNTDOWN)
     @Test fun renderAudioDelay() = render("tv_controls_audio_delay", PlayerScenes.MID, panel = true, slider = "Audio delay")
     @Test fun renderSubtitleDelay() = render("tv_controls_subtitle_delay", PlayerScenes.MID, panel = true, slider = "Subtitle delay")
     /** The Subtitles button: tracks first, then style, delay, search again. */

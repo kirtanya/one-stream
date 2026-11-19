@@ -204,6 +204,22 @@ class PlayerDesignRules {
     @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
     fun phonePortraitPlaceholderSwitch() = phoneOverlay("player/phone-portrait-placeholder-switch", PlayerScenes.Overlay.PLACEHOLDER_SWITCH)
 
+    // The start block: stats, the switch question (landscape, portrait, 130 %).
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneBufferStats() = phoneOverlay("player/phone-buffer-stats", PlayerScenes.Overlay.BUFFER_STATS)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE)
+    fun phoneSwitchCountdown() = phoneOverlay("player/phone-switch-countdown", PlayerScenes.Overlay.SWITCH_COUNTDOWN)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT)
+    fun phonePortraitSwitchCountdown() = phoneOverlay("player/phone-portrait-switch-countdown", PlayerScenes.Overlay.SWITCH_COUNTDOWN)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortraitSwitchCountdown130() = phoneOverlay("player/phone-portrait-switch-countdown-130", PlayerScenes.Overlay.SWITCH_COUNTDOWN)
+
+    @Test @Config(sdk = [34], qualifiers = PHONE_PORTRAIT, fontScale = 1.3f)
+    fun phonePortraitBufferStats130() = phoneOverlay("player/phone-portrait-buffer-stats-130", PlayerScenes.Overlay.BUFFER_STATS)
+
     @Test @Config(sdk = [34], qualifiers = PHONE)
     fun phoneAudioDelay() = phoneSlider("player/phone-audio-delay", "Audio delay")
 
@@ -262,6 +278,22 @@ class PlayerDesignRules {
         // The player hides the strip under the card (and the card holds the remote): its own three buttons move focus.
         val scene = PlayerScenes.tv(PlayerScenes.MID, overlay = PlayerScenes.Overlay.NOT_READY, strip = false)
         check("player/tv-not-ready", ViewChecks(scene.root, "player/tv-not-ready"), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
+        scene.release()
+    }
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvBufferStats() {
+        // Information only: no buttons, the strip is not up yet, so there is no focus to show. Contrast is the rule.
+        val scene = PlayerScenes.tv(PlayerScenes.MID, overlay = PlayerScenes.Overlay.BUFFER_STATS, strip = false)
+        check("player/tv-buffer-stats", ViewChecks(scene.root, "player/tv-buffer-stats"), Rule.CONTRAST)
+        scene.release()
+    }
+
+    @Test @Config(sdk = [34], qualifiers = TV)
+    fun tvSwitchCountdown() {
+        // The strip is hidden under the card, which holds the remote: Keep waiting / Switch now move focus.
+        val scene = PlayerScenes.tv(PlayerScenes.MID, overlay = PlayerScenes.Overlay.SWITCH_COUNTDOWN, strip = false)
+        check("player/tv-switch-countdown", ViewChecks(scene.root, "player/tv-switch-countdown"), Rule.CONTRAST, Rule.TV_FOCUS, focusMove = { scene.midFilm() })
         scene.release()
     }
 
