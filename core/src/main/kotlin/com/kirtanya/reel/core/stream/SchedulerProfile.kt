@@ -38,7 +38,14 @@ data class SchedulerProfile(
     /** A jump bigger than this clears all deadlines once (frees peers busy with the old region). */
     fun farSeekBytes(urgentBytes: Long): Long = maxOf(64 * MiB, 2 * urgentBytes)
 
-    fun startupTailBytes(extension: String): Long = if (extension == "ts" || extension == "m2ts") 1 * MiB else 4 * MiB
+    /**
+     * The blind tail fetched before the probe. MKV/WebM Cues are typically a few hundred KiB, so 1 MiB covers them and
+     * the probe refines the rest; 4 MiB stays for other containers (an MP4 moov of a long film can be megabytes).
+     */
+    fun startupTailBytes(extension: String): Long = when (extension) {
+        "ts", "m2ts", "mkv", "webm" -> 1 * MiB
+        else -> 4 * MiB
+    }
 
     companion object {
         fun of(formFactor: FormFactor, disk: DiskBackend) = SchedulerProfile(formFactor, disk)

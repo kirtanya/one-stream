@@ -132,7 +132,18 @@ object ZoneScheduler {
             for (p in span.piecesForBytes(startup.header.first, startup.header.last + 1)) if (!have.has(p)) { deadlines[p] = 50 * k++; setPrio(p, PRIO_TOP) }
             var j = 0
             startup.index?.let { ix ->
-                for (p in span.piecesForBytes(ix.first, ix.last + 1)) if (!have.has(p)) { deadlines.putIfAbsent(p, 25 + 50 * j++); setPrio(p, PRIO_TOP) }
+                val ixPieces = span.piecesForBytes(ix.first, ix.last + 1)
+                if (startup.indexBlind) {
+                    // A blind tail is a guess (by extension), so it must not compete with the header: the real index is
+                    // usually a few hundred KiB at the very end. Only the last piece gets a deadline (after the header);
+                    // the rest of the guess is wanted but waits its turn at PRIO_HIGH. The .tv-reports VisionQuest stall
+                    // spent its first minute pulling 4 MiB of tail it never needed.
+                    for (p in ixPieces) if (!have.has(p)) {
+                        if (p == ixPieces.last) { deadlines.putIfAbsent(p, 50 * k + 25); setPrio(p, PRIO_TOP) } else raise(p, PRIO_HIGH)
+                    }
+                } else {
+                    for (p in ixPieces) if (!have.has(p)) { deadlines.putIfAbsent(p, 25 + 50 * j++); setPrio(p, PRIO_TOP) }
+                }
             }
             startup.resumeGuess?.let { rg ->
                 if (prim == null || prim.pos < startup.header.last) for (p in span.piecesForBytes(rg.first, rg.last + 1)) if (!have.has(p)) raise(p, PRIO_HIGH)

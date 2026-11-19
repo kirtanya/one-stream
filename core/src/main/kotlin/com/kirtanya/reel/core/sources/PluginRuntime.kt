@@ -5,10 +5,14 @@ import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -19,6 +23,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 class PluginException(message: String) : Exception(message)
+
+/** How long [PluginRuntime] waits for host calls still running when it closes the sandbox. */
+private const val DRAIN_MS = 2_000L
 
 /**
  * Runs one Nuvio-format scraper in a fresh QuickJS sandbox per call.
@@ -52,9 +59,10 @@ class PluginRuntime(
         val result = CompletableDeferred<String>()
         val dom = DomBridge()
         val js = QuickJs.create(dispatcher)
+        val inFlight = AtomicInteger(0)
         try {
             js.memoryLimit = memoryLimitBytes
-            bindHost(js, dom, result, log)
+            bindHost(js, dom, result, log, inFlight)
             js.evaluate<Any?>(PluginJs.PRELUDE, "prelude.js", false)
             js.evaluate<Any?>(globals(req, settings), "globals.js", false)
             js.evaluate<Any?>(PluginJs.wrapModule(code), "plugin.js", false)
@@ -66,19 +74,36 @@ class PluginRuntime(
             throw e
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             throw PluginException("Took longer than ${timeoutMs / 1000}s")
+        } catch (e: CancellationException) {
+            // The caller gave up (source list closed, next title opened). Not a plugin failure: never turn it into a
+            // PluginException, or the structured-concurrency chain above keeps running a context we are about to close.
+            throw e
         } catch (e: Exception) {
             throw PluginException(e.message ?: e::class.simpleName ?: "Plugin failed")
         } finally {
-            runCatching { js.close() }
+            // Closing QuickJS while a host fetch/sleep is still resuming into it releases JNI global refs twice
+            // (native abort, R4 report 20261118-192421). Let the in-flight host calls finish (they are cancelled with
+            // the scope) before the context goes away, and do it even when this coroutine itself is cancelled.
+            withContext(NonCancellable) {
+                val until = System.nanoTime() + DRAIN_MS * 1_000_000
+                while (inFlight.get() > 0 && System.nanoTime() < until) delay(10)
+                runCatching { js.close() }
+            }
         }
     }
 
-    private fun bindHost(js: QuickJs, dom: DomBridge, result: CompletableDeferred<String>, log: (String) -> Unit) {
+    private fun bindHost(js: QuickJs, dom: DomBridge, result: CompletableDeferred<String>, log: (String) -> Unit, inFlight: AtomicInteger) {
         js.function("__host_log") { a -> log("[${a[0]}] ${a.getOrNull(1)}"); null }
         js.function("__host_done") { a -> result.complete(a[0] as String); null }
         js.function("__host_fail") { a -> result.completeExceptionally(PluginException((a[0] as? String)?.lineSequence()?.firstOrNull() ?: "Plugin failed")); null }
-        js.asyncFunction("__host_sleep") { a -> delay(((a[0] as? Number)?.toLong() ?: 0L).coerceIn(0, 10_000)); null }
-        js.asyncFunction("__host_fetch") { a -> fetch(a, log) }
+        js.asyncFunction("__host_sleep") { a ->
+            inFlight.incrementAndGet()
+            try { delay(((a[0] as? Number)?.toLong() ?: 0L).coerceIn(0, 10_000)); null } finally { inFlight.decrementAndGet() }
+        }
+        js.asyncFunction("__host_fetch") { a ->
+            inFlight.incrementAndGet()
+            try { fetch(a, log) } finally { inFlight.decrementAndGet() }
+        }
 
         js.function("__host_atob") { a -> String(Base64.getDecoder().decode((a[0] as String).trim()), Charsets.ISO_8859_1) }
         js.function("__host_btoa") { a -> Base64.getEncoder().encodeToString((a[0] as String).toByteArray(Charsets.ISO_8859_1)) }
@@ -122,6 +147,8 @@ class PluginRuntime(
                 put("headers", JsonObject(response.headers.mapKeys { it.key.lowercase() }.mapValues { JsonPrimitive(it.value) }))
                 put("text", response.text)
             }.toString()
+        } catch (e: CancellationException) {
+            throw e // a cancelled fetch must not "succeed" with an error body into a sandbox that is shutting down
         } catch (e: Exception) {
             buildJsonObject { put("error", e.message ?: e::class.simpleName) }.toString()
         }

@@ -215,7 +215,13 @@ class ContainerProbe(val size: Long, val extension: String) {
 }
 
 /** What to fetch before the first frame (byte ranges in the file). */
-data class StartupSet(val header: LongRange, val index: LongRange?, val resumeGuess: LongRange?)
+data class StartupSet(
+    val header: LongRange,
+    val index: LongRange?,
+    val resumeGuess: LongRange?,
+    /** True while [index] is a guess by extension (before the probe); false once the container named the real index. */
+    val indexBlind: Boolean = false,
+)
 
 object StartupPlanner {
     /** Before the probe: the head, a blind tail by extension, and a guess at the resume point. */
@@ -229,13 +235,14 @@ object StartupPlanner {
             val len = if (span.pieceLength > 4 * MiB) 2L * span.pieceLength else minOf(8 * MiB, 2L * span.pieceLength)
             maxOf(0, at - len / 2) until minOf(size, at + len / 2)
         } else null
-        return StartupSet(header, index?.takeIf { !it.isEmpty() }, resume)
+        val tail = index?.takeIf { !it.isEmpty() }
+        return StartupSet(header, tail, resume, indexBlind = tail != null)
     }
 
     /** After the probe: the real header end and index (none for faststart MP4). */
     fun refine(set: StartupSet, layout: ContainerLayout, span: FileSpan): StartupSet {
         val header = 0L until minOf(span.size, maxOf(set.header.last + 1, layout.headerEnd))
         val index = layout.index?.takeIf { layout.needTail && it.first > header.last }
-        return set.copy(header = header, index = index)
+        return set.copy(header = header, index = index, indexBlind = false)
     }
 }

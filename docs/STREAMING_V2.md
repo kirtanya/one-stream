@@ -466,7 +466,7 @@ The PHONE and TV columns below are `formFactor`.
 | `ghostCloseMs` | 500 | 500 | a closed primary stays the anchor until an OPEN or this timeout |
 | `secondaryMax` / pieces | 3 / 2 at SIX | same | blocked HTTP secondary: its piece at deadline 0 |
 | startup head before the probe | 2 MiB | 2 MiB | byte-accurate |
-| startup tail before the probe | MKV/WebM/MP4/AVI/other 4 MiB, TS 1 MiB | same | fetched in parallel (caveat) |
+| startup tail before the probe | MP4/AVI/other 4 MiB, MKV/WebM/TS 1 MiB (addendum 2026-11-19) | same | fetched in parallel (caveat) |
 | header after the probe (cap) | 32 MiB | 32 MiB | |
 | `startupExtraPieces` (DEFAULT after the head and the anchor) | 2·K | 2·K | K = urgent piece count |
 | startup exit | FirstFrame, or all startup pieces had and primary bytesRead ≥ 2·K·L, or 30 s | same | |
@@ -731,7 +731,7 @@ When the plan is applied:
    - index = byte-accurate tail by extension (4.1);
    - resumeGuess (only when startMs > 0, size ≤ 8 GiB and the rate is known) = the pieces around `size·startMs/durationMs`.
 
-   Header and index are fetched in parallel with interleaved deadlines.
+   Header and a **refined** index are fetched in parallel with interleaved deadlines. A **blind** index (`StartupSet.indexBlind`, before the probe has named the real one) is only a guess: it gets a deadline on its last piece only, after the header's, and its other pieces are wanted at priority 6 without a deadline, so a 4 MiB guess never delays the header. `refine` clears `indexBlind` (addendum 2026-11-19, R4 report 20261104-192446: the blind tail competed with the header on a slow swarm).
 2. When the header pieces are readable, reel-io runs `ContainerProbe.step` with RandomAccessFile reads.
    - **MP4:** walk the top-level boxes; size==1 means largesize, size==0 means to EOF.
      - moov before mdat → `index = moov`, `needTail = false`, `headerEnd = moovEnd + 1 MiB`.
@@ -742,7 +742,7 @@ When the plan is applied:
      - SeekHead (`0x114D9B74`) → Seek (`0x4DBB`) → SeekID (`0x53AB`) == Cues `0x1C53BB6B` with SeekPosition (`0x53AC`) gives `cues = S + pos`, so `index = [cues, min(size, cues + 4 MiB))`.
      - Walk the top-level elements by size until the first Cluster (`0x1F43B675`) to get `headerEnd = cluster + 1 MiB` (cap 32 MiB). Big Attachments are skipped by their size; when the next element header lies beyond the bytes already read, return Need(range).
      - Without a SeekHead → keep the tail.
-   - **TS:** tail 1 MiB. **AVI:** tail 4 MiB. **Other:** tail 4 MiB.
+   - **TS / MKV / WebM:** blind tail 1 MiB (MKV Cues are a few hundred KiB; the probe above finds them exactly). **AVI / MP4 / other:** tail 4 MiB.
 3. `refine` swaps the targets in. The diff resets deadlines on tail pieces that are no longer needed.
 4. When the first real reader opens more than 2 pieces away from the header, the resume guess is dropped.
 5. The startup set leaves the plan at startup exit (4.1).
@@ -1325,7 +1325,10 @@ Until R6 is granted, the network callback is registered from `TorrentEngine` (ap
 Left at the defaults on purpose: `mixed_mode_algorithm`, `auto_sequential`, `strict_end_game_mode`, `whole_pieces_threshold`, `aio_threads`, `hashing_threads`, `dht_upload_rate_limit`, `suggest_mode`. These names are removed in 2.x and must not be used: `cache_size`, `request_queue_size`.
 
 - Per-torrent `swig().set_max_connections`: prewarm and hedge candidates 40 phone / 20 TV, lifted to −1 (unlimited) when consumed by `startStream` or on a hedge win. RestorePolicy also resets it (9.2).
-- Trackers: `DEFAULT_TRACKERS` is added for `.torrent` files only when `!TorrentInfo.isPrivate()`.
+- Trackers: `DEFAULT_TRACKERS` is added for `.torrent` files only when `!TorrentInfo.isPrivate()`. Merging goes through pure `TrackerMerge.merge(own, defaults)` (addendum 2026-11-19): hosts are compared case-insensitively without a trailing slash, schemes other than udp/http/https are dropped, the torrent's own trackers keep their order and come first, the bundled list is always kept, and the total is capped at 32 (own ones give way). Each stream add logs `ReelStats ev=trackers own=… used=…`.
+- Plugin runtime (addendum 2026-11-19): `PluginRuntime.run` never turns `CancellationException` into a `PluginException`, a cancelled host `fetch` rethrows instead of returning an error body, and the sandbox is closed (in `NonCancellable`) only after in-flight host calls have settled (2 s cap). Reason: closing QuickJS while a host call resumes into it aborted the process (R4 report 20261118-192421).
+- Keep / Keep-as-cache post to `Dispatchers.IO` (spec 3.1 always said "Post"); they walk the file list and call `moveStorage`, which froze the main thread on big packs (R4 report 20261116-145044).
+- Source ranking (addendum 2026-11-19): `SourceRanker` subtracts `PACK_PENALTY` (25) from a torrent whose title names several seasons / a complete series / a collection. Those torrents have 8-16 MiB pieces, so the TV needs about 32 MiB before the first frame. A pack with ~10x the seeders still wins; an equal one no longer does.
 
 ### 8.3 Download rules (addendum 2026-10-22, roadmap A engine items)
 

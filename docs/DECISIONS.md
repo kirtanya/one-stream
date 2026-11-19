@@ -132,6 +132,34 @@ start screen showed almost nothing.
 
 ---
 
+**2026-11-19 · Streaming speed: stage the blind tail, cap and merge trackers, rank packs lower, close the plugin sandbox safely, Keep off the main thread**
+User: "streaming doesn't work most of the time, depends on the torrent". 20 TV reports (`.tv-reports/`, untracked) were
+read first; the engine was reviewed against them. Findings:
+- Only 2 of 20 reports are real streaming stalls (VisionQuest 20261104-192446, BCS pack 20261116-013131); both were
+  throughput-limited startups, not an engine misconfiguration. Freezes and ANRs (most of the rest) were the ranking
+  regex-in-comparator (fixed 0.16.12) plus a remaining main-thread `engine.keep()`; low-memory exits were cached-process
+  reclaim, not streaming; the one native crash is the QuickJS plugin sandbox (below).
+- Settings pack (`SessionTuning`), DHT bootstrap (libtorrent4j defaults + saved state), announce-to-all, uTP/TCP,
+  request queue, PEX/LSD and encryption were checked against the code and docs: already at good values for a 32-bit
+  TV, nothing in the reports supports changing them. Not touched.
+Changes:
+- **Blind tail staged, MKV/WebM tail 1 MiB** (`StartupSet.indexBlind`, `ZoneScheduler`, `SchedulerProfile`): the guess by
+  extension no longer takes TOP priority and a deadline on every piece; only its last piece does, after the header.
+  Why: on a slow swarm the 4 MiB guess competed with the 2 MiB header (VisionQuest spent its first minute on it).
+- **`TrackerMerge`** (pure, tested): case/slash-insensitive de-dupe, drops ws/wss, own trackers first, defaults always
+  kept, cap 32. Why: addon magnets carry 30-60 trackers, many duplicates; on the TV each is a DNS lookup + announce.
+  `ReelStats ev=trackers` shows own vs used. `DEFAULT_TRACKERS` itself was not refreshed (needs the list picked at home).
+- **`SourceRanker.PACK_PENALTY`** 25 for multi-season packs / complete series / collections. Why: 8-16 MiB pieces need ~32 MiB
+  before the first frame (BCS report). Seeders were already weighted on a log scale; dead torrents already sink (-150).
+- **`PluginRuntime`**: cancellation stays a cancellation, a cancelled fetch no longer returns an error body into the
+  sandbox, and `js.close()` waits (2 s cap) for in-flight host calls. Why: native abort 20261118-192421 was JNI
+  global-ref misuse when the sandbox closed while a host call resumed.
+- **`keep` / `keepAsCache`** run on `Dispatchers.IO`. Why: freeze 20261116-145044 (file list walk + `moveStorage` on main).
+Evidence for the effect on a real swarm needs a TV test (see STREAMING_V2.md 4.8, 8.2 addendum); the ranking and merge
+rules have unit tests (`PackRankingTest`, `TrackerMergeTest`, `ZoneSchedulerTest`, `PluginCancelTest`).
+
+---
+
 
 ---
 

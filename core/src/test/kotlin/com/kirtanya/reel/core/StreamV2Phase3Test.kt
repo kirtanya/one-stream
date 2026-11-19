@@ -124,12 +124,30 @@ class ZoneSchedulerTest {
     }
 
     @Test fun startupFetchesHeaderThenIndex() {
-        val st = StartupPlanner.initial(span, "mkv", 0, null, MediaRate(MiB, RateSource.GUESS), PHONE)
+        // mp4 keeps the 4 MiB blind tail, so the staging is visible: header deadlines first, then only the last tail piece.
+        val st = StartupPlanner.initial(span, "mp4", 0, null, MediaRate(MiB, RateSource.GUESS), PHONE)
+        assertTrue(st.indexBlind)
         val plan = ZoneScheduler.plan(input(span, phase = StreamPhase.STARTUP, startupDone = false, startup = st))
         assertEquals(0, plan.deadlines[0])
-        assertTrue(plan.deadlines[1]!! < plan.deadlines[996]!!.coerceAtLeast(1) || plan.deadlines[996] == 25)
-        assertTrue(996 in plan.deadlines && 999 in plan.deadlines)
+        val lastHeader = (0..1).maxOf { plan.deadlines[it]!! }
+        assertTrue(plan.deadlines[999]!! > lastHeader, "blind tail comes after the header")
+        assertFalse(996 in plan.deadlines, "the rest of a blind tail gets no deadline")
+        assertEquals(6, plan.prio[996].toInt(), "but stays wanted at PRIO_HIGH")
         assertNull(plan.seq)
+    }
+
+    @Test fun refinedIndexKeepsItsDeadlines() {
+        val st = StartupPlanner.initial(span, "mp4", 0, null, MediaRate(MiB, RateSource.GUESS), PHONE)
+            .copy(indexBlind = false)
+        val plan = ZoneScheduler.plan(input(span, phase = StreamPhase.STARTUP, startupDone = false, startup = st))
+        assertTrue(996 in plan.deadlines && 999 in plan.deadlines)
+    }
+
+    @Test fun mkvBlindTailIsOneMiB() {
+        val st = StartupPlanner.initial(span, "mkv", 0, null, MediaRate(MiB, RateSource.GUESS), PHONE)
+        assertEquals(MiB, st.index!!.last - st.index!!.first + 1)
+        assertEquals(MiB, PHONE.startupTailBytes("webm"))
+        assertEquals(4 * MiB, PHONE.startupTailBytes("mp4"))
     }
 
     @Test fun httpReaderBecomesPrimaryWhenInAppIsStale() {
