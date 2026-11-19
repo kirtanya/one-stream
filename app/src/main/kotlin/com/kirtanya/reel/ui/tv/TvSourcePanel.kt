@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kirtanya.reel.ReelApp
 import com.kirtanya.reel.core.library.DownloadOrigin
+import com.kirtanya.reel.core.library.SourceMark
 import com.kirtanya.reel.core.library.SourceMarks
 import com.kirtanya.reel.core.player.TitleSourcePage
 import com.kirtanya.reel.core.player.TitleSourceRow
@@ -60,7 +61,9 @@ import com.kirtanya.reel.core.sources.FreeOptions
 import com.kirtanya.reel.core.sources.QuickStart
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.core.sources.SourceKind
+import com.kirtanya.reel.core.sources.SourceBrowser
 import com.kirtanya.reel.core.sources.SourceRanker
+import com.kirtanya.reel.core.sources.SourceRequest
 import com.kirtanya.reel.core.tmdb.Episode
 import com.kirtanya.reel.core.tmdb.Provider
 import com.kirtanya.reel.core.tmdb.TitleDetails
@@ -69,6 +72,7 @@ import com.kirtanya.reel.ui.common.ReelButton
 import com.kirtanya.reel.ui.common.RequestFocusOnce
 import com.kirtanya.reel.ui.common.focusCard
 import com.kirtanya.reel.ui.sources.HindiMark
+import com.kirtanya.reel.ui.sources.SourceOptionsDialog
 import com.kirtanya.reel.ui.sources.StartMark
 import com.kirtanya.reel.ui.sources.rankPrefs
 import com.kirtanya.reel.ui.sources.rememberSourceSearch
@@ -92,6 +96,10 @@ class TvSourcePick(
     /** "Free on <Service>" (TMDB, India): legal, external, shown above the sources. */
     val free: List<FreeOption> = emptyList(),
     val openFree: (Provider) -> Unit = {},
+    /** What the long-press options menu needs: who the sources are for, their label, and the user's marks (favourite / star). */
+    val req: SourceRequest? = null,
+    val label: String = "",
+    val marks: List<SourceMark> = emptyList(),
 )
 
 /**
@@ -149,6 +157,7 @@ fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeNa
     val openFree = com.kirtanya.reel.ui.title.rememberProviderOpener(d.providers.link)
     return TvSourcePick(
         page, expanded, expand = { expanded = true }, rescan = rescan, free = free, openFree = openFree,
+        req = req, label = label, marks = marks,
         play = { s -> com.kirtanya.reel.ui.sources.play(context, com.kirtanya.reel.ui.sources.playbackFor(d, epNumber, episodeName, stillPath, s)) },
         download = { s ->
             if (s.kind == SourceKind.EXTERNAL) android.widget.Toast.makeText(context, "This source can't be downloaded", android.widget.Toast.LENGTH_SHORT).show()
@@ -157,10 +166,13 @@ fun rememberTvSourcePick(d: TitleDetails, season: Int?, episode: Int?, episodeNa
     )
 }
 
+/** Hold OK never acts by itself: it opens the source's options (Play, Download, ...). */
+internal const val HOLD_HINT = "Hold OK on a source for options"
+
 private val ROW_SHAPE = RoundedCornerShape(Tokens.Radius.media)
 
 /**
- * The source rows: best first, "All sources…" at the end, then the search status (or, once done, "Hold OK to download").
+ * The source rows: best first, "All sources…" at the end, then the search status (or, once done, "Hold OK on a source for options").
  * Cheap rows (two texts, no per-row effects); the ring is the focus. Focus goes to the first row when rows first appear,
  * to [empty] (Search again / Close) while there are none, and to the first extra row after "All sources…".
  */
@@ -173,9 +185,11 @@ internal fun TvSourceRows(
     /** The panel's Close; null on the title page (nothing to close). */
     onClose: (() -> Unit)? = null,
     state: LazyListState = rememberLazyListState(),
-    holdHint: String = "Hold OK on a source to download it",
+    holdHint: String = HOLD_HINT,
 ) {
     val page = pick.page
+    // Hold OK opens this source's options; the first item (Play) takes focus, Back closes it.
+    var options by remember { mutableStateOf<Source?>(null) }
     val empty = remember { FocusRequester() }
     val extra = remember { FocusRequester() }
     if (page.rows.isNotEmpty()) RequestFocusOnce(first) else RequestFocusOnce(empty)
@@ -210,11 +224,11 @@ internal fun TvSourceRows(
             }
             if (quickRows.isNotEmpty()) item(key = "quick-title", contentType = "heading") { SourceGroupHeading("Quick start") }
             itemsIndexed(quickRows, key = { _, r -> r.key }, contentType = { _, _ -> "source" }) { i, r ->
-                SourceItem(r, i, page, pick, first, extra, focused, onPick)
+                SourceItem(r, i, page, pick, first, extra, focused, onPick) { options = it }
             }
             if (quickRows.isNotEmpty() && restRows.isNotEmpty()) item(key = "rest-title", contentType = "heading") { SourceGroupHeading("Other sources") }
             itemsIndexed(restRows, key = { _, r -> r.key }, contentType = { _, _ -> "source" }) { i, r ->
-                SourceItem(r, i + quickRows.size, page, pick, first, extra, focused, onPick)
+                SourceItem(r, i + quickRows.size, page, pick, first, extra, focused, onPick) { options = it }
             }
             if (page.more > 0) item(key = "all", contentType = "all") { TvAllSourcesRow(page.more, pick.expand) }
             val empty0 = page.empty
@@ -245,6 +259,15 @@ internal fun TvSourceRows(
             }
         }
     }
+    options?.let { src ->
+        val req = pick.req
+        if (req != null) {
+            SourceOptionsDialog(
+                SourceBrowser.view(src), req, SourceMarks.markFor(pick.marks, req, src), pick.label,
+                onPlay = { pick.play(src) }, onDownload = { pick.download(src) }, onDismiss = { options = null },
+            )
+        }
+    }
 }
 
 @Composable
@@ -259,7 +282,7 @@ private fun SourceGroupHeading(text: String) {
 @Composable
 private fun SourceItem(
     r: TitleSourceRow, i: Int, page: TitleSourcePage, pick: TvSourcePick, first: FocusRequester, extra: FocusRequester,
-    focused: Array<String?>, onPick: (Source) -> Unit,
+    focused: Array<String?>, onPick: (Source) -> Unit, onOptions: (Source) -> Unit,
 ) {
     val focus = when {
         i == 0 -> Modifier.focusRequester(first)
@@ -269,7 +292,7 @@ private fun SourceItem(
     val key = r.key
     TvSourceRow(
         r, focus.onFocusChanged { if (it.hasFocus) focused[0] = key else if (focused[0] == key) focused[0] = null },
-        onClick = { onPick(r.source) }, onLongClick = { pick.download(r.source) },
+        onClick = { onPick(r.source) }, onLongClick = { onOptions(r.source) },
     )
 }
 
@@ -339,7 +362,7 @@ private fun TvAllSourcesRow(more: Int, onClick: () -> Unit) {
 
 /**
  * The sources of one episode as a panel over the title page (docs/TV_CLEAN_REDESIGN.md §5): ~40 % of the width on the right,
- * a solid surface. OK plays (or, with [download], downloads); hold OK downloads; Back closes. Focus can't leave it while it's
+ * a solid surface. OK plays (or, with [download], downloads); hold OK opens the source options (Play, Download, ...); Back closes. Focus can't leave it while it's
  * open ([focusProperties] onExit cancels every move; focus that drops out is taken back at once; the page behind refuses it), and the title page puts it
  * back on the episode afterwards.
  */
@@ -393,7 +416,7 @@ fun TvSourcePanel(d: TitleDetails, episode: Episode, download: Boolean, onClose:
                     if (download) { pick.download(s); onClose() } else pick.play(s)
                 },
                 onClose = onClose,
-                holdHint = if (download) "OK downloads the source you pick" else "Hold OK on a source to download it",
+                holdHint = if (download) "OK downloads the source you pick" else HOLD_HINT,
             )
         }
     }

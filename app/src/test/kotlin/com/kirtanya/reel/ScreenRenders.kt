@@ -608,6 +608,16 @@ open class ScreenRenders(protected val variant: Variant) {
             }
         }
     }
+    /** TV: hold OK on a source opens its options (Play first and focused, then Download file, Stream only, ...). */
+    @Test @Config(qualifiers = TV) fun tvSourceOptions() = render("source-options", tv = true, windows = true) {
+        TvScene {
+            val s = Fake.sources(3)[1]
+            val req = com.kirtanya.reel.core.sources.SourceRequest(Fake.film.id, null, Fake.film.type, "Dune", 2021)
+            com.kirtanya.reel.ui.sources.SourceOptionsDialog(
+                com.kirtanya.reel.core.sources.SourceBrowser.view(s), req, null, "Dune", onPlay = {}, onDownload = {}, onDismiss = {},
+            )
+        }
+    }
     @Test @Config(qualifiers = TV) fun tvSourcesHindi() = render("sources-hindi", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.hindi)) })
     /** The TV title page of a Hindi film: "Free to watch" over the source rows, Hindi marks in their detail lines. */
     @Test @Config(qualifiers = TV) fun tvTitleFilmHindi() = render("title-film-hindi", tv = true, data = manySources, content = tvApp { open(Dest.Title(Fake.hindi)) })

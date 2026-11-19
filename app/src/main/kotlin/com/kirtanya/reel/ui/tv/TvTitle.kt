@@ -119,7 +119,7 @@ import kotlinx.coroutines.launch
 /**
  * TV title page, a cinematic 50/50 (docs/TV_CLEAN_REDESIGN.md §4): the backdrop fills the right half edge to edge, the left
  * half has the logo, one facts line, three lines of story and then the way to play. A film lists its sources right
- * there (best first, OK plays, hold OK downloads); a series lists season tabs and episodes, and OK on an episode opens
+ * there (best first, OK plays, hold OK opens the options menu); a series lists season tabs and episodes, and OK on an episode opens
  * [TvSourcePanel] over the page. Cast and More like this wait below the fold.
  *
  * [onPlay] is unused: nothing on this page leaves for the Sources page any more (`Dest.Sources` stays for deep links and the phone).
