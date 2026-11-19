@@ -5,6 +5,12 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-19 · TV source rows: hold OK opens the options menu instead of downloading**
+User: a long-press on a source started a download by itself. On the TV title page and the episode source panel hold OK
+now opens the same menu as the Sources page (`SourceOptionsDialog`: Play, Download, Stream only, favourite, star, share;
+Play focused, Back closes). Download does what the long-press did (`pick.download`). The phone already had the menu.
+Evidence: `source-options` TV render, `TvSourceOptionsTest`.
+
 **2026-11-16 · TV Home: one row in view, the backdrop smaller and top-right, a black foot**
 User: the backdrop was hidden behind the rail and the title text, and two rows showed. Now the info block and rows sit
 `Cinema.tvHomeDrop` (72 dp) lower so the focused row is the one fully in view; the backdrop is 90 % of the width and
