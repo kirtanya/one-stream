@@ -71,6 +71,9 @@ class FakeCatalog(private val answer: Answer = Answer.Data, private val logos: B
     override suspend fun byGenre(type: MediaType, genreId: Int, page: Int) = give(Fake.titles(20, seed = genreId * 31 + page), emptyList())
     override suspend fun browseRows(type: MediaType) = give(Fake.browseRows(type), emptyList())
     override suspend fun byLanguage(type: MediaType, code: String, page: Int) = give(Fake.titles(20, seed = 40 + (code.hashCode().absoluteValue % 30) + page, type = type), emptyList())
+    /** A full chart: a hundred titles of the chart's kind (the real one is built by core/browse/TopCharts). */
+    override suspend fun chart(chart: com.kirtanya.reel.core.browse.TopChart, content: com.kirtanya.reel.core.tmdb.ContentPreference) =
+        give(Fake.titles(com.kirtanya.reel.core.browse.TopCharts.SIZE, seed = 50 + com.kirtanya.reel.core.browse.TopCharts.ALL.indexOf(chart) * 2, type = chart.type), emptyList())
     override suspend fun person(id: Int) = give(Fake.person, Fake.person.copy(biography = "", credits = emptyList()))
     override suspend fun findByImdb(imdbId: String, type: MediaType) = give(Fake.details(if (type == MediaType.TV) Fake.show else Fake.film).summary, null)
     override suspend fun collection(id: Int) = give(

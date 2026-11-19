@@ -48,6 +48,8 @@ import com.kirtanya.reel.core.browse.Categories
 import com.kirtanya.reel.core.browse.Category
 import com.kirtanya.reel.core.browse.GridNav
 import com.kirtanya.reel.core.browse.Interleave
+import com.kirtanya.reel.core.browse.TopChart
+import com.kirtanya.reel.core.browse.TopCharts
 import com.kirtanya.reel.core.tmdb.MediaType
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.ui.common.ButtonKind
@@ -101,9 +103,10 @@ private val TileHeight = 72.dp
 private const val TileColumns = 4
 
 /**
- * The TV's Categories page: a grid of plain tiles, genres (films and shows merged) then languages. Opening a tile pushes
- * [Dest.Category]; Back returns here with the same tile focused (its index is saved with the page). Only the genre lists
- * are fetched (cached), and the page shows TMDB's usual ones at once, so there is no spinner and nothing waits on the network.
+ * The TV's Categories page: a grid of plain tiles, the four Top charts first ([Dest.Chart]), then genres (films and
+ * shows merged) and languages. Opening a genre / language tile pushes [Dest.Category]; Back returns here with the same
+ * tile focused (its index is saved with the page). Only the genre lists are fetched (cached), and the page shows TMDB's
+ * usual ones at once, so there is no spinner and nothing waits on the network.
  */
 @Composable
 fun TvCategories(onOpenDest: (Dest) -> Unit) {
@@ -119,14 +122,20 @@ fun TvCategories(onOpenDest: (Dest) -> Unit) {
         }
     }
     val genres = (load as? Load.Ready)?.value ?: Categories.FALLBACK_GENRES
-    val tiles = remember(genres) { genres + Categories.LANGUAGES }
-    val requesters = rememberRequesters(tiles.size)
+    // Tile numbers (what the remote's last place is saved as): the Top charts, then genres, then languages.
+    val charts = TopCharts.ALL
+    val tileCount = charts.size + genres.size + Categories.LANGUAGES.size
+    val requesters = rememberRequesters(tileCount)
     // The tile the remote was last on: read only when the page opens, so a focus move recomposes nothing.
     val last = rememberSaveable { mutableIntStateOf(0) }
     val grid = rememberLazyGridState()
-    // Heading, "Genres", the genre tiles, "Languages", the language tiles.
-    fun gridIndex(tile: Int) = if (tile < genres.size) 2 + tile else 3 + tile
-    FocusTile(grid, requesters, GridNav.restore(last.intValue, tiles.size), ::gridIndex, enabled = tiles.isNotEmpty())
+    // Heading, "Top charts", the chart tiles, "Genres", the genre tiles, "Languages", the language tiles.
+    fun gridIndex(tile: Int) = when {
+        tile < charts.size -> 2 + tile
+        tile < charts.size + genres.size -> 3 + tile
+        else -> 4 + tile
+    }
+    FocusTile(grid, requesters, GridNav.restore(last.intValue, tileCount), ::gridIndex, enabled = tileCount > 0)
     val side = Tokens.Space.tvSafeH
     TvColumnGlide(reveal = Tokens.Space.s) {
         LazyVerticalGrid(
@@ -140,15 +149,22 @@ fun TvCategories(onOpenDest: (Dest) -> Unit) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "heading", contentType = "heading") {
                 Text("Categories", style = Tokens.Type.hero, color = Tokens.Colors.text, maxLines = 1, modifier = Modifier.padding(bottom = Tokens.Space.s))
             }
-            item(span = { GridItemSpan(maxLineSpan) }, key = "genres", contentType = "section") { SectionHeader("Genres") }
-            itemsIndexed(genres, key = { _, c -> c.key }, contentType = { _, _ -> "tile" }) { i, c ->
+            item(span = { GridItemSpan(maxLineSpan) }, key = "charts", contentType = "section") { SectionHeader("Top charts") }
+            itemsIndexed(charts, key = { _, c -> c.key }, contentType = { _, _ -> "tile" }) { i, c ->
+                ChartTile(c, Modifier.focusRequester(requesters[i]), onFocus = { last.intValue = i }) { onOpenDest(Dest.Chart(c)) }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }, key = "genres", contentType = "section") {
+                SectionHeader("Genres", Modifier.padding(top = Tokens.Space.m))
+            }
+            itemsIndexed(genres, key = { _, c -> c.key }, contentType = { _, _ -> "tile" }) { j, c ->
+                val i = charts.size + j
                 CategoryTile(c, Modifier.focusRequester(requesters[i]), onFocus = { last.intValue = i }) { onOpenDest(Dest.Category(c)) }
             }
             item(span = { GridItemSpan(maxLineSpan) }, key = "languages", contentType = "section") {
                 SectionHeader("Languages", Modifier.padding(top = Tokens.Space.m))
             }
             itemsIndexed(Categories.LANGUAGES, key = { _, c -> c.key }, contentType = { _, _ -> "tile" }) { j, c ->
-                val i = genres.size + j
+                val i = charts.size + genres.size + j
                 CategoryTile(c, Modifier.focusRequester(requesters[i]), onFocus = { last.intValue = i }) { onOpenDest(Dest.Category(c)) }
             }
         }
@@ -160,7 +176,7 @@ fun TvCategories(onOpenDest: (Dest) -> Unit) {
  * never holds one that no card carries any more.
  */
 @Composable
-private fun rememberRequesters(count: Int): List<FocusRequester> {
+internal fun rememberRequesters(count: Int): List<FocusRequester> {
     val all = remember { ArrayList<FocusRequester>() }
     while (all.size < count) all.add(FocusRequester())
     return all
@@ -183,7 +199,16 @@ private fun FocusTile(grid: LazyGridState, requesters: List<FocusRequester>, wan
 
 /** A flat, token-coloured tile: the name and what it holds. No image, no gradient; focus is the shared ring inside its edge. */
 @Composable
-private fun CategoryTile(category: Category, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun CategoryTile(category: Category, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) =
+    NameTile(category.label, category.caption, modifier, onFocus, onClick, Tokens.Type.title)
+
+/** A Top chart's tile: the same flat tile, "Top 100 · by popularity" under the name; the name a size smaller so "Most popular movies" fits. */
+@Composable
+private fun ChartTile(chart: TopChart, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) =
+    NameTile(chart.label, chart.tileCaption, modifier, onFocus, onClick, Tokens.Type.heading)
+
+@Composable
+private fun NameTile(label: String, caption: String, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit, labelStyle: androidx.compose.ui.text.TextStyle) {
     val shape = RoundedCornerShape(Tokens.Radius.m)
     Column(
         modifier.fillMaxWidth().height(TileHeight)
@@ -192,14 +217,14 @@ private fun CategoryTile(category: Category, modifier: Modifier, onFocus: () -> 
             .padding(horizontal = Tokens.Space.l),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(category.label, style = Tokens.Type.title, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(category.caption, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
+        Text(label, style = labelStyle, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(caption, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
     }
 }
 
 // ─── One category ────────────────────────────────────────────────────────────────────────────
 
-private const val PosterColumns = 6
+internal const val PosterColumns = 6
 
 /**
  * The films and shows of one category (a page above the tabs, so the side nav is hidden): most popular first, films and
@@ -304,7 +329,7 @@ fun TvCategoryPage(dest: Dest.Category, onOpen: (TitleSummary) -> Unit) {
  * Remote moves between posters from [GridNav]: ▼ from a short last row lands on its last poster, and a row that has scrolled
  * out of composition is brought in before it takes focus. Keys [GridNav] has no answer for (the grid's edges) go on as usual.
  */
-private fun Modifier.gridMoves(index: Int, size: Int, grid: LazyGridState, scope: kotlinx.coroutines.CoroutineScope, requesters: List<FocusRequester>): Modifier =
+internal fun Modifier.gridMoves(index: Int, size: Int, grid: LazyGridState, scope: kotlinx.coroutines.CoroutineScope, requesters: List<FocusRequester>): Modifier =
     onPreviewKeyEvent { e ->
         val dir = when (e.key) {
             Key.DirectionDown -> GridNav.Dir.Down

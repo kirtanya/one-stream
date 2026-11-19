@@ -41,6 +41,8 @@ interface Catalog {
     suspend fun browseRows(type: MediaType): List<HomeRow> = emptyList()
     /** Popular titles of [type] whose original language is [code] (TV Categories → Languages). */
     suspend fun byLanguage(type: MediaType, code: String, page: Int = 1): List<TitleSummary> = emptyList()
+    /** A Top chart's titles, best first (TV Categories → Top charts); up to 100. Empty by default so render fakes stay short. */
+    suspend fun chart(chart: com.kirtanya.reel.core.browse.TopChart, content: com.kirtanya.reel.core.tmdb.ContentPreference): List<TitleSummary> = emptyList()
     /** Episodes of [shows] airing (or aired) between [from] and [to]. */
     suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate): List<com.kirtanya.reel.core.tmdb.CalendarEntry> = emptyList()
     /** TMDB user reviews (first page + total). */
@@ -95,5 +97,6 @@ private class TmdbCatalog(private val tmdb: TmdbRepository, ratings: Lazy<com.ki
     override suspend fun discover(filter: com.kirtanya.reel.core.tmdb.DiscoverFilter, page: Int) = tmdb.discover(filter, page)
     override suspend fun browseRows(type: MediaType) = tmdb.browseRows(type)
     override suspend fun byLanguage(type: MediaType, code: String, page: Int) = tmdb.titlesInLanguage(type, code, page)
+    override suspend fun chart(chart: com.kirtanya.reel.core.browse.TopChart, content: com.kirtanya.reel.core.tmdb.ContentPreference) = tmdb.chart(chart, content)
     override suspend fun calendar(shows: List<TitleRef>, from: java.time.LocalDate, to: java.time.LocalDate) = tmdb.calendar(shows, from, to)
 }

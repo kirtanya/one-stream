@@ -681,6 +681,14 @@ open class ScreenRenders(protected val variant: Variant) {
     /** Right twice, then down from the first row of posters: the same column of the next row. */
     @Test @Config(qualifiers = TV) fun tvCategoryDown() = behaviour().let { render("category-down", tv = true, focusRight = 2, focusDown = 1, content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.FALLBACK_GENRES[0])) }) }
     @Test @Config(qualifiers = TV) fun tvCategoryError() = render("category-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp { open(Dest.Category(com.kirtanya.reel.core.browse.Categories.LANGUAGES[2])) })
+    // Top charts: the four tiles sit at the top of Categories (tvCategories above); each opens a ranked top 100.
+    @Test @Config(qualifiers = TV) fun tvChartPopularMovies() = render("chart-popular-movies", tv = true, content = tvApp { open(Dest.Chart(com.kirtanya.reel.core.browse.TopCharts.ALL[0])) })
+    @Test @Config(qualifiers = TV) fun tvChartTopRatedSeries() = render("chart-top-rated-series", tv = true, content = tvApp { open(Dest.Chart(com.kirtanya.reel.core.browse.TopCharts.ALL[3])) })
+    /** Down from the first poster to the last row: ranks run to 100, the grid ends there. */
+    @Test @Config(qualifiers = TV) fun tvChartEnd() = behaviour().let { render("chart-end", tv = true, focusDown = 16, content = tvApp { open(Dest.Chart(com.kirtanya.reel.core.browse.TopCharts.ALL[1])) }) }
+    @Test @Config(qualifiers = TV) fun tvChartLoading() = render("chart-loading", tv = true, catalog = FakeCatalog(Answer.Loading), content = tvApp { open(Dest.Chart(com.kirtanya.reel.core.browse.TopCharts.ALL[0])) })
+    @Test @Config(qualifiers = TV) fun tvChartError() = render("chart-error", tv = true, catalog = FakeCatalog(Answer.Fail), content = tvApp { open(Dest.Chart(com.kirtanya.reel.core.browse.TopCharts.ALL[2])) })
+    @Test @Config(qualifiers = TV) fun tvChartEmpty() = render("chart-empty", tv = true, catalog = FakeCatalog(Answer.Empty), content = tvApp { open(Dest.Chart(com.kirtanya.reel.core.browse.TopCharts.ALL[1])) })
     @Test @Config(qualifiers = TV) fun tvPerson() = render("person", tv = true, content = tvApp { open(Dest.Person(1, "Timothée Chalamet")) })
     @Test @Config(qualifiers = TV) fun tvDownloads() = render("downloads", tv = true, data = RenderData(torrents = Fake.torrents, storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvDownloadsCache() = render("downloads-cache", tv = true, data = RenderData(torrents = Fake.torrents.takeLast(3), storage = 3_400_000_000L to 9_800_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
