@@ -9,10 +9,15 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.compose.ui.graphics.toArgb
+import com.kirtanya.reel.core.player.BufferInfo
 import com.kirtanya.reel.ui.theme.Tokens
+
+/** The switch countdown inside the start block: "Trying another source in 5 s", why, and where it goes next. */
+internal class BufferCountdown(val secondsLeft: Int, val reason: String, val next: String?)
 
 /**
  * The player's small overlays, built here so the renders can show them without a real playback:
@@ -163,6 +168,146 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
         }
     }
 
+
+    // ---------------------------------------------------------------- start / buffering block
+
+    /** The title's backdrop, set by the player once it has loaded (the first-frame wait looks like the film, not a void). */
+    val bufferBackdrop = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+    private val bufferScrim = View(context)
+
+    /**
+     * The picture behind the start block: the backdrop under one dark scrim. Added under the controls so the strip and
+     * the phone band still show over it; mid-film (a rebuffer) it stays empty and the film's last frame shows.
+     */
+    val bufferBack: FrameLayout = FrameLayout(context).apply {
+        visibility = View.GONE
+        addView(bufferBackdrop, FrameLayout.LayoutParams(-1, -1))
+        addView(bufferScrim, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    private lateinit var bufferHeadline: TextView
+    private lateinit var bufferFacts: TextView
+    private lateinit var bufferNote: TextView
+    private lateinit var bufferBar: LinearLayout
+    private lateinit var bufferFill: View
+    private lateinit var bufferRest: View
+    private lateinit var bufferProgress: TextView
+    private val statValues = ArrayList<TextView>()
+    private val statLabels = ArrayList<TextView>()
+    private lateinit var statRow: LinearLayout
+    lateinit var bufferKeep: Button; private set
+    lateinit var bufferSwitch: Button; private set
+    private lateinit var bufferButtons: LinearLayout
+
+    /** The buttons are up (the countdown shows): the remote belongs to them. */
+    val bufferActionsShown: Boolean get() = buffer.visibility == View.VISIBLE && bufferButtons.visibility == View.VISIBLE
+
+    /**
+     * What is happening while the film isn't playing yet: the stage in plain words, which file this is, download
+     * speed, peers and seeders, and how much of what the first frame needs has arrived. One calm card, centred, updated
+     * once a second, nothing animating (TV rule). With the countdown it becomes the "trying another source" question.
+     */
+    val buffer: FrameLayout = FrameLayout(context).apply {
+        visibility = View.GONE
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(20))
+            background = glass(radius = 24)
+            bufferHeadline = text(20f, PlayerColors.FOREGROUND, medium = true)
+            addView(bufferHeadline, LinearLayout.LayoutParams(-1, -2))
+            bufferFacts = text(14f, Tokens.Night.textSecondary.toArgb()).apply { setPadding(0, dp(4), 0, 0) }
+            addView(bufferFacts, LinearLayout.LayoutParams(-1, -2))
+            bufferNote = text(14f, Tokens.Night.textSecondary.toArgb()).apply {
+                setLineSpacing(dp(2).toFloat(), 1f)
+                setPadding(0, dp(10), 0, 0)
+            }
+            addView(bufferNote, LinearLayout.LayoutParams(-1, -2))
+            statRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                // The download speed is the widest value ("729 KB/s", "12.4 MB/s"): its cell gets more room.
+                repeat(3) { i ->
+                    val cell = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        val value = text(16f, PlayerColors.FOREGROUND, medium = true).apply { maxLines = 1; fontFeatureSettings = "tnum" }
+                        val label = text(12f, Tokens.Night.textSecondary.toArgb()).apply { maxLines = 1 }
+                        statValues.add(value)
+                        statLabels.add(label)
+                        addView(value)
+                        addView(label)
+                    }
+                    addView(cell, LinearLayout.LayoutParams(0, -2, if (i == 0) 1.4f else 1f))
+                }
+            }
+            addView(statRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+            bufferBar = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = GradientDrawable().apply { setColor(hairline); cornerRadius = dp(2).toFloat() }
+                bufferFill = View(context).apply { background = GradientDrawable().apply { setColor(accent); cornerRadius = dp(2).toFloat() } }
+                bufferRest = View(context)
+                addView(bufferFill, LinearLayout.LayoutParams(0, -1, 0f))
+                addView(bufferRest, LinearLayout.LayoutParams(0, -1, 1f))
+            }
+            addView(bufferBar, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(16) })
+            bufferProgress = text(12f, Tokens.Night.textSecondary.toArgb()).apply { setPadding(0, dp(8), 0, 0); fontFeatureSettings = "tnum" }
+            addView(bufferProgress, LinearLayout.LayoutParams(-1, -2))
+            bufferButtons = LinearLayout(context).apply {
+                // Side by side where there's room (phone landscape, TV), stacked full width on a portrait phone (like Not ready).
+                val wide = context.resources.configuration.screenWidthDp >= 600
+                orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+                bufferKeep = cardButton("Keep waiting", primary = true)
+                bufferSwitch = cardButton("Switch now")
+                if (wide) {
+                    addView(bufferKeep, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(bufferSwitch, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
+                } else {
+                    addView(bufferKeep, LinearLayout.LayoutParams(-1, -2))
+                    addView(bufferSwitch, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+                }
+            }
+            addView(bufferButtons, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        }
+        val width = minOf(context.resources.configuration.screenWidthDp - 32, 440)
+        addView(card, FrameLayout.LayoutParams(dp(width), -2, Gravity.CENTER))
+    }
+
+    /**
+     * Shows [info], or the switch question when [countdown] is set. [overVideo]: mid-film, so no backdrop and no
+     * scrim, only the card over the frozen picture.
+     */
+    fun bindBuffer(info: BufferInfo, countdown: BufferCountdown? = null, overVideo: Boolean = false) {
+        bufferHeadline.text = countdown?.let { com.kirtanya.reel.core.player.SourcePatience.countdownText(it.secondsLeft) } ?: info.stage.label
+        bufferFacts.text = info.facts
+        bufferFacts.visibility = if (info.facts.isBlank()) View.GONE else View.VISIBLE
+        bufferNote.text = countdown?.let { c -> listOfNotNull(c.reason, c.next?.let { "Next: $it" }).joinToString("\n") }.orEmpty()
+        bufferNote.visibility = if (countdown == null) View.GONE else View.VISIBLE
+        statValues.indices.forEach { i ->
+            val stat = info.stats.getOrNull(i)
+            statValues[i].text = stat?.second.orEmpty()
+            statLabels[i].text = stat?.first.orEmpty()
+        }
+        statRow.visibility = if (info.stats.isEmpty()) View.GONE else View.VISIBLE
+        val p = info.progress
+        bufferBar.visibility = if (p == null) View.GONE else View.VISIBLE
+        bufferProgress.visibility = if (p == null) View.GONE else View.VISIBLE
+        if (p != null) {
+            val f = p.coerceIn(0f, 1f)
+            (bufferFill.layoutParams as LinearLayout.LayoutParams).weight = f
+            (bufferRest.layoutParams as LinearLayout.LayoutParams).weight = 1f - f
+            bufferBar.requestLayout()
+            bufferProgress.text = info.progressText.orEmpty()
+        }
+        bufferButtons.visibility = if (countdown == null) View.GONE else View.VISIBLE
+        bufferBackdrop.visibility = if (overVideo) View.GONE else View.VISIBLE
+        bufferScrim.setBackgroundColor(if (overVideo) Color.TRANSPARENT else Tokens.Night.canvas.copy(alpha = BUFFER_SCRIM).toArgb())
+        bufferBack.visibility = View.VISIBLE
+        buffer.visibility = View.VISIBLE
+    }
+
+    fun hideBuffer() {
+        buffer.visibility = View.GONE
+        bufferBack.visibility = View.GONE
+    }
+
     private val statusChip = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -202,7 +347,10 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
     }
 
     /** Adds the chip row (and on the phone the Skip chip, bottom right) to [root]. */
-    fun addTo(root: FrameLayout, topMarginDp: Int = 20) {
+    fun addTo(root: FrameLayout, topMarginDp: Int = 20, backIndex: Int = -1) {
+        // The start block's picture goes under the controls (backIndex: just above the video); its card over them.
+        root.addView(bufferBack, backIndex, FrameLayout.LayoutParams(-1, -1))
+        root.addView(buffer, FrameLayout.LayoutParams(-1, -1))
         root.addView(chips, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(24), dp(topMarginDp), dp(24), 0) })
         if (!tv) root.addView(skipChip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(16), dp(PHONE_SKIP_BOTTOM_DP)) })
         // Under the chip row (whose pills are up to 48 dp tall on the phone).
@@ -279,5 +427,7 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
     companion object {
         /** Phone, controls hidden: the Skip chip this far up from the bottom edge (clear of the gesture bar). */
         const val PHONE_SKIP_BOTTOM_DP = 28
+        /** The backdrop's dark scrim: enough that the card's 12 sp text reads on any picture. */
+        const val BUFFER_SCRIM = 0.82f
     }
 }

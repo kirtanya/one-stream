@@ -106,10 +106,49 @@ internal object PlayerScenes {
      * The overlay states the renders show: Skip chip, Still watching?, the sleep chip, Up next at the credits, the
      * debrid Not ready card and the chip after switching away from a placeholder.
      */
-    enum class Overlay { SKIP, SKIP_OVER_BAND, STILL_WATCHING, SLEEP, UP_NEXT_CREDITS, NOT_READY, PLACEHOLDER_SWITCH }
+    enum class Overlay {
+        SKIP, SKIP_OVER_BAND, STILL_WATCHING, SLEEP, UP_NEXT_CREDITS, NOT_READY, PLACEHOLDER_SWITCH,
+        /** The start block: no peers yet; peers but no file info; bytes arriving (12 MB of ~40 MB); a stall mid-film; the switch question. */
+        BUFFER_FINDING, BUFFER_INFO, BUFFER_STATS, BUFFER_REBUFFER, SWITCH_COUNTDOWN,
+    }
 
     /** Overlays that hold the screen with the controls hidden (as in the player). */
-    private val CONTROLS_HIDDEN = setOf(Overlay.SKIP, Overlay.STILL_WATCHING, Overlay.UP_NEXT_CREDITS, Overlay.NOT_READY, Overlay.PLACEHOLDER_SWITCH)
+    private val CONTROLS_HIDDEN = setOf(
+        Overlay.SKIP, Overlay.STILL_WATCHING, Overlay.UP_NEXT_CREDITS, Overlay.NOT_READY, Overlay.PLACEHOLDER_SWITCH,
+        Overlay.BUFFER_FINDING, Overlay.BUFFER_INFO, Overlay.BUFFER_STATS, Overlay.BUFFER_REBUFFER, Overlay.SWITCH_COUNTDOWN,
+    )
+
+    /** The real example: Torrentio, 1080p, 1.9 GB, 729 KB/s and 16 peers. */
+    private val TORRENTIO = com.kirtanya.reel.core.sources.Source(
+        com.kirtanya.reel.core.sources.SourceKind.TORRENT, "Spider-Man.Into.the.Spider-Verse.2018.1080p.BluRay.x264", "Torrentio",
+        com.kirtanya.reel.core.sources.Quality(resolution = 1080), infoHash = "a".repeat(40), seeders = 38, sizeBytes = 1_954_210_119L,
+    )
+    private const val MIB = 1024L * 1024
+
+    /** A stand-in backdrop: a wide still, lighter at the top (the title's real one is a film frame). */
+    private fun fakeBackdrop(context: android.content.Context) = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR, intArrayOf(0xFFD98C5F.toInt(), 0xFF5B3A6B.toInt(), 0xFF1E3A5F.toInt()),
+    )
+
+    private fun bufferScene(o: PlayerOverlays, which: Overlay, tv: Boolean) {
+        val b = com.kirtanya.reel.core.player.BufferInfoBuilder
+        val sample = com.kirtanya.reel.core.player.BufferSample(
+            hasMetadata = which in setOf(Overlay.BUFFER_STATS, Overlay.BUFFER_REBUFFER),
+            peers = when (which) { Overlay.BUFFER_FINDING, Overlay.SWITCH_COUNTDOWN -> 0; Overlay.BUFFER_INFO -> 4; else -> 16 },
+            liveSeeds = 3,
+            downBps = if (which == Overlay.BUFFER_STATS) 729 * 1024L else 0,
+            doneBytes = 12 * MIB,
+        )
+        val target = b.startTargetBytes(TORRENTIO.sizeBytes, 6_420_000, "1080p").let { 40 * MIB.coerceAtMost(it * 8) }
+        val info = b.build(TORRENTIO, null, sample, baselineBytes = 0, targetBytes = target, rebufferAheadMs = if (which == Overlay.BUFFER_REBUFFER) 2_300 else null)
+        o.bufferBackdrop.setImageDrawable(fakeBackdrop(o.buffer.context))
+        val countdown = if (which == Overlay.SWITCH_COUNTDOWN) {
+            val next = TORRENTIO.copy(quality = com.kirtanya.reel.core.sources.Quality(resolution = 720), provider = "Comet | RD", sizeBytes = 1_400_000_000L)
+            BufferCountdown(5, com.kirtanya.reel.core.player.GiveUpReason.NO_INFO.text, b.facts(next))
+        } else null
+        o.bindBuffer(info, countdown, overVideo = which == Overlay.BUFFER_REBUFFER)
+        if (tv && countdown != null) o.bufferKeep.requestFocus()
+    }
 
     private fun showOverlay(o: PlayerOverlays, which: Overlay?, tv: Boolean) {
         when (which) {
@@ -139,6 +178,7 @@ internal object PlayerScenes {
                 o.notReady.visibility = android.view.View.VISIBLE
                 if (tv) o.notReadyRetry.requestFocus()
             }
+            Overlay.BUFFER_FINDING, Overlay.BUFFER_INFO, Overlay.BUFFER_STATS, Overlay.BUFFER_REBUFFER, Overlay.SWITCH_COUNTDOWN -> bufferScene(o, which, tv)
             Overlay.PLACEHOLDER_SWITCH -> {
                 val instead = com.kirtanya.reel.core.sources.Source(
                     com.kirtanya.reel.core.sources.SourceKind.DIRECT, "x", "Comet | RD", com.kirtanya.reel.core.sources.Quality(resolution = 1080),

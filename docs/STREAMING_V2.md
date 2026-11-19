@@ -983,6 +983,14 @@ The subtitle row is checked before the DIRECT and 3000–4999 rows.
 
 Metadata deadline: 45 s with 0 connected peers, else 90 s → `Failed(NO_METADATA)`.
 
+**Start block and switch question (implemented, `core/player/BufferInfo` + `SourcePatience`).** Before the first frame (and
+when a stall passes 2 s mid-film) the player shows one card: stage in words (Finding peers / Getting file info /
+Buffering), "1080p · 1.8 GB · Torrentio", Download / Peers / Seeders, and a progress bar to ready. It reads
+`engine.snapshot(hash)` once a second; nothing animates between ticks. A source that is downloading is never left.
+A source with no info (25 s, 40 s with peers) or with info but no bytes arriving (30 s, 45 s with peers) gets the
+question "Trying another source in 5 s" with Keep waiting (30 s more, focused on TV) and Switch now. Details and
+reasoning in DECISIONS.md, 2026-11-19.
+
 ---
 
 ## 7. Lifecycle and cache
@@ -1197,6 +1205,9 @@ reclaimable  = Σ size of candidates (protection ignored)
 - Losers are abandoned (7.2): removed if created and empty.
 - `StreamInfo.candidateIndex` lets PlayerActivity write the winning source into history.
 - With no alternates, a single candidate runs with the 45 s / 90 s metadata rule.
+- **Status (2026-11-19):** the live hedge above is still spec-only. What exists is a visible, patient switch to another
+  torrent (`TorrentFallback`, at most 2 hops per play, never to a higher resolution, a listed 0-seeder or a cam rip),
+  not a second torrent running beside the first.
 
 ---
 

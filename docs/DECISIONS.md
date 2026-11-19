@@ -5,6 +5,36 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-19 · Be patient with a starting source, and show what it is doing**
+User: pressing play opened a source, it was a little slow, and it seemed to jump straight to the next one; the player's
+start screen showed almost nothing.
+- What really moved playback to another source: the documented 8 s "hedge" (STREAMING_V2 7.6) was never built. The
+  real paths were the debrid placeholder hop (immediate, DIRECT only, max 3), Up next, the engine's 90 s metadata
+  timeout and ExoPlayer timeout 1003 (both end in an error panel with Other sources). There was no torrent-to-torrent
+  switch; this adds one, patient and visible, so the numbers below replace the spec's 8 s / 20 s, not a shipped 8 s.
+- Rule (`core/player/SourcePatience`): a torrent with bytes arriving (`downBps > 0`, or the file grew) is never left,
+  however slow; slow is not dead. Only two states give up:
+  no info (no metadata) at 25 s, 40 s if peers are connected; metadata but nothing arriving for 30 s, 45 s with peers.
+  Bytes arriving at any point restart the idle clock and cancel a countdown.
+- Why those numbers: magnet metadata from DHT alone takes 10-20 s on a cold start, and a swarm with peers but no
+  pieces often wakes after 30-40 s. 8 s gave up on sources that were about to start; 25-30 s is still short enough
+  that a dead torrent costs well under a minute, and the 90 s engine timeout stays as the backstop.
+- Never a silent jump: 5 s question "Trying another source in 5 s" with Keep waiting (default focus on TV, holds 30 s,
+  then asks again) and Switch now. The question appears only when a candidate exists (search is prefetched from 15 s).
+  The patience clock counts foreground seconds, so a backgrounded app does not burn it.
+- Candidates (`TorrentFallback`): TORRENT, not an extra, another infoHash, not tried this play, not a listed 0-seeder,
+  not a cam, never a higher resolution. At most 2 automatic hops (`EXTRA_AUTO_SWITCHES`, `EXTRA_TRIED`), then it only
+  waits. After a hop a chip says what it moved to. Mid-film stalls never switch, they only show the card.
+- Start card (`core/player/BufferInfo`): source line, Download / Peers / Seeders (live seeds if the listing has none),
+  a bar to ready, 1 Hz, no spinner, over the title's backdrop. Bar = bytes since info arrived against the engine's
+  first fetch (head + tail) plus 2 s of picture; mid-film it is seconds buffered of 5.
+- Not touched: SessionTuning, Governor, trackers, connection limits (feat/stream-speed).
+- Evidence: `SourcePatienceTest` (timings, never-leave-downloading, keep waiting, candidates, text);
+  renders `tv_buffer_*`, `tv_switch_countdown`, `phone_*buffer*`, `phone_*switch_countdown*`; `PlayerDesignRules`
+  scenes for phone landscape / portrait / 130 % and TV. Analytics: `sourceSwitch` stat (reason, waitedS, peers, doneKB).
+
+---
+
 **2026-11-16 · TV Home: one row in view, the backdrop smaller and top-right, a black foot**
 User: the backdrop was hidden behind the rail and the title text, and two rows showed. Now the info block and rows sit
 `Cinema.tvHomeDrop` (72 dp) lower so the focused row is the one fully in view; the backdrop is 90 % of the width and
