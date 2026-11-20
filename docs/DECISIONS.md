@@ -15,6 +15,29 @@ public FAT32 volume (no Android/data bind mount; MediaProvider at 54 % CPU). (3)
 - Dev installs on the TV: `assembleRelease` + same-key `sign.sh` + `compile -m speed` (not the debug APK).
 - `HttpFetcher` fills its 128 KiB buffer before writing (a drop mid-buffer still writes what arrived, then fails as before);
   `UsbStore.write` makes the folder only when it opens a handle; `SplitMath.pieceName` without `String.format`.
+**2026-11-20 · A title's download is shown on its own page: one state machine, fixed button slots, "Ready to play" before it finishes**
+"I start a download from the detail page, I get a toast, and then nothing on the page tells me what is happening." The page never read the download
+list, so Download stayed a plain button and the only feedback was a toast. Spec: `docs/DESIGN_STYLE.md` "Download status on the title page".
+- **One pure mapping** (`core/library/TitleDownload`): `DownloadFacts` (the engine snapshot, or a start in flight) to `DownloadButtonState`
+  (kind, label, detail, bar, actions). Kinds: Idle, Starting, Downloading, Ready, Waiting (with the reason), Paused, Not ready on AllDebrid (Retry +
+  Change source), Failed (reason + Retry), Done. Tested in `TitleDownloadTest`, so the screens only draw it.
+- **Ready to play**: running, not held, not stalled, and `done >= min(24 MiB torrent / 16 MiB HTTP, half of the wanted bytes)`. Play then streams
+  the same torrent through the existing stream path while the download keeps going. A byte threshold, not a piece check, because download mode is
+  not sequential; the stream path sets its own piece deadlines.
+- **Fixed button slots** (`DownloadControl`): lifecycle button, Play, Change source and delete keep their place whatever the state, so a TV
+  focus never jumps when the state changes; after a state change focus is restored to the same slot. Delete asks first (on the page, since the
+  options sheet closes itself before running an action).
+- **No double start**: `DownloadStarts` holds a pending entry per title key from the press until the download list shows it (or 3 s after an
+  error), so a second press does nothing and the page shows "Starting…" at once.
+- **Toast only for what the page cannot show** (an automatic pick). Errors go in the card, with Retry.
+- **Episodes** get a small mark (done badge, progress ring, ready play disc, paused / waiting / failed glass discs); the season says "3 of 10
+  downloaded". The long-press menu has Play, Pause / Resume, Try again, Change source and Delete download (how the TV reaches them).
+- **Live and cheap**: one `combine` of the download list and origins, mapped per title key with `distinctUntilChanged`, collected with
+  `collectAsStateWithLifecycle`; each row reads `derivedStateOf` of its own key, so one episode's progress recomposes one mark. Static ring,
+  no idle animation.
+- **Not done: play from a growing HTTP `.part` file.** Play on a running debrid / HTTP download streams the source URL (the same link the
+  downloader uses) while the download continues; true play-from-partial needs a reader over the pieces file and comes later.
+- Evidence: `TitleDownloadTest` (states, ready rule, ETA lines, season line), renders `app/build/screens/{phone,tv}/title-*-dl-*.png`.
 
 ---
 

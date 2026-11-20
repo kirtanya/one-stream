@@ -122,8 +122,10 @@ fun SourcesScreen(
 }
 
 @Composable
-private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Boolean, startDownload: Boolean, replacing: String?, resumeAtMs: Long?, onDone: () -> Unit, addedToList: Boolean = false) {
+private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Boolean, startDownload: Boolean, replacingFromNav: String?, resumeAtMs: Long?, onDone: () -> Unit, addedToList: Boolean = false) {
     val context = LocalContext.current
+    // "Change source" on the download card below turns this page into the replace picker, without leaving it.
+    var replacing by remember(replacingFromNav) { mutableStateOf(replacingFromNav) }
     val req = remember(d, season, episode) { requestFor(d, season, episode) }
     val prefs = remember(isTv) { rankPrefs(context, isTv) }
     val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
@@ -139,6 +141,10 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
     val where = com.kirtanya.reel.ui.homedisk.rememberDownloadFlow(label, origin, isTv)
 
     var downloading by remember { mutableStateOf(startDownload) }
+    // What the download of this film / episode is doing, live (the toast this page used to give is gone: docs/DESIGN_STYLE.md).
+    val titleDownloads = com.kirtanya.reel.ui.title.rememberTitleDownloads(d)
+    titleDownloads.onDownload = { _, _ -> downloading = true }
+    titleDownloads.onChangeSource = { _, _, key -> replacing = key; downloading = true }
     val action = when {
         replacing != null -> SourceAction.REPLACE
         downloading -> SourceAction.DOWNLOAD
@@ -255,6 +261,7 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
                         // "At home · change": the remembered choice, and the way back to the sheet.
                         if (downloading) where.rememberedLine()?.let { ReelButton(it, where::change, kind = ButtonKind.Ghost, icon = Icons.Rounded.Download) }
                     }
+                    if (replacing == null) PageDownload(titleDownloads, season, episode, isTv)
                     Status(search)
                 }
             }
@@ -359,6 +366,17 @@ private fun SourcesBody(d: TitleDetails, season: Int?, episode: Int?, isTv: Bool
         )
     }
     confirm?.let { s -> ReplaceDialog(replacing!!, s, label, origin, onDismiss = { confirm = null }, onDone = { confirm = null; onDone() }) }
+}
+
+/** The download card of this page's film / episode, once there is something to say (idle: the page itself is the Download picker). */
+@Composable
+private fun PageDownload(downloads: com.kirtanya.reel.ui.title.TitleDownloads, season: Int?, episode: Int?, isTv: Boolean) {
+    val state by downloads.state(season, episode)
+    if (state.kind == com.kirtanya.reel.core.library.DlKind.IDLE) return
+    com.kirtanya.reel.ui.common.DownloadControl(
+        state, downloads.nameOf(season, episode), { downloads.perform(it, season, episode) },
+        Modifier.widthIn(max = 520.dp), playHere = false,
+    )
 }
 
 /** What's being picked for: "Choose a source to play", then the title (logo) and the episode. */

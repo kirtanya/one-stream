@@ -57,7 +57,9 @@ import com.kirtanya.reel.core.tmdb.TitleDetails
 import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
+import com.kirtanya.reel.core.library.DlAction
 import com.kirtanya.reel.ui.common.ActionTile
+import com.kirtanya.reel.ui.common.DownloadControl
 import com.kirtanya.reel.ui.common.ButtonKind
 import com.kirtanya.reel.ui.common.EmptyState
 import com.kirtanya.reel.ui.common.GenreChips
@@ -81,7 +83,10 @@ import com.kirtanya.reel.ui.common.rememberWatchlistToggle
 import com.kirtanya.reel.ui.common.watchlistIcon
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.theme.Tokens
+import com.kirtanya.reel.ui.title.EpisodeMark
 import com.kirtanya.reel.ui.title.PlayAction
+import com.kirtanya.reel.ui.title.SeasonDownloadLine
+import com.kirtanya.reel.ui.title.TitleDownloads
 import com.kirtanya.reel.ui.title.heroBackdrops
 import com.kirtanya.reel.ui.title.EpisodeOptions
 import com.kirtanya.reel.ui.title.rememberEpisodeProgress
@@ -130,8 +135,13 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
     var overviewOpen by rememberSaveable { mutableStateOf(false) }
     val openSources: (EpisodeNumber?) -> Unit = { ep -> onPlay(ep?.season, ep?.episode) }
     var episodeOptions by remember { mutableStateOf<Episode?>(null) }
+    // Download status of this title: live, lifecycle-aware, one flow for the film's card, the episode marks and the season line.
+    val downloads = com.kirtanya.reel.ui.title.rememberTitleDownloads(d)
+    downloads.onDownload = { s, n -> onOpenDest(Dest.Sources(d.summary.ref, s, n, download = true)) }
+    downloads.onChangeSource = { s, n, key -> onOpenDest(Dest.Sources(d.summary.ref, s, n, download = true, replacing = key)) }
+    downloads.DeleteHost()
     episodeOptions?.let { e ->
-        EpisodeOptions(d, e, progress[EpisodeNumber(e.season, e.number)], onPlay = { s, n -> onPlay(s, n) }, onOpenDest = onOpenDest, onDismiss = { episodeOptions = null })
+        EpisodeOptions(d, e, progress[EpisodeNumber(e.season, e.number)], onPlay = { s, n -> onPlay(s, n) }, onOpenDest = onOpenDest, onDismiss = { episodeOptions = null }, downloads = downloads)
     }
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + Tokens.Space.xxl
 
@@ -180,9 +190,13 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
             }
             item(key = "actions") {
                 Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    ReelButton(action.label, { runPlayAction(context, action, openSources) }, Modifier.fillMaxWidth().pressScale(0.98f), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
-                    if (action is PlayAction.Resume) GradientProgress(action.entry.progress, height = 3.dp)
                     val ep = (action as? PlayAction.Resume)?.entry?.playback?.episode ?: (action as? PlayAction.Choose)?.episode
+                    // A download that can play (ready, or finished) is what the big button plays; "Resume" keeps its job.
+                    val dl by downloads.state(ep?.season, ep?.episode)
+                    val playsDownload = dl.canPlay && action is PlayAction.Choose
+                    val label = if (playsDownload) action.label + (dl.playLabel ?: "Play").removePrefix("Play") else action.label
+                    ReelButton(label, { if (playsDownload) downloads.perform(DlAction.PLAY, ep?.season, ep?.episode) else runPlayAction(context, action, openSources) }, Modifier.fillMaxWidth().pressScale(0.98f), kind = ButtonKind.Primary, icon = Icons.Rounded.PlayArrow, large = true)
+                    if (action is PlayAction.Resume) GradientProgress(action.entry.progress, height = 3.dp)
                     Row(Modifier.fillMaxWidth()) {
                         ActionTile(watchlistIcon(saved), "My list", toggleSaved, Modifier.weight(1f).pressScale(), active = saved)
                         d.trailer?.let { t -> ActionTile(Icons.Rounded.Movie, "Trailer", { openVideo(context, t) }, Modifier.weight(1f).pressScale()) }
@@ -192,6 +206,8 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                         ActionTile(if (watchedAll) Icons.Rounded.Check else Icons.Rounded.Visibility, "Seen", toggleWatched, Modifier.weight(1f).pressScale(), active = watchedAll)
                         ActionTile(Icons.Rounded.Share, "Share", { shareTitle(context, d) }, Modifier.weight(1f).pressScale())
                     }
+                    // Films: the download's own card (a series shows its downloads on the episodes).
+                    if (d.seasons.isEmpty()) FilmDownload(downloads)
                 }
             }
             // Films: reviews right under the actions (the approved order: hero, ratings, plot, actions, reviews).
@@ -208,6 +224,7 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                 item(key = "seasons") {
                     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                         SectionHeader("Episodes", Modifier.padding(horizontal = gutter))
+                        (episodes as? Load.Ready)?.let { SeasonDownloadLine(downloads, season, it.value.size, Modifier.padding(horizontal = gutter)) }
                         LazyRow(contentPadding = PaddingValues(horizontal = gutter), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                             items(d.seasons, key = { it.number }) { s ->
                                 ReelButton(s.name, { season = s.number }, kind = if (s.number == season) ButtonKind.Primary else ButtonKind.Ghost)
@@ -219,7 +236,7 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
                     Load.Loading -> item(key = "episodes-loading") { EpisodesSkeleton(Modifier.padding(horizontal = gutter)) }
                     is Load.Failed -> item(key = "episodes-failed") { ReelButton("Couldn't load episodes · Try again", { retryEpisodes() }, Modifier.padding(horizontal = gutter), kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh) }
                     is Load.Ready -> items(episodes.value, key = { "${it.season}x${it.number}" }) { e ->
-                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], episodeImdb[e.number], Modifier.padding(horizontal = gutter), downloaded = com.kirtanya.reel.ui.common.rememberEpisodeDownloaded(d.summary.ref.id, e.season, e.number), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
+                        EpisodeRow(e, progress[EpisodeNumber(e.season, e.number)], episodeImdb[e.number], Modifier.padding(horizontal = gutter), downloads = downloads, downloaded = com.kirtanya.reel.ui.common.rememberEpisodeDownloaded(d.summary.ref.id, e.season, e.number), onLongClick = { episodeOptions = e }) { onPlay(e.season, e.number) }
                     }
                 }
             }
@@ -264,9 +281,16 @@ private fun TitleBody(d: TitleDetails, initialSeason: Int?, onPlay: (Int?, Int?)
     }
 }
 
+/** The film's download card: reads its own state, so a tick redraws this and nothing else on the page. */
+@Composable
+private fun FilmDownload(downloads: TitleDownloads) {
+    val state by downloads.state()
+    DownloadControl(state, downloads.nameOf(null, null), { downloads.perform(it, null, null) })
+}
+
 /** Episode card: still (with progress or a watched tick), number + name, runtime, two lines of story. */
 @Composable
-private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier: Modifier = Modifier, downloaded: Boolean = false, onLongClick: () -> Unit, onClick: () -> Unit) {
+private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier: Modifier = Modifier, downloads: TitleDownloads, downloaded: Boolean = false, onLongClick: () -> Unit, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Tokens.Radius.l)
     val stillShape = RoundedCornerShape(Tokens.Radius.m)
     Row(
@@ -280,7 +304,7 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, imdb: Double?, modifier
                 watched?.finished == true -> Pill("Watched", Modifier.align(Alignment.TopStart).padding(Tokens.Space.xs), icon = Icons.Rounded.Check, accent = true)
                 watched != null -> GradientProgress(watched.progress, Modifier.align(Alignment.BottomCenter).padding(Tokens.Space.s), height = 3.dp, track = Color.White.copy(alpha = 0.2f))
             }
-            if (downloaded) com.kirtanya.reel.ui.common.DownloadedBadge(Modifier.align(Alignment.TopEnd).padding(Tokens.Space.xs))
+            EpisodeMark(downloads, e.season, e.number, downloaded, Modifier.align(Alignment.TopEnd).padding(Tokens.Space.xs))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
             Text(com.kirtanya.reel.core.tmdb.EpisodeFacts.title(e), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)

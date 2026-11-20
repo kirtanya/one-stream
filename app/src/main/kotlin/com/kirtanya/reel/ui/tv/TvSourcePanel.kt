@@ -361,16 +361,16 @@ private fun TvAllSourcesRow(more: Int, onClick: () -> Unit) {
 }
 
 /**
- * The sources of one episode as a panel over the title page (docs/TV_CLEAN_REDESIGN.md §5): ~40 % of the width on the right,
+ * The sources of one episode (or, with no [episode], of the film) as a panel over the title page (docs/TV_CLEAN_REDESIGN.md §5): ~40 % of the width on the right,
  * a solid surface. OK plays (or, with [download], downloads); hold OK opens the source options (Play, Download, ...); Back closes. Focus can't leave it while it's
  * open ([focusProperties] onExit cancels every move; focus that drops out is taken back at once; the page behind refuses it), and the title page puts it
  * back on the episode afterwards.
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-fun TvSourcePanel(d: TitleDetails, episode: Episode, download: Boolean, onClose: () -> Unit) {
+fun TvSourcePanel(d: TitleDetails, episode: Episode?, download: Boolean, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
-    val pick = rememberTvSourcePick(d, episode.season, episode.number, episode.name, episode.stillPath, episode.runtimeMin)
+    val pick = rememberTvSourcePick(d, episode?.season, episode?.number, episode?.name, episode?.stillPath, episode?.runtimeMin)
     val first = remember { FocusRequester() }
     // Focus belongs inside while the panel is open. It drops out by itself whenever the focused row leaves the list: the
     // "Close" under "Searching…" goes as the first sources arrive, a re-ranked answer moves the focused row away (the lazy
@@ -404,11 +404,12 @@ fun TvSourcePanel(d: TitleDetails, episode: Episode, download: Boolean, onClose:
         ) {
             Column(Modifier.padding(end = Tokens.Space.m), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
                 Text(if (download) "Choose a source to download" else "Choose a source to play", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
+                // A film (no episode): its title is the heading and there is no second line.
                 Text(
-                    listOfNotNull(EpisodeNumber(episode.season, episode.number).label, episode.name.ifBlank { null }).joinToString(" · "),
+                    if (episode == null) d.summary.title else listOfNotNull(EpisodeNumber(episode.season, episode.number).label, episode.name.ifBlank { null }).joinToString(" · "),
                     style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
-                Text(d.summary.title, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (episode != null) Text(d.summary.title, style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             TvSourceRows(
                 pick, Modifier.weight(1f).fillMaxWidth(), first,

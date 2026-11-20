@@ -35,6 +35,8 @@ class RenderData(
     val home: com.kirtanya.reel.ui.homedisk.HomeView? = null,
     /** What is completely downloaded (the "Downloaded" badge on cards, title pages and episodes). */
     val downloaded: com.kirtanya.reel.core.library.DownloadedSet? = null,
+    /** Title pages: Download presses with no download yet ("Starting…") or whose start failed, by item key. */
+    val starts: Map<String, com.kirtanya.reel.ui.title.StartEntry>? = null,
 )
 
 val LocalRenderData = staticCompositionLocalOf<RenderData?> { null }

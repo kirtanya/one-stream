@@ -151,10 +151,19 @@ private fun openExternal(context: Context, source: Source) {
  * download this one replaces: it's deleted only once the new one has started, so a failed start
  * leaves it alone (docs/STREAMING_V2.md §7.3a). On the TV with the USB disk ready a torrent is saved there when the file is
  * under 4 GiB (docs/HOME_DISK.md §24.3); [automatic] picks that cannot be placed are skipped without a message.
+ *
+ * With an [origin] the title page shows the outcome itself (docs/DESIGN_STYLE.md "Download status on the title page"): the item is
+ * "Starting…" until the download exists, a failure is written on the page, and a second press while it starts does nothing.
+ * So the toast is only for what the page can't show: a start without an origin, and automatic picks that fail.
  */
 fun download(context: Context, source: Source, title: String, origin: DownloadOrigin? = null, replacing: String? = null, startedMessage: String? = null, placeSrc: String = "button", automatic: Boolean = false) {
+    if (source.kind == SourceKind.EXTERNAL) return
     val app = ReelApp.get(context)
     val main = android.os.Handler(context.mainLooper)
+    val item = origin?.let(com.kirtanya.reel.core.library.AutoDownload::keyOf)
+    // One start per item at a time: a double press, or the same pick from two screens.
+    if (item != null && !com.kirtanya.reel.ui.title.DownloadStarts.begin(item)) return
+    fun toast(msg: String) = main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
     fun dropOld(newHash: String?) {
         val old = replacing ?: return
         if (newHash != null && newHash.equals(old, ignoreCase = true)) return
@@ -167,34 +176,51 @@ fun download(context: Context, source: Source, title: String, origin: DownloadOr
             }
         }
     }
-    when (source.kind) {
-        SourceKind.TORRENT -> app.appScope.launch {
-            val msg = try {
-                val magnet = source.magnetUri() ?: return@launch
-                val place = withContext(Dispatchers.IO) { app.downloadPlacer.decide(placeSrc, source.sizeBytes) }
-                place.refused?.let { if (automatic) return@launch else throw EngineException(it.message) }
-                val hash = app.engine.addMagnet(magnet, TorrentMode.DOWNLOAD, source.fileIdx, source.filename, saveDir = place.saveDir)
-                origin?.let { app.downloadOrigins.put(hash, it) }
-                dropOld(hash)
-                startedMessage ?: if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"
-            } catch (e: EngineException) {
-                e.message ?: "Couldn't start the download"
+    val started = startedMessage ?: if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"
+    /** The start's outcome: [created] (null error), [error] (written on the page; a toast only when the page can't show it), or skipped ([silent]). */
+    fun finish(created: Boolean, error: String? = null) {
+        when {
+            created -> {
+                if (item != null) com.kirtanya.reel.ui.title.DownloadStarts.created(item, app.appScope)
+                if (item == null || startedMessage != null) toast(started)
             }
-            main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+            error != null -> {
+                if (item != null) com.kirtanya.reel.ui.title.DownloadStarts.failed(item, error)
+                if (item == null || automatic) toast(error)
+            }
+            else -> if (item != null) com.kirtanya.reel.ui.title.DownloadStarts.clear(item)
         }
-        SourceKind.DIRECT -> app.appScope.launch {
-            // Our own downloader (docs/HOME_DISK.md §25): a row on the Downloads screen, placed like a torrent.
-            val msg = withContext(Dispatchers.IO) {
-                when (val added = app.httpDownloads.add(source, title, origin, placeSrc)) {
-                    is com.kirtanya.reel.download.HttpDownloader.Added.Started -> {
-                        dropOld(null)
-                        startedMessage ?: if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"
-                    }
-                    is com.kirtanya.reel.download.HttpDownloader.Added.Refused -> if (automatic) null else added.message
+    }
+    app.appScope.launch {
+        try {
+            when (source.kind) {
+                SourceKind.TORRENT -> {
+                    val magnet = source.magnetUri()
+                    if (magnet == null) { finish(created = false); return@launch }
+                    val place = withContext(Dispatchers.IO) { app.downloadPlacer.decide(placeSrc, source.sizeBytes) }
+                    val refused = place.refused
+                    if (refused != null) { if (automatic) finish(created = false) else finish(created = false, error = refused.message); return@launch }
+                    val hash = app.engine.addMagnet(magnet, TorrentMode.DOWNLOAD, source.fileIdx, source.filename, saveDir = place.saveDir)
+                    origin?.let { app.downloadOrigins.put(hash, it) }
+                    dropOld(hash)
+                    finish(created = true)
                 }
+                SourceKind.DIRECT -> {
+                    // Our own downloader (docs/HOME_DISK.md §25): a row on the Downloads screen, placed like a torrent.
+                    when (val added = withContext(Dispatchers.IO) { app.httpDownloads.add(source, title, origin, placeSrc) }) {
+                        is com.kirtanya.reel.download.HttpDownloader.Added.Started -> { dropOld(null); finish(created = true) }
+                        is com.kirtanya.reel.download.HttpDownloader.Added.Refused -> if (automatic) finish(created = false) else finish(created = false, error = added.message)
+                    }
+                }
+                SourceKind.EXTERNAL -> finish(created = false)
             }
-            if (msg != null) main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+        } catch (e: EngineException) {
+            finish(created = false, error = e.message ?: "Couldn't start the download")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            if (item != null) com.kirtanya.reel.ui.title.DownloadStarts.clear(item)
+            throw e
+        } catch (e: Exception) {
+            finish(created = false, error = e.message ?: "Couldn't start the download")
         }
-        SourceKind.EXTERNAL -> Unit
     }
 }
