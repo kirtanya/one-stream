@@ -419,6 +419,9 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test fun episodeOptionsUnplayed() = render("episode-options-unplayed", windows = true) { EpisodeOptionsScene() }
     @Test fun continueUndo() = render("continue-undo", history = true) { UndoScene { phone()() } }
 
+    // Direct (debrid / HTTP) downloads next to a torrent (docs/HOME_DISK.md §25.6): running, finished on the USB disk, not ready on the debrid service, paused.
+    @Test fun downloadsDirect() = render("downloads-direct", data = RenderData(torrents = Fake.directDownloads + Fake.torrents[0], storage = 3_400_000_000L to 21_800_000_000L, usbFree = 412_000_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
+    @Test fun downloadsDirectNotReady() = render("downloads-direct-not-ready", data = RenderData(torrents = Fake.directDownloads.drop(2), storage = 3_400_000_000L to 21_800_000_000L, usbFree = 412_000_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
     @Test fun downloadsNight() = render("downloads-night", data = RenderData(torrents = nightTorrents, storage = 3_400_000_000L to 21_800_000_000L, origins = Fake.origins), content = phone { select(Tab.Downloads) })
     @Test fun downloadsEmpty() = render("downloads-empty", data = RenderData(torrents = emptyList(), storage = 0L to 51_000_000_000L), content = phone { select(Tab.Downloads) })
 
@@ -777,6 +780,8 @@ open class ScreenRenders(protected val variant: Variant) {
         }
     }
     @Test @Config(qualifiers = TV) fun tvDownloadsUsb() = render("downloads-usb", tv = true, data = RenderData(torrents = usbTorrents, storage = 3_400_000_000L to 1_100_000_000L, usbFree = 412_000_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
+    @Test @Config(qualifiers = TV) fun tvDownloadsDirect() = render("downloads-direct", tv = true, data = RenderData(torrents = Fake.directDownloads + Fake.torrents[0], storage = 3_400_000_000L to 1_100_000_000L, usbFree = 412_000_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
+    @Test @Config(qualifiers = TV) fun tvDownloadsDirectNotReady() = render("downloads-direct-not-ready", tv = true, data = RenderData(torrents = Fake.directDownloads.drop(2), storage = 3_400_000_000L to 1_100_000_000L, usbFree = 412_000_000_000L, origins = Fake.origins), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvDownloadsNight() = render("downloads-night", tv = true, data = RenderData(torrents = nightTorrents, storage = 0L to 9_800_000_000L), content = tvApp { select(Tab.Downloads) })
     @Test @Config(qualifiers = TV) fun tvSettingsHomeStorage() =
         render("settings-homestorage", tv = true, data = RenderData(installed = Fake.installed, home = FakeHome.tv)) { TvSettingsOver(SettingsPage.HomeStorage) }

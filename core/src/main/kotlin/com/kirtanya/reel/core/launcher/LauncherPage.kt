@@ -125,7 +125,7 @@ object LauncherPage {
         SourceKind.EXTERNAL -> "service"
     }
 
-    /** What the app's own Download button handles: torrents (engine) and direct links (DownloadManager). */
+    /** What the app's own Download button handles: torrents (engine) and direct links (the in-app HTTP downloader). */
     fun downloadable(s: Source) = s.kind == SourceKind.TORRENT || (s.kind == SourceKind.DIRECT && s.url != null)
 
     /** Best match exactly like the Sources screen: the first non-service source of the ranked list that isn't a trailer or extra. */

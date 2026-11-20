@@ -40,10 +40,12 @@ class EngineService : LifecycleService() {
         // data into it (byte by byte over JNI), 0.5–1 s on the TV's CPU — the app's first frames froze behind it.
         lifecycleScope.launch {
             val engine = withContext(Dispatchers.Default) { ReelApp.get(this@EngineService).engine.also { it.start() } }
-            engine.torrents.collectLatest { list ->
+            kotlinx.coroutines.flow.combine(engine.torrents, ReelApp.get(this@EngineService).httpDownloads.snapshots) { torrents, direct -> torrents to direct }.collectLatest { (list, direct) ->
                 val streaming = list.filter { engine.isStreaming(it.infoHash) }
-                val active = list.count { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA }
-                val down = list.sumOf { it.downBps.toLong() }
+                // Direct downloads (HOME_DISK §25) share the line: "2 downloading".
+                val active = list.count { it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA } +
+                    direct.count { it.phase == TorrentPhase.DOWNLOADING }
+                val down = list.sumOf { it.downBps.toLong() } + direct.sumOf { it.downBps.toLong() }
                 val up = list.sumOf { it.upBps.toLong() }
                 val rates = "↓ ${formatBytes(down)}/s · ↑ ${formatBytes(up)}/s"
                 // Downloads held by "Download only overnight" (STREAMING_V2 §8.3 A): say why nothing moves.
@@ -83,8 +85,11 @@ class EngineService : LifecycleService() {
     private fun quit() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         getSystemService(ActivityManager::class.java).appTasks.forEach { runCatching { it.finishAndRemoveTask() } }
-        val engine = ReelApp.get(this).engine
+        val app = ReelApp.get(this)
+        val engine = app.engine
         Thread({
+            // Direct downloads save their positions first: they carry on from there at the next start.
+            runCatching { app.httpDownloads.shutdown() }
             runCatching { engine.shutdown() }
             ContextCompat.getMainExecutor(this).execute {
                 stopSelf()

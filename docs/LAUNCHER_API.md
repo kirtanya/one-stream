@@ -79,7 +79,7 @@ Code: core `launcher/LauncherPage.kt` (rows, tokens, languages, states; tests in
 | `…/details?type=movie\|tv&tmdb=<id>` | 0 or 1 row (6 s deadline) |
 | `…/episodes?tmdb=<id>&season=<n>` | one row per episode, by number (6 s deadline) |
 | `…/sources?type=movie\|tv&tmdb=<id>[&season=&episode=]` | the Sources screen's own search: every enabled addon and plugin (built-in + the user's), ranked by its ranker, same order. Shows need `season` + `episode` (else empty). Waits up to 25 s, then answers with what has arrived. |
-| `…/downloads` | the Downloads tab's downloads (not the stream cache). Only while the engine runs (it starts with the app, a stream, a download or `prepare`); otherwise empty — a query never starts P2P. Direct-link downloads (Android's download manager) aren't listed. |
+| `…/downloads` | the Downloads tab's downloads (not the stream cache). Only while the engine runs (it starts with the app, a stream, a download or `prepare`); otherwise empty — a query never starts P2P. Direct-link (debrid / HTTP) downloads are listed too, with a key `http:<12 hex>` instead of an info-hash; `onestream://play?torrent=http:<id>` plays a finished one. |
 
 `details` columns: the 13 row columns above, then
 `overview` (string\|null), `genres` (string\|null, "Drama, Fantasy"), `runtime_min` (int\|null),
@@ -119,7 +119,7 @@ Every one returns a Bundle `{ok: Boolean, message: String?}` and never throws fo
 |---|---|---|
 | `watchlist_add` | `type`, `tmdb` | adds to My list (fetches the title from TMDB, 6 s) |
 | `watchlist_remove` | `type`, `tmdb` | removes from My list |
-| `download` | `token` | the app's Download button for that source (torrent → engine download with its notification; direct → Android's download manager). Service links: ok=false. |
+| `download` | `token` | the app's Download button for that source (torrent → engine download with its notification; direct → the app's HTTP downloader, shown in Downloads). Service links: ok=false. |
 | `prepare` | `token` | torrents: the player's own stream start in the background (stream mode, the opening pieces first), no player; if nobody plays it, it stops after 5 min without reads, like a stream handed to an external player. Direct links: ok=true, nothing to do. Service links: ok=false. Returns at once ("Preparing"). |
 | `cancel_download` | `key` (info-hash) | the Downloads tab's Delete (removes the download and its files) |
 | `stop_engine` | none | TV "Speed up": if no One Stream screen is open, nothing is streaming and no download is transferring, saves resume data, stops the engine's foreground service and ends One Stream's process (the next launch starts fresh). Downloads waiting for the night window also keep it (the night alarm reaches only a running engine). Otherwise `ok=false` with the reason ("One Stream is open", "Something is playing", "2 downloads are running"); running downloads are never paused or stopped by this call. |

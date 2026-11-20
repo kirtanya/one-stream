@@ -25,9 +25,10 @@ object EngineIdle {
         return StopEngine.decide(
             visibleScreens = app.startedActivities.get(),
             streams = list.count { it.streaming },
+            // Direct downloads (docs/HOME_DISK.md §25.5) count too, including the ones waiting out a retry.
             downloads = downloads.count {
                 it.phase == TorrentPhase.DOWNLOADING || it.phase == TorrentPhase.METADATA || it.phase == TorrentPhase.CHECKING
-            },
+            } + app.httpDownloads.activeCount(),
             waiting = downloads.count { it.waitingForNight },
         )
     }
@@ -39,6 +40,7 @@ object EngineIdle {
     fun stop(app: ReelApp, why: String) {
         val engine = app.engineIfCreated
         Thread({
+            runCatching { app.httpDownloads.shutdown() }
             runCatching { engine?.shutdown() }
             runCatching { app.stopService(Intent(app, EngineService::class.java)) }
             Log.i(TAG, "engine stopped: $why")

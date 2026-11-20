@@ -46,7 +46,7 @@ enum class SwapKind {
     /** A different torrent: the old one and its data are deleted once the new one starts. */
     NEW_TORRENT,
 
-    /** A direct link: Android's download manager fetches it; the torrent and its data are deleted. */
+    /** A direct link: the app's own HTTP downloader fetches it (docs/HOME_DISK.md §25); the torrent and its data are deleted. */
     DIRECT,
 
     /** A service link can't be downloaded. */

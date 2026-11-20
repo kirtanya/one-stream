@@ -100,12 +100,7 @@ class NextEpisodePrefetcher(private val app: ReelApp) {
 
     private fun minuteNow() = java.time.LocalTime.now().let { it.hour * 60 + it.minute }
 
-    private fun knownDownloads(): List<KnownDownload> {
-        val origins = app.downloadOrigins.all.value
-        return app.engine.torrents.value.filter { it.mode == TorrentMode.DOWNLOAD }.mapNotNull { t ->
-            origins[t.infoHash.lowercase()]?.let { KnownDownload(t.infoHash, it, t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING) }
-        }
-    }
+    private fun knownDownloads(): List<KnownDownload> = app.knownDownloads()
 
     private suspend fun run(current: Playback, next: EpisodeNumber, show: Int, key: String) {
         val ref = TitleRef(MediaType.TV, show)
@@ -130,6 +125,8 @@ class NextEpisodePrefetcher(private val app: ReelApp) {
             is PrefetchPick.None -> return skip(key, next, pick.why)
         }
         val source = picked
+        // A direct (debrid) link goes to our own downloader: placed like a torrent but allowed over 4 GiB on the disk (HOME_DISK §25.2).
+        if (source.kind == com.kirtanya.reel.core.sources.SourceKind.DIRECT) return startDirect(current, source, next, show, key, d.summary.title)
         if (onUsb) (NextPrefetch.pick(current.source, search?.sources.orEmpty(), held) as? PrefetchPick.Chosen)?.let { app.downloadPlacer.logSwap("prefetch", it.source, source) }
         var saveDir: java.io.File? = null
         if (onUsb) {
@@ -167,6 +164,53 @@ class NextEpisodePrefetcher(private val app: ReelApp) {
             ),
         )
         watchFinish(hash, next, startedAt)
+    }
+
+    private suspend fun startDirect(current: Playback, source: Source, next: EpisodeNumber, show: Int, key: String, showTitle: String) {
+        // Things moved while we searched (a network change, the user starting the same download): decide again.
+        if (NextPrefetch.check(facts(current, key, bufferHealthy = true)) != PrefetchStep.Go) return
+        val label = "$showTitle · ${next.label}"
+        tried[key] = System.currentTimeMillis()
+        val added = withContext(Dispatchers.IO) {
+            app.httpDownloads.add(source, label, DownloadOrigin("tv", show, next.season, next.episode, label), "prefetch")
+        }
+        val rowKey = when (added) {
+            is com.kirtanya.reel.download.HttpDownloader.Added.Refused -> return skip(key, next, PrefetchWhy.NO_ROOM)
+            is com.kirtanya.reel.download.HttpDownloader.Added.Started -> added.key
+        }
+        chosen[key] = source
+        val startedAt = EngineStats.now()
+        Log.i(TAG, "next-episode download $label → ${source.provider}")
+        EngineStats.log(
+            "nextPrefetch",
+            linkedMapOf(
+                "state" to "start", "key" to rowKey.take(12), "ep" to epTag(next), "prov" to source.provider,
+                "res" to source.quality.resolution, "size" to source.sizeBytes, "bufMs" to NextPrefetch.HOLD_MS, "kind" to "http",
+            ),
+        )
+        var seen = false
+        val end = withTimeoutOrNull(WATCH_MS) {
+            app.httpDownloads.snapshots.first { list ->
+                val t = list.firstOrNull { it.infoHash == rowKey }
+                if (t != null) seen = true
+                when {
+                    t == null -> seen
+                    t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.ERROR -> true
+                    else -> false
+                }
+            }
+        }
+        val t = end?.firstOrNull { it.infoHash == rowKey }
+        val state = when {
+            end == null -> "timeout"
+            t == null -> "gone"
+            t.phase == TorrentPhase.ERROR -> "fail"
+            else -> "done"
+        }
+        EngineStats.log(
+            "nextPrefetch",
+            linkedMapOf("state" to state, "key" to rowKey.take(12), "ep" to epTag(next), "ms" to EngineStats.now() - startedAt, "bytes" to t?.doneBytes),
+        )
     }
 
     /** Writes `state=done` when the torrent finishes (`gone` if it was removed first, `timeout` after 12 h). */

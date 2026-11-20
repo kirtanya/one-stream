@@ -62,7 +62,7 @@ sealed interface LauncherLink {
                 "search" -> params["q"]?.trim()?.takeIf { it.isNotEmpty() }?.let(::Search)
                 "play" -> {
                     val token = params["source"]?.trim()?.takeIf { SourceTokens.looksLikeToken(it) }
-                    val torrent = params["torrent"]?.trim()?.lowercase()?.takeIf { Regex("[0-9a-f]{40}|[0-9a-f]{64}").matches(it) }
+                    val torrent = params["torrent"]?.trim()?.lowercase()?.takeIf { Regex("[0-9a-f]{40}|[0-9a-f]{64}|http:[0-9a-f]{12}").matches(it) }
                     val type = LauncherApi.mediaType(params["type"])
                     val id = params["tmdb"]?.trim()?.toIntOrNull()?.takeIf { it > 0 }
                     val fallback = if (type != null && id != null) TitleRef(type, id) else null

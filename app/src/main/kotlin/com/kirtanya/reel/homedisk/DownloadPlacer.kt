@@ -10,6 +10,8 @@ import com.kirtanya.reel.core.homedisk.PlaceWhy
 import com.kirtanya.reel.core.homedisk.Placement
 import com.kirtanya.reel.core.homedisk.PlacementFacts
 import com.kirtanya.reel.core.homedisk.VolumeChoice
+import com.kirtanya.reel.core.httpdl.HttpPlacement
+import com.kirtanya.reel.download.HttpDownloader
 import com.kirtanya.reel.core.sources.Source
 import com.kirtanya.reel.engine.EngineStats
 import java.io.File
@@ -24,7 +26,7 @@ class DownloadPlacer(private val app: ReelApp) {
         val refused: Placement.Refuse? get() = placement as? Placement.Refuse
     }
 
-    private class Usb(val downloads: File, val freeBytes: Long)
+    private class Usb(val downloads: File, val freeBytes: Long, val volumeId: String?)
 
     /** The disk when it is in play: TV, backend USB, disk Ready (§24.1). */
     private fun usb(): Usb? {
@@ -34,7 +36,7 @@ class DownloadPlacer(private val app: ReelApp) {
         val appDir = found.appDir ?: return null
         val dir = File(appDir, UsbDisk.DOWNLOADS).also { it.mkdirs() }
         if (!dir.isDirectory) return null
-        return Usb(dir, runCatching { StatFs(dir.path).availableBytes }.getOrDefault(0L))
+        return Usb(dir, runCatching { StatFs(dir.path).availableBytes }.getOrDefault(0L), found.volumeId)
     }
 
     /** The disk's free bytes when it is in play, else null (the Downloads screen's USB line). */
@@ -67,6 +69,41 @@ class DownloadPlacer(private val app: ReelApp) {
         )
         val dir = (p as? Placement.At)?.takeIf { it.place == DownloadPlace.USB }?.let { u?.downloads }
         return Decision(dir, p)
+    }
+
+    /**
+     * Where a direct (debrid / HTTP) download goes (docs/HOME_DISK.md §25.2): [HttpPlacement], which allows a file of 4 GiB or more on the
+     * disk because our own writer splits it. Logs `dl-place` too. [Http.baseDir] is the folder holding one subfolder per download.
+     */
+    class Http(val place: DownloadPlace?, val baseDir: File?, val volumeId: String?, val placement: Placement) {
+        val refused: Placement.Refuse? get() = placement as? Placement.Refuse
+    }
+
+    fun decideHttp(src: String, sizeBytes: Long?): Http {
+        val u = usb()
+        val internal = HttpDownloader.internalDir(app)
+        val tvFree = runCatching { StatFs(internal.path).availableBytes }.getOrDefault(0L)
+        val p = HttpPlacement.place(PlacementFacts(u != null, u?.freeBytes ?: 0L, tvFree, sizeBytes))
+        val (place, why) = when (p) {
+            is Placement.At -> p.place.tag to p.why.tag
+            is Placement.Refuse -> "none" to p.why.tag
+        }
+        EngineStats.log(
+            "dl-place",
+            linkedMapOf("src" to src, "dev" to if (app.isTv) "tv" else "phone", "kind" to "http", "place" to place, "why" to why, "size" to sizeBytes, "usbFreeMb" to u?.let { it.freeBytes shr 20 }, "tvFreeMb" to (tvFree shr 20)),
+        )
+        if (p !is Placement.At) return Http(null, null, null, p)
+        return if (p.place == DownloadPlace.USB && u != null) Http(DownloadPlace.USB, File(u.downloads, HttpDownloader.FOLDER), u.volumeId, p)
+        else Http(DownloadPlace.TV, internal, null, p)
+    }
+
+    /** The folder of direct downloads on the disk [volumeId], while that disk is plugged in; null = it is away (the row waits, §25.5). */
+    fun httpUsbDir(volumeId: String?): File? {
+        val found = app.home.usb.find()
+        if (found.state !is HomeDiskState.Connected) return null
+        if (volumeId != null && found.volumeId != volumeId) return null
+        val appDir = found.appDir ?: return null
+        return File(File(appDir, UsbDisk.DOWNLOADS), HttpDownloader.FOLDER).takeIf { it.isDirectory || it.mkdirs() }
     }
 
     /** No side effects: would [decide] refuse this? (Auto-download counts what it really started.) */

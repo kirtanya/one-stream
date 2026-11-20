@@ -169,11 +169,13 @@ class MainActivity : ComponentActivity() {
             }
             is LauncherLink.Play -> {
                 // Only a download the engine already has: any app can send this link, and it must not start new P2P.
-                val download = link.torrent?.let { ReelApp.get(this).engineIfCreated?.snapshot(it) }
+                val httpDownload = link.torrent?.takeIf(com.kirtanya.reel.core.httpdl.HttpDownloads::isKey)?.let { ReelApp.get(this).httpDownloads.get(it) }
+                val download = link.torrent?.takeIf { httpDownload == null }?.let { ReelApp.get(this).engineIfCreated?.snapshot(it) }
                 val playback = link.token?.let(com.kirtanya.reel.data.LauncherSources.tokens::get)
                 when {
                     // Exactly what picking it on the Sources screen does.
                     playback != null -> com.kirtanya.reel.ui.sources.play(this, playback)
+                    httpDownload != null -> if (httpDownload.finished) startActivity(com.kirtanya.reel.player.PlayerActivity.forHttpDownload(this, httpDownload)) else openTab = com.kirtanya.reel.ui.nav.Tab.Downloads
                     download != null -> com.kirtanya.reel.ui.homedisk.gatedPlay(this, null, download.name) { startActivity(com.kirtanya.reel.player.PlayerActivity.forTorrent(this, download.infoHash, download.name)) }
                     // A download the engine hasn't loaded yet (cold start): the Downloads tab.
                     link.torrent != null -> openTab = com.kirtanya.reel.ui.nav.Tab.Downloads

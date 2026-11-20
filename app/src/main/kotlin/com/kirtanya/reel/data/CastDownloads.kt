@@ -52,7 +52,7 @@ object CastDownloads {
         val source = (decided as? Decision.Take)?.source ?: return toast(context, CastChoice.downloadNothing(label))
         Log.i(TAG, "cast download: ${request.ref} → ${source.provider} ${source.key}")
         val origin = DownloadOrigin(d.summary.ref.type.path, d.summary.ref.id, request.season, request.episode, label)
-        // The app's own Download button (direct links go to Android's download manager, which wants the main thread).
+        // The app's own Download button (it must run on the main thread; a direct link is added to the in-app HTTP downloader from there).
         withContext(Dispatchers.Main) { download(app, source, label, origin, startedMessage = CastChoice.downloadStarted(label)) }
     }
 

@@ -156,6 +156,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
     // ---- debrid placeholder clips (core/player/PlaceholderCheck)
     /** A direct debrid / http link of a film or episode: the only kind an addon swaps for a "downloading" clip. */
+    /** A finished direct download played from the disk / the TV (`reel-file://`, docs/HOME_DISK.md §25.7): no link to share or retry. */
+    private val localFile by lazy { playback.source.url?.startsWith(com.kirtanya.reel.core.httpdl.HomeFileRef.SCHEME + "://") == true }
     private val placeholderCandidate by lazy { com.kirtanya.reel.core.player.PlaceholderCheck.applies(playback.source, playback.tmdbId != null) }
     /** How long this film / episode should run (TMDB, history), looked up while the link resolves. */
     private var expectedRuntime: kotlinx.coroutines.Deferred<Long?>? = null
@@ -520,7 +522,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         } else {
             DefaultDataSource.Factory(this, http)
         }
-        val sources = ReelDataSourceFactory(TorrentDataSource.Factory(app.engine), other)
+        val sources = ReelDataSourceFactory(TorrentDataSource.Factory(app.engine), other, HomeFileDataSource.Factory(app))
         // Our renderers: audio / subtitle delay, volume / dialogue boost; Dolby decoded here while a boost is on.
         val exo = ExoPlayer.Builder(this, DelayRenderersFactory(this, delays, pcmOnly = options.boosting, boost = boost))
             .setLoadControl(loadControl)
@@ -1235,7 +1237,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         hideNextCard()
         errorText.text = text
         errorPanel.visibility = View.VISIBLE
-        errorExternal.visibility = if (allowExternal && (preparedStream != null || (playback.source.kind == SourceKind.DIRECT && streamUrl != null))) View.VISIBLE else View.GONE
+        errorExternal.visibility = if (allowExternal && !localFile && (preparedStream != null || (playback.source.kind == SourceKind.DIRECT && streamUrl != null))) View.VISIBLE else View.GONE
         errorSources.visibility = if (playback.tmdbId != null) View.VISIBLE else View.GONE
         (if (errorSources.visibility == View.VISIBLE) errorSources else errorPanel.getChildAt(errorPanel.childCount - 1)).requestFocus()
     }
@@ -2233,6 +2235,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 stats { it.fatalSlowError() }
                 showError("Waiting for peers that have this part of the video. Try again in a moment, or pick another source.")
             }
+            localFile && error.errorCode in 2000..2999 ->
+                showError("This download can't be read. If it is on a USB disk, check that the disk is plugged in.", allowExternal = false)
             playback.source.kind == SourceKind.DIRECT && error.errorCode in 2000..2999 -> {
                 if (httpCode == 403 || httpCode == 410) {
                     showError("This link has expired. Try another source.")
@@ -2360,7 +2364,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 ::font,
                 extraSettings = {
                     listOf(changeSourceRow()) +
-                        (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf(PanelExtra("Open in another player") { openExternal() })
+                        (if (!localFile && (preparedStream != null || playback.source.kind == SourceKind.DIRECT)) listOf(PanelExtra("Open in another player") { openExternal() })
                         else emptyList()) + PanelExtra(REPORT_ROW) { reportFromSettings() }
                 },
                 nextLabel = { playback.next?.let { "Next · ${it.label}" } },
@@ -2396,7 +2400,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             font = ::font,
             extraSettings = {
                 listOf(changeSourceRow()) +
-                    (if (preparedStream != null || playback.source.kind == SourceKind.DIRECT) listOf(PanelExtra("Open in another player") { openExternal() })
+                    (if (!localFile && (preparedStream != null || playback.source.kind == SourceKind.DIRECT)) listOf(PanelExtra("Open in another player") { openExternal() })
                     else emptyList()) + PanelExtra(REPORT_ROW) { reportFromSettings() }
             },
             onBack = { finish() },
@@ -2550,6 +2554,17 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
 
         fun forTorrent(context: Context, infoHash: String, title: String? = null, fileIndex: Int? = null): Intent =
             forPlayback(context, Playback.forTorrentFile(infoHash, fileIndex, title ?: infoHash.take(8)))
+
+        /**
+         * A finished direct download: plays its file from the USB disk or the TV (split pieces read as one stream). No TMDB
+         * info is stored with the file, so it is matched by name like a torrent opened from Downloads (core/artmatch).
+         */
+        fun forHttpDownload(context: Context, d: com.kirtanya.reel.core.httpdl.HttpDownload): Intent {
+            val url = com.kirtanya.reel.core.httpdl.HomeFileRef.format(d.id, d.fileName)
+            val source = Source(SourceKind.DIRECT, d.name, "Downloaded", QualityParser.parse(d.name), url = url, filename = d.fileName, sizeBytes = d.totalBytes.takeIf { it > 0 })
+            val key = "file:${d.key}:-"
+            return forPlayback(context, Playback(key = key, titleKey = key, title = d.name, source = source))
+        }
 
         fun forUrl(context: Context, url: String, title: String? = null, headers: Map<String, String> = emptyMap()): Intent {
             val name = title ?: url.substringAfterLast('/')

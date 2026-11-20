@@ -1129,7 +1129,7 @@ Two user actions on the Downloads screen move a torrent between the modes. The d
 - **Change source** (Downloads → Sources page in download context for the same film / episode; `core/library/SourceSwap`): the download's origin (`type`, `tmdbId`, `season`, `episode`) is stored by the app in `files/download_origins.json` when the download starts from a Sources page or the launcher API; downloads added from a magnet link have none and get no Change source.
   - `SAME_FILE` → nothing.
   - `SAME_TORRENT` (another file of the same torrent) → `addMagnet(DOWNLOAD, fileIdx)`: added to the wanted files (never narrows, 3.2), nothing fetched is lost.
-  - `NEW_TORRENT` / `DIRECT` → after the user confirms ("The X downloaded so far will be lost"): start the new download first (`addMagnet(DOWNLOAD)` or the download manager); only when that succeeds, `remove(old, deleteFiles = true)`. A failed start leaves the old download untouched.
+  - `NEW_TORRENT` / `DIRECT` → after the user confirms ("The X downloaded so far will be lost"): start the new download first (`addMagnet(DOWNLOAD)` or the app's HTTP downloader, HOME_DISK.md §25); only when that succeeds, `remove(old, deleteFiles = true)`. A failed start leaves the old download untouched.
 - **Tests:** JVM only (`DownloadChangesTest`): every ModeStep branch, the cache file choice, swap kinds and confirmation text, origin round-trip. No test creates a session or adds a torrent, so none can start P2P traffic.
 
 ### 7.4 Cache policy (pure `CachePolicy`)
@@ -1742,7 +1742,7 @@ Tests:
 | `read_piece` / `ALERT_WHEN_AVAILABLE` | `ReadPieceAlert` exposes only a native pointer; it would need our own JNI. |
 | Responsive (pre-hash) block reads | Needs BLOCK_PROGRESS alerts (the alert flood on the TV) and lets unverified bytes reach the decoder. Phase 7 flag. |
 | StartGate, MKV Cues ByteTimeMap | Their gain is unmeasured and the LoadControl delegation is risky. Phase 7 flag. |
-| Multi-connection direct downloads and HLS offline download | Feature work outside streaming; DownloadManager's Doze, retry and notification handling would have to be rebuilt. Only the HLS Download guard ships. |
+| Multi-connection direct downloads and HLS offline download | Feature work outside streaming; DownloadManager's Doze, retry and notification handling would have to be rebuilt. Only the HLS Download guard ships. (Plain direct-file downloads now have their own downloader with resume, retry and a foreground notification: HOME_DISK.md §25.) |
 | Remote "best trackers" fetch | Outside-service dependency, an inspected office network, and `data/` belongs to another session. The static list is refreshed. |
 | SimpleCache for direct links | TV storage and cache-key collision risk. |
 | BOOT_COMPLETED receiver | Manifest not owned; Android 15 rules on starting foreground services from boot need a device check. Downloads resume on the next app open. |

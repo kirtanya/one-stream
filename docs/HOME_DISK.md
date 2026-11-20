@@ -393,7 +393,7 @@ evaluated on the network that carries the traffic (non-VPN):
 
 ### 7.1 What gets copied **[Decided]**
 - Every finished engine download on the phone (DOWNLOAD mode, all wanted files done), when "Copy phone
-  downloads to the home disk" is on (default on). Direct-link downloads (Android DownloadManager) are not
+  downloads to the home disk" is on (default on). Direct-link downloads (the in-app HTTP downloader, §25) are not
   in v1: they have no key or origin record today; they come later with a file-hash key.
 - Destination `incoming/<key>/` → `library/…` when verified. If the library already has `<key>` complete
   with the same files, nothing is copied and the title is marked "Phone + home disk".
@@ -1279,3 +1279,75 @@ Download button, **returns at once** (never holds the broadcast) and logs `usbDo
 progress, save path, and on the disk the files with sizes. `unplug` / `replug` make the app *believe* the volume is gone / back (no system
 call, nothing is unmounted) so the waiting path of §24.5 can be exercised; a real unplug is checked by hand. `cleanup` deletes the sample download
 and its origin, then logs the folder's remaining entries.
+
+## 25. Direct (debrid / HTTP) downloads: our own downloader **[Decided 2026-11-19]**
+
+### 25.1 Why
+A direct source (`SourceKind.DIRECT`: a Torrentio / debrid link) was handed to Android's `DownloadManager`. It saved into
+`/sdcard/Download/Reel/`, the in-app Downloads screen (which lists engine torrents only) never showed it, it could not use the USB
+disk, it could not split a 4 GiB file, and when the debrid service had not cached the file yet it saved the service's 150 KB
+"downloading" clip as if it were the film. So: **a download that says "downloading" must be a row on the Downloads screen**, placed
+like a torrent, and a placeholder must never be kept as a file.
+
+### 25.2 Where the files go
+Same inputs as §24 (`PlacementFacts`) with one difference: **our own writer can split**, so a file of 4 GiB or more is allowed on the USB
+disk (pieces of `SplitMath.PIECE_SIZE`, `.001` commit mark, §23.5). `HttpPlacement.place`:
+1. USB in play and `usbFree − 2 GB ≥ size` → USB (any size, split when ≥ 4 GiB).
+2. else the TV's internal folder when `tvFree − 1 GiB floor ≥ size` (never split).
+3. else refuse: **"Not enough space for this file (28 GB)"** (an automatic pick stays silent).
+An unknown size assumes 3 GiB, then is checked again against the real length from the first response. Layout:
+`<downloads>/http/<id>/<safe file name>` on the disk, `<app files>/http-downloads/<id>/…` internally. A folder per download, so Delete is one
+folder. `/sdcard/Download/Reel/` is not touched by anything new; files already there stay where they are (§25.9).
+
+### 25.3 The fetch (`core/httpdl/HttpFetcher`, pure over OkHttp + `HomeStore`, tested with a local server)
+- One attempt = one request: `GET` with the source's headers, `Range: bytes=<done>-` and `If-Range` when a validator (ETag / Last-Modified) is known;
+  redirects followed; the file is written through `HomeStore.write(path, total, pos, …)` (`.part`, committed at the end).
+- `HttpResume.plan` reads the answer: 206 with the right `Content-Range` → continue; 200 to a ranged request or a changed validator → start from 0;
+  416 with `done ≥ total` → finished; 429 / 408 / 5xx → retry; 401 / 403 / 404 / 410 → fail with a plain line; no length → fail ("The link did not say
+  how big the file is").
+- `RetryPolicy`: 2 s, 4 s, 8 s … capped at 5 min, `Retry-After` honoured (max 10 min), 6 tries for an HTTP answer, 40 for a lost network; the count
+  resets when bytes arrived. After the last try the row shows the error with Resume.
+- Durability: `flush` + persist the position every 32 MiB or 10 s; a restart resumes from the persisted position (never beyond what was flushed).
+  A part file that is gone starts over.
+
+### 25.4 Placeholder guard (`HttpPlaceholderGuard`)
+Checked on the first response, before a byte is written: the final URL matches `PlaceholderCheck.matchUrl`; the length is the known 149 660-byte stub;
+the length is under 20 MiB for a film / episode (it has an origin); the listed size is ≥ 100 MiB and the length under a tenth of it; the type is
+`text/*` / JSON or the first bytes are `<` / `{` (not a video at all → plain failure, not "not ready"). Nothing is kept: the part file and the folder are
+deleted and the row is **Not ready on <service> yet. Try again later or pick another source** with **Retry** and **Change source**.
+(<service> comes from the source's debrid code: AD → AllDebrid, RD → Real-Debrid, …; unknown → "your debrid service".)
+
+### 25.5 Process and states
+`HttpDownloader` (app) owns the persisted list `files/http_downloads.json` (written atomically) and one worker per active row. States: QUEUED,
+DOWNLOADING, RETRYING, PAUSED, WAITING_DISK (the volume is gone; resumes when it is back, as §24.5), DONE, FAILED, NOT_READY. While any row is
+active the process is kept alive: `EngineService` (foreground) is started and its text counts them, and `EngineIdle` does not stop the process.
+Three at a time; the rest wait.
+
+### 25.6 Screens
+The same row component as torrents (phone `DownloadCard`, TV `DownloadRowTv`): title, progress, speed, size, `USB disk` / `This TV`, pause / resume /
+delete. HTTP rows have no peers. The key is `http:<id>`; origins (`downloadOrigins`), the "Downloaded" badge, Continue watching, the launcher row,
+My List auto-download, the next-episode prefetch and Auto-download treat a finished one like a finished torrent. Playing it plays the local file
+(`reel-file://<id>/<name>`, `HomeFileDataSource` over `HomeStore.read`, one stream across pieces, seeking anywhere). A store read opens the file and lists
+the folder, so `HomeFileReader` (core, tested over a split `UsbStore`) reads 1 MiB blocks and serves the player's small reads from the last block. A local
+file is never a placeholder candidate, has no "Open in another player" (its address means nothing outside the app), and a read error says to check the disk.
+Its history key is `file:http:<id>:-`; the title and artwork are matched by name like a torrent opened from Downloads. Only a **finished** row has Play;
+before that it has Pause / Resume. One Launcher's `onestream://play?torrent=http:<id>` plays it too (the Downloads tab when it is not finished).
+A row the debrid service had not cached has **Retry** (asks again) and **Change source** (the title's sources; only when the download knows its film / episode).
+
+### 25.7 Telemetry (no names, titles, URLs or paths)
+```
+ReelStats ev=dl-http state=start|resume|done|fail|paused|placeholder id=<6 chars> place=usb|tv size=… split=0|1 from=… why=… code=…
+ReelStats ev=dl-http state=progress id=… done=…mb total=…mb bps=…        (every 30 s)
+```
+
+### 25.8 Code map
+`core/httpdl/` (`HttpDownload` + codec, `HttpResume`, `RetryPolicy`, `HttpPlaceholderGuard`, `HttpPlacement`, `HttpFetcher`, `HomeFileReader` + `HomeFileRef`), `app/download/HttpDownloader`,
+`app/ui/DownloadsScreen` (rows), `SourceState.download` (DIRECT branch), `homedisk/DownloadPlacer.decideHttp`, `player/HomeFileDataSource`.
+
+### 25.9 Old files
+Nothing moves or deletes what `DownloadManager` already saved in `/sdcard/Download/Reel/`. The user may delete those by hand (placeholder clips among them).
+
+### 25.10 The check on the TV (SourcesProbe)
+`--es httpDownload start|status|kill|cleanup [--ei sample 0..1]`; each returns at once, the result is in logcat (`ReelProbe`). Sample 0 is Big Buck Bunny 720p
+(62 MB, archive.org, behind a redirect), sample 1 Sintel 1080p (1.2 GB, download.blender.org). `start` adds it like the Download button; `status` logs the
+row and the real files on the disk; `kill` ends the process 500 ms later (the resume proof); `cleanup` deletes the download.

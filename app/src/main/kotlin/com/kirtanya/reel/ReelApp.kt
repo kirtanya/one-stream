@@ -21,6 +21,7 @@ import com.kirtanya.reel.server.LocalStreamServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
 /** Holds the app-wide singletons. No DI framework: the graph is small. */
@@ -63,6 +64,21 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
     val tvRemote by lazy { com.kirtanya.reel.tvremote.TvRemote(this) }
     val playbackSettings by lazy { PlaybackSettings(this) }
     /** Which title / episode each download is for (Downloads → Change source). */
+    /** Direct (debrid / HTTP) downloads, our own downloader (docs/HOME_DISK.md §25). */
+    val httpDownloads by lazy { com.kirtanya.reel.download.HttpDownloader(this) }
+
+    /** Every download the app knows: the engine's torrents (once it exists) and the direct ones, as the screens see them. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allDownloads: kotlinx.coroutines.flow.Flow<List<com.kirtanya.reel.engine.TorrentSnapshot>> by lazy {
+        kotlinx.coroutines.flow.combine(
+            engineCreated.flatMapLatest { created -> if (created) engine.torrents else kotlinx.coroutines.flow.flowOf(emptyList()) },
+            httpDownloads.snapshots,
+        ) { torrents, direct -> torrents + direct }
+    }
+
+    /** [allDownloads] right now, without creating the engine. */
+    fun downloadsNow(): List<com.kirtanya.reel.engine.TorrentSnapshot> = engineIfCreated?.torrents?.value.orEmpty() + httpDownloads.snapshots.value
+
     val downloadOrigins by lazy { com.kirtanya.reel.data.DownloadOriginStore(this) }
     /** Problem reports: crashes, freezes, stalls, errors and "Report a problem" (docs/MACHINE_FIRST_PLAN.md step 1). */
     val reports by lazy { com.kirtanya.reel.report.ReportCenter(this) }
@@ -107,6 +123,8 @@ class ReelApp : Application(), SingletonImageLoader.Factory {
         // Artwork for raw-file entries in Continue watching, once startup has settled.
         appScope.launch { kotlinx.coroutines.delay(4_000); artMatcher.enrichHistory("start") }
         autoDownloader.start()
+        // Direct downloads that were running when the app stopped carry on (no engine needed).
+        appScope.launch { httpDownloads.start() }
         // Before anything can start the engine: the P2P network rule must hold downloads from the first moment.
         home.start()
         if (isTv) tvSync.start() else phoneSync.start()

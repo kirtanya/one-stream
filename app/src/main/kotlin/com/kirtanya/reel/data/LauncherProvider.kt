@@ -150,7 +150,7 @@ class LauncherProvider : ContentProvider() {
 
     /** Downloads (not the stream cache) while the engine runs; it starts with the app, a stream or a download. */
     private fun downloads(app: ReelApp): List<Array<Any?>> =
-        app.engineIfCreated?.torrents?.value.orEmpty().filter { it.mode == TorrentMode.DOWNLOAD }.map { t ->
+        app.downloadsNow().filter { it.mode == TorrentMode.DOWNLOAD }.map { t ->
             LauncherPage.downloadRow(
                 t.infoHash,
                 t.name.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: t.infoHash.take(8),
@@ -221,6 +221,11 @@ class LauncherProvider : ContentProvider() {
             }
             LauncherPage.CANCEL_DOWNLOAD -> {
                 val key = extras?.getString("key") ?: return false to "Needs key"
+                if (com.kirtanya.reel.core.httpdl.HttpDownloads.isKey(key)) {
+                    if (app.httpDownloads.get(key) == null) return false to "No such download"
+                    app.httpDownloads.remove(key)
+                    return true to null
+                }
                 val engine = app.engineIfCreated ?: return false to "No such download"
                 val t = engine.snapshot(key)?.takeIf { it.mode == TorrentMode.DOWNLOAD } ?: return false to "No such download"
                 // What the Downloads tab's Delete does.

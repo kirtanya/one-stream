@@ -32,6 +32,10 @@ import kotlinx.coroutines.withTimeout
  * `--es usbDownload start|status|unplug|replug|cleanup [--ei sample 0..2]` the USB download check on the TV (docs/HOME_DISK.md §24.10):
  *   start saves a legal Blender sample like the Download button would; status lists its files and sizes on the disk;
  *   unplug / replug make the app pretend the USB volume is gone / back (nothing is unmounted); cleanup deletes the sample.
+ * `--es httpDownload start|status|kill|cleanup [--ei sample 0..1]` the direct (HTTP) download check (docs/HOME_DISK.md §25.10): start adds a legal
+ *   sample (0 = Big Buck Bunny 720p, 62 MB, archive.org, via a redirect; 1 = Sintel 1080p, 1.2 GB, Blender) like the Download button; status
+ *   logs its row, its files on the disk and the player's uri; kill ends the app process 500 ms later (to prove the resume); cleanup removes it.
+ *   Each returns at once; results are in logcat.
  * Results go to logcat under "ReelProbe".
  */
 class SourcesProbe : BroadcastReceiver() {
@@ -101,6 +105,10 @@ class SourcesProbe : BroadcastReceiver() {
         }
         intent.getStringExtra("usbDownload")?.let { cmd ->
             usbDownloadProbe(app, cmd, intent.getIntExtra("sample", 1), goAsync())
+            return
+        }
+        intent.getStringExtra("httpDownload")?.let { cmd ->
+            httpDownloadProbe(app, cmd, intent.getIntExtra("sample", 0), goAsync())
             return
         }
         if (intent.hasExtra("sync")) {
@@ -451,6 +459,59 @@ class SourcesProbe : BroadcastReceiver() {
         }
     }
 
+    /** `httpDownload` (see the class comment): a legal direct file through the same path as the Download button. */
+    private fun httpDownloadProbe(app: ReelApp, cmd: String, sampleIdx: Int, pending: PendingResult) {
+        val sample = HTTP_SAMPLES.getOrNull(sampleIdx)
+        if (sample == null) { Log.w(TAG, "httpDownload: no sample $sampleIdx"); pending.finish(); return }
+        val (title, url, size) = sample
+        if (cmd == "kill") {
+            Log.i(TAG, "httpDownload kill: ending the process in 500 ms")
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ android.os.Process.killProcess(android.os.Process.myPid()) }, 500)
+            pending.finish()
+            return
+        }
+        app.appScope.launch {
+            try {
+                val downloads = app.httpDownloads
+                val row = downloads.items.value.firstOrNull { it.url == url }
+                when (cmd) {
+                    "start" -> {
+                        val source = com.kirtanya.reel.core.sources.Source(
+                            kind = com.kirtanya.reel.core.sources.SourceKind.DIRECT, title = title, provider = "Probe",
+                            quality = com.kirtanya.reel.core.sources.QualityParser.parse(title), url = url, sizeBytes = size,
+                        )
+                        val added = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { downloads.add(source, title, null, "probe") }
+                        Log.i(TAG, "httpDownload start $title -> $added")
+                    }
+                    "status" -> {
+                        if (row == null) { Log.i(TAG, "httpDownload status: no download of $title"); return@launch }
+                        val files = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            val dir = downloads.folderOf(row)?.let { java.io.File(it, row.id) }
+                            // What is really on the disk (part files and pieces included), not only what is committed.
+                            dir?.listFiles()?.sortedBy { it.name }?.joinToString { "${it.name}:${it.length()}" }
+                        }
+                        Log.i(
+                            TAG,
+                            "httpDownload status ${row.key} state=${row.state} done=${row.doneBytes} total=${row.totalBytes} place=${row.place} " +
+                                "dir=${row.baseDir} error=${row.error} files=[$files] active=${downloads.activeCount()} " +
+                                "uri=${com.kirtanya.reel.core.httpdl.HomeFileRef.format(row.id, row.fileName)}",
+                        )
+                    }
+                    "cleanup" -> {
+                        if (row != null) downloads.remove(row.key)
+                        kotlinx.coroutines.delay(1_500)
+                        Log.i(TAG, "httpDownload cleanup rowsLeft=${downloads.items.value.count { it.url == url }}")
+                    }
+                    else -> Log.w(TAG, "httpDownload: unknown command $cmd")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "httpDownload $cmd failed: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
     /** `usbDownload` (see the class comment): one legal sample, saved where the Download button would save it. */
     private fun usbDownloadProbe(app: ReelApp, cmd: String, sampleIdx: Int, pending: PendingResult) {
         app.appScope.launch {
@@ -510,6 +571,11 @@ class SourcesProbe : BroadcastReceiver() {
         private const val TAG = "ReelProbe"
         private const val SOURCES_FILE = "sources.json"
         /** 10 s of Big Buck Bunny (CC BY, Blender Foundation), 1 MB, HTTPS: stands in for a debrid "downloading" clip. */
+        /** Legal direct files for `httpDownload`: title, link, size. */
+        private val HTTP_SAMPLES = listOf(
+            Triple("Big Buck Bunny (2008) 720p", "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4", 61_878_609L),
+            Triple("Sintel (2010) 1080p", "https://download.blender.org/durian/movies/Sintel.2010.1080p.mkv", 1_180_090_590L),
+        )
         private const val PLACEHOLDER_CLIP = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
         /** The whole film (9:56) on archive.org: the cached source the placeholder test falls back to. */
         private const val BBB_FULL = "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"

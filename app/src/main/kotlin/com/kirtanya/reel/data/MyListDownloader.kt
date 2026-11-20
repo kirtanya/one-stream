@@ -60,13 +60,7 @@ class MyListDownloader(private val app: ReelApp) {
         }
     }
 
-    private fun known(): List<KnownDownload> {
-        if (!app.engineCreated.value) return emptyList()
-        val origins = app.downloadOrigins.all.value
-        return app.engine.torrents.value.filter { it.mode == TorrentMode.DOWNLOAD }.mapNotNull { t ->
-            origins[t.infoHash.lowercase()]?.let { KnownDownload(t.infoHash, it, t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING) }
-        }
-    }
+    private fun known(): List<KnownDownload> = app.knownDownloads()
 
     /** Searches like the Sources page does and starts the ranker's top downloadable pick. */
     private suspend fun downloadBest(d: TitleDetails, origin: DownloadOrigin) {

@@ -80,30 +80,43 @@ class TorrentDataSource(private val engine: TorrentEngine) : BaseDataSource(/* i
 }
 
 /**
- * Routes `reel-torrent://` to [torrent] and everything else (direct links, subtitles) to [other].
+ * Routes `reel-torrent://` to [torrent], `reel-file://` (a finished direct download) to [file], and everything else (direct links, subtitles) to [other].
  * Used inside DefaultMediaSourceFactory so side-loaded subtitles still merge.
  */
 @UnstableApi
-class ReelDataSourceFactory(private val torrent: DataSource.Factory, private val other: DataSource.Factory) : DataSource.Factory {
-    override fun createDataSource(): DataSource = RoutingDataSource(torrent, other)
+class ReelDataSourceFactory(
+    private val torrent: DataSource.Factory,
+    private val other: DataSource.Factory,
+    private val file: DataSource.Factory? = null,
+) : DataSource.Factory {
+    override fun createDataSource(): DataSource = RoutingDataSource(torrent, other, file)
 }
 
 @UnstableApi
-private class RoutingDataSource(private val torrent: DataSource.Factory, private val other: DataSource.Factory) : DataSource {
+private class RoutingDataSource(
+    private val torrent: DataSource.Factory,
+    private val other: DataSource.Factory,
+    private val file: DataSource.Factory?,
+) : DataSource {
     private val listeners = ArrayList<TransferListener>()
     private var current: DataSource? = null
     private var torrentSource: DataSource? = null
     private var otherSource: DataSource? = null
+    private var fileSource: DataSource? = null
 
     override fun addTransferListener(transferListener: TransferListener) {
         listeners += transferListener
         torrentSource?.addTransferListener(transferListener)
         otherSource?.addTransferListener(transferListener)
+        fileSource?.addTransferListener(transferListener)
     }
 
     override fun open(dataSpec: DataSpec): Long {
         val isTorrent = dataSpec.uri.scheme == TorrentStreamRef.SCHEME
-        val src = if (isTorrent) {
+        val isFile = file != null && dataSpec.uri.scheme == com.kirtanya.reel.core.httpdl.HomeFileRef.SCHEME
+        val src = if (isFile) {
+            fileSource ?: file!!.createDataSource().also { s -> listeners.forEach(s::addTransferListener); fileSource = s }
+        } else if (isTorrent) {
             torrentSource ?: torrent.createDataSource().also { s -> listeners.forEach(s::addTransferListener); torrentSource = s }
         } else {
             otherSource ?: other.createDataSource().also { s -> listeners.forEach(s::addTransferListener); otherSource = s }
@@ -118,6 +131,65 @@ private class RoutingDataSource(private val torrent: DataSource.Factory, private
     override fun close() {
         current?.close()
         current = null
+    }
+}
+
+/**
+ * Plays a finished direct download (`reel-file://<id>/<name>`) from the USB disk or the TV's own storage. The pieces of a
+ * file split for FAT32 are joined by the store, so ExoPlayer sees one stream and seeks anywhere ([HomeFileReader] buffers
+ * in 1 MiB blocks, because each store read opens the file).
+ */
+@UnstableApi
+class HomeFileDataSource(private val app: com.kirtanya.reel.ReelApp) : BaseDataSource(/* isNetwork = */ false) {
+    private var reader: com.kirtanya.reel.core.httpdl.HomeFileReader? = null
+    private var uri: Uri? = null
+    private var pos = 0L
+    private var remaining = 0L
+    private var opened = false
+
+    override fun open(dataSpec: DataSpec): Long {
+        transferInitializing(dataSpec)
+        val id = com.kirtanya.reel.core.httpdl.HomeFileRef.idOf(dataSpec.uri.toString())
+            ?: throw DataSourceException(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+        val d = app.httpDownloads.get(com.kirtanya.reel.core.httpdl.HttpDownloads.keyOf(id))
+            ?: throw DataSourceException(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+        val store = app.httpDownloads.storeOf(d) ?: throw java.io.FileNotFoundException("The disk is not connected")
+        val r = com.kirtanya.reel.core.httpdl.HomeFileReader(store, d.path)
+        val size = r.size ?: throw DataSourceException(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+        if (dataSpec.position > size) throw DataSourceException(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE)
+        reader = r
+        uri = dataSpec.uri
+        pos = dataSpec.position
+        remaining = if (dataSpec.length == C.LENGTH_UNSET.toLong()) size - pos else minOf(dataSpec.length, size - pos)
+        opened = true
+        transferStarted(dataSpec)
+        return remaining
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (length == 0) return 0
+        if (remaining == 0L) return C.RESULT_END_OF_INPUT
+        val n = reader!!.read(pos, buffer, offset, minOf(length.toLong(), remaining).toInt())
+        if (n < 0) return C.RESULT_END_OF_INPUT
+        pos += n
+        remaining -= n
+        bytesTransferred(n)
+        return n
+    }
+
+    override fun getUri(): Uri? = uri
+
+    override fun close() {
+        reader = null
+        uri = null
+        if (opened) {
+            opened = false
+            transferEnded()
+        }
+    }
+
+    class Factory(private val app: com.kirtanya.reel.ReelApp) : DataSource.Factory {
+        override fun createDataSource(): DataSource = HomeFileDataSource(app)
     }
 }
 

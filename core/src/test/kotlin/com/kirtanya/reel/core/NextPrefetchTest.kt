@@ -119,8 +119,23 @@ class NextPrefetchTest {
         assertEquals(PrefetchPick.None(PrefetchWhy.NO_SOURCE), NextPrefetch.pick(null, listOf(viaMagnet), setOf("ab".repeat(20))))
     }
 
-    @Test fun aLinkInsteadOfATorrentDownloadsNothing() {
-        assertEquals(PrefetchPick.None(PrefetchWhy.NOT_TORRENT), NextPrefetch.pick(direct("D", 1080), listOf(direct("D", 1080), torrent("A", 1080, "h")), emptySet()))
+    @Test fun aDirectLinkIsDownloadedByTheHttpDownloader() {
+        // Docs/HOME_DISK.md §25: a debrid link used to be left to Android's download manager; now it is a normal pick.
+        val d = direct("D", 1080)
+        assertEquals(d, chosen(NextPrefetch.pick(d, listOf(d, torrent("A", 1080, "h")), emptySet())))
+    }
+
+    @Test fun aDirectLinkIsNeverSwappedForATorrentUnderTheFatLimit() {
+        val big = Source(SourceKind.DIRECT, "d", "D", Quality(resolution = 1080), url = "https://x/big", sizeBytes = 6 * GiB)
+        val small = torrent("A", 1080, "h", size = 2 * GiB)
+        assertEquals(big, chosen(NextPrefetch.pick(big, listOf(big, small), emptySet(), underFatLimit = true)))
+    }
+
+    @Test fun anExtraOrALinkWithoutAnAddressDownloadsNothing() {
+        val extra = Source(SourceKind.DIRECT, "d", "D", Quality(resolution = 1080), url = "https://x/e", extra = "Trailer")
+        assertIs<PrefetchPick.None>(NextPrefetch.pick(extra, listOf(extra), emptySet()))
+        val noUrl = Source(SourceKind.DIRECT, "d", "D", Quality(resolution = 1080))
+        assertIs<PrefetchPick.None>(NextPrefetch.pick(noUrl, listOf(noUrl), emptySet()))
     }
 
     @Test fun noSourceAtAll() {

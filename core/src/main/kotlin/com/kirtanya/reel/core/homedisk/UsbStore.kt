@@ -155,6 +155,16 @@ class UsbStore(private val root: File, private val pieceSize: Long = SplitMath.P
         target.parentFile?.listFiles()?.filter { belongs(it.name, target.name) }?.forEach { it.delete() }
     }
 
+    /** Syncs and closes every open write handle (a paused or stopped writer: the part files stay, ready to continue). */
+    @Synchronized
+    fun closeAll() {
+        for ((_, raf) in writers) {
+            runCatching { raf.fd.sync() }
+            runCatching { raf.close() }
+        }
+        writers.clear()
+    }
+
     override fun mkdirs(dir: String) {
         file(dir).mkdirs()
     }

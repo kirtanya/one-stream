@@ -40,6 +40,10 @@ data class TorrentSnapshot(
     val onUsb: Boolean = false,
     /** Its USB disk is not plugged in: kept out of the session, resumes when the disk is back (§24.5). */
     val waitingForDisk: Boolean = false,
+    /** A direct (debrid / HTTP) download, not a torrent: [infoHash] is `http:<id>` (docs/HOME_DISK.md §25). It has no peers. */
+    val http: Boolean = false,
+    /** The debrid service had not cached the file yet: nothing was kept; [error] is the plain line, Retry and Change source show (§25.4). */
+    val notReady: Boolean = false,
 ) {
     val etaSec: Long? get() =
         if (downBps <= 0 || wantedBytes <= doneBytes) null else (wantedBytes - doneBytes) / downBps

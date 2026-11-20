@@ -96,12 +96,7 @@ class AutoDownloader(private val app: ReelApp) {
         return verdict == P2pVerdict.Allow && atHome
     }
 
-    private fun known(): List<KnownDownload> {
-        val origins = app.downloadOrigins.all.value
-        return app.engine.torrents.value.filter { it.mode == TorrentMode.DOWNLOAD }.mapNotNull { t ->
-            origins[t.infoHash.lowercase()]?.let { KnownDownload(t.infoHash, it, t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING) }
-        }
-    }
+    private fun known(): List<KnownDownload> = app.knownDownloads()
 
     private suspend fun fill(s: AutoDownloadSettings) {
         val lookup = app.watched.state.first()
@@ -156,8 +151,12 @@ class AutoDownloader(private val app: ReelApp) {
             marks[key]?.takeIf { it.watched }?.changedAt
         }
         gone.forEach { hash ->
-            app.engine.remove(hash, deleteFiles = true)
-            app.downloadOrigins.remove(hash)
+            if (com.kirtanya.reel.core.httpdl.HttpDownloads.isKey(hash)) {
+                app.httpDownloads.remove(hash)
+            } else {
+                app.engine.remove(hash, deleteFiles = true)
+                app.downloadOrigins.remove(hash)
+            }
         }
         if (gone.isNotEmpty()) note("Deleted ${com.kirtanya.reel.ui.plural(gone.size, "watched download")}")
     }

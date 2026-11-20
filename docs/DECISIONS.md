@@ -5,6 +5,26 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-19 · Direct (debrid / HTTP) downloads use our own downloader, shown on the Downloads screen and saved like a torrent**
+"It says downloading, but Downloads is empty": a debrid link went to Android's `DownloadManager`, saved into `/sdcard/Download/Reel/`, was never
+listed by the in-app screen (engine torrents only), could not use the USB disk or split a 4 GiB file, one 28 GB REMUX failed with
+`INSUFFICIENT_SPACE_ERROR`, and most saved files were AllDebrid's 149 660-byte "not cached yet" clip. Spec: `docs/HOME_DISK.md` §25.
+- **Own downloader** (`core/httpdl` pure parts + `app/download/HttpDownloader`): placed like a torrent (USB when ready, split FAT32 pieces from 4 GiB,
+  else the TV; "Not enough space for this file (28 GB)" when neither fits), Range resume, backoff on 429 / 5xx, headers and redirects kept, state
+  persisted, kept alive by the existing `EngineService`. Rejected: a second foreground service (one notification is enough) and `DownloadManager`
+  with a custom folder (cannot split, cannot write to the USB volume, no resume control).
+- **Placeholder never kept**: `PlaceholderCheck` plus size rules on the first response; the row says "Not ready on AllDebrid yet. Try again later or
+  pick another source" with Retry and Change source.
+- **One list**: HTTP rows are adapted to the torrent row model (`TorrentSnapshot.http`, key `http:<id>`), so the Downloads screen, origins, the
+  "Downloaded" badge, Continue watching, the launcher, My List, Auto-download and next-episode prefetch need no second code path. The P2P gate and
+  overnight rules do not apply (no peers).
+- **Playing** a finished one reads the local file (`reel-file://`, `HomeFileDataSource`, one stream across split pieces).
+- **Old files** in `/sdcard/Download/Reel/` are left alone; the user can delete them by hand.
+- Evidence: `core` tests (`HttpDownloadTest`, `HttpFetcherTest` with a local server and split pieces, `HomeFileReaderTest`, `NextPrefetchTest`), renders
+  `downloads-direct` (phone, TV), SourcesProbe `--es httpDownload` on the TV (see the commit message).
+
+---
+
 **2026-11-19 · Downloads save straight onto the USB disk (TV), with a 4 GiB rule and no silent fallback**
 The TV has about 1.7 GB of internal storage, so downloads now go to the PiBOX disk when it is plugged in. Spec: `docs/HOME_DISK.md` §24,
 `docs/STREAMING_V2.md` §7.8.

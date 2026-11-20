@@ -353,10 +353,30 @@ object Fake {
         torrent("Big.Buck.Bunny.2008.1080p.Blender", TorrentMode.STREAM, TorrentPhase.PAUSED, 0.86f, i = 3),
     )
 
+    private fun direct(name: String, phase: TorrentPhase, progress: Float, size: Long, i: Int, error: String? = null, notReady: Boolean = false) = TorrentSnapshot(
+        infoHash = "http:%012x".format(0xd1ec70000000L + i), name = name, mode = TorrentMode.DOWNLOAD, phase = phase, progress = progress,
+        wantedBytes = size, doneBytes = (size * progress).toLong(), downBps = if (phase == TorrentPhase.DOWNLOADING) 18_500_000 else 0,
+        upBps = 0, peers = 0, seeds = 0, hasMetadata = true, savePath = "/storage/ABCD-1234/One Stream/downloads/http",
+        error = error, onUsb = true, http = true, notReady = notReady,
+    )
+
+    /** Direct (debrid / HTTP) downloads (docs/HOME_DISK.md §25): one running, one finished on the USB disk, one the debrid service had not cached. */
+    val directDownloads = listOf(
+        direct("Dune.Part.Two.2024.1080p.WEB-DL.DDP5.1.Atmos.H.264-FLUX", TorrentPhase.DOWNLOADING, 0.42f, 9_800_000_000L, 1),
+        direct("Oppenheimer.2023.1080p.BluRay.x264-SPARKS", TorrentPhase.FINISHED, 1f, 11_400_000_000L, 2),
+        direct(
+            "The.Night.Manager.S01E03.1080p.WEB.h264", TorrentPhase.ERROR, 0f, 3_100_000_000L, 3,
+            error = "Not ready on AllDebrid yet. Try again later or pick another source", notReady = true,
+        ),
+        direct("Panchayat.S03E02.720p.AMZN.WEB-DL", TorrentPhase.PAUSED, 0.67f, 1_900_000_000L, 4),
+    )
+
     /** Downloads started from a title's sources know their title (Change source); magnet links don't. */
     val origins = mapOf(
         torrents[0].infoHash to com.kirtanya.reel.core.library.DownloadOrigin("movie", FILM_ID, label = "Dune: Part Two"),
         torrents[5].infoHash to com.kirtanya.reel.core.library.DownloadOrigin("tv", SHOW_ID, 1, 3, "The Night Manager · S1 E3"),
+        directDownloads[0].infoHash to com.kirtanya.reel.core.library.DownloadOrigin("movie", FILM_ID, label = "Dune: Part Two"),
+        directDownloads[2].infoHash to com.kirtanya.reel.core.library.DownloadOrigin("tv", SHOW_ID, 1, 3, "The Night Manager · S1 E3"),
     )
 
     // ─── Settings ────────────────────────────────────────────────────────────────────────────

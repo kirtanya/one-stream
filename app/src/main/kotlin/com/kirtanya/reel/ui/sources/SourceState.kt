@@ -1,6 +1,5 @@
 package com.kirtanya.reel.ui.sources
 
-import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -147,8 +146,8 @@ private fun openExternal(context: Context, source: Source) {
 }
 
 /**
- * Torrents → the engine (only the chosen file). Direct links → Android's download manager.
- * [origin] remembers the film / episode for "Change source". [replacing] (an info-hash) is the
+ * Torrents → the engine (only the chosen file). Direct links → our own downloader (`HttpDownloader`, docs/HOME_DISK.md §25).
+ * [origin] remembers the film / episode for "Change source". [replacing] (an info-hash, or `http:<id>`) is the
  * download this one replaces: it's deleted only once the new one has started, so a failed start
  * leaves it alone (docs/STREAMING_V2.md §7.3a). On the TV with the USB disk ready a torrent is saved there when the file is
  * under 4 GiB (docs/HOME_DISK.md §24.3); [automatic] picks that cannot be placed are skipped without a message.
@@ -160,8 +159,12 @@ fun download(context: Context, source: Source, title: String, origin: DownloadOr
         val old = replacing ?: return
         if (newHash != null && newHash.equals(old, ignoreCase = true)) return
         main.post {
-            app.engine.remove(old, deleteFiles = true)
-            app.downloadOrigins.remove(old)
+            if (com.kirtanya.reel.core.httpdl.HttpDownloads.isKey(old)) {
+                app.httpDownloads.remove(old)
+            } else {
+                app.engine.remove(old, deleteFiles = true)
+                app.downloadOrigins.remove(old)
+            }
         }
     }
     when (source.kind) {
@@ -179,17 +182,18 @@ fun download(context: Context, source: Source, title: String, origin: DownloadOr
             }
             main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
         }
-        SourceKind.DIRECT -> {
-            val url = source.url ?: return
-            val name = (source.filename ?: url.substringAfterLast('/').substringBefore('?')).ifBlank { "$title.mp4" }
-            val request = DownloadManager.Request(Uri.parse(url))
-                .setTitle(title)
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Reel/" + Uri.decode(name))
-            source.headers.forEach { (k, v) -> request.addRequestHeader(k, v) }
-            val started = runCatching { context.getSystemService(DownloadManager::class.java).enqueue(request) }.isSuccess
-            if (started) dropOld(null)
-            Toast.makeText(context, if (started) startedMessage ?: "Downloading “$title”" else "Couldn't start the download", Toast.LENGTH_SHORT).show()
+        SourceKind.DIRECT -> app.appScope.launch {
+            // Our own downloader (docs/HOME_DISK.md §25): a row on the Downloads screen, placed like a torrent.
+            val msg = withContext(Dispatchers.IO) {
+                when (val added = app.httpDownloads.add(source, title, origin, placeSrc)) {
+                    is com.kirtanya.reel.download.HttpDownloader.Added.Started -> {
+                        dropOld(null)
+                        startedMessage ?: if (replacing != null) "Downloading “$title” from the new source" else "Downloading “$title”"
+                    }
+                    is com.kirtanya.reel.download.HttpDownloader.Added.Refused -> if (automatic) null else added.message
+                }
+            }
+            if (msg != null) main.post { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
         }
         SourceKind.EXTERNAL -> Unit
     }

@@ -99,15 +99,21 @@ object NextPrefetch {
     /**
      * Autoplay-next's pick ([pickNextSource]: same binge group, then same provider and resolution…), minus torrents the
      * engine already holds ([heldHashes], lower case): adding a file to the pack being streamed would turn that stream
-     * into a download. Only a torrent can be downloaded this way. [underFatLimit] (TV with the USB disk, docs/HOME_DISK.md §24.3):
+     * into a download. A torrent or a direct link can be downloaded this way. [underFatLimit] (TV with the USB disk, docs/HOME_DISK.md §24.3):
      * swap a 4 GiB or bigger pick for a smaller source at the same or one-lower quality, when there is one.
      */
     fun pick(previous: Source?, ranked: List<Source>, heldHashes: Set<String>, underFatLimit: Boolean = false): PrefetchPick {
         val candidates = ranked.filterNot { it.kind == SourceKind.TORRENT && hashOf(it) in heldHashes }
         val source = pickNextSource(previous, candidates) ?: return PrefetchPick.None(PrefetchWhy.NO_SOURCE)
-        if (source.kind != SourceKind.TORRENT || source.magnetUri() == null) return PrefetchPick.None(PrefetchWhy.NOT_TORRENT)
-        // On the USB disk (FAT32) a file of 4 GiB or more cannot be saved: a smaller one at the same or one-lower quality wins.
-        return PrefetchPick.Chosen(if (underFatLimit) DownloadPlacement.preferUnderLimit(candidates, source) else source)
+        // A direct (debrid) link is downloaded by our own HTTP downloader (docs/HOME_DISK.md §25); a service link (EXTERNAL) cannot be.
+        val downloadable = when (source.kind) {
+            SourceKind.TORRENT -> source.magnetUri() != null
+            SourceKind.DIRECT -> !source.url.isNullOrBlank() && !source.isExtra
+            SourceKind.EXTERNAL -> false
+        }
+        if (!downloadable) return PrefetchPick.None(PrefetchWhy.NOT_TORRENT)
+        // A torrent on the USB disk (FAT32) cannot be 4 GiB or more: a smaller one at the same or one-lower quality wins. A direct file is split, so no swap.
+        return PrefetchPick.Chosen(if (underFatLimit && source.kind == SourceKind.TORRENT) DownloadPlacement.preferUnderLimit(candidates, source) else source)
     }
 
     /** Free space after the reserve covers the file; nothing is evicted for a prefetch. */

@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.stateIn
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadedStore(app: ReelApp) {
     val set: StateFlow<DownloadedSet> = combine(
-        app.engineCreated.flatMapLatest { created -> if (created) app.engine.torrents else flowOf(emptyList()) },
+        app.allDownloads,
         app.downloadOrigins.all,
     ) { torrents, origins ->
         DownloadedSet.of(
