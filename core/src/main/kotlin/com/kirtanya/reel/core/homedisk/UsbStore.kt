@@ -86,17 +86,17 @@ class UsbStore(private val root: File, private val pieceSize: Long = SplitMath.P
     override fun write(path: String, totalSize: Long, pos: Long, buf: ByteArray, off: Int, len: Int) {
         require(pos >= 0 && pos + len <= totalSize) { "write outside the file" }
         val target = file(path)
-        target.parentFile?.mkdirs()
         val split = SplitMath.isSplit(totalSize, pieceSize)
         // A zero-byte file has no runs but must still exist after commit, so it gets its (empty) part file here.
         if (totalSize == 0L) {
             val empty = File(target.parentFile, target.name + SplitMath.PART)
-            writers.getOrPut(empty) { RandomAccessFile(empty, "rw") }
+            writers.getOrPut(empty) { empty.parentFile?.mkdirs(); RandomAccessFile(empty, "rw") }
         }
         var done = 0
         for (run in SplitMath.runs(pos, len, totalSize, pieceSize)) {
             val f = if (split) File(target.parentFile, SplitMath.pieceName(target.name, run.piece) + SplitMath.PART) else File(target.parentFile, target.name + SplitMath.PART)
-            val raf = writers.getOrPut(f) { RandomAccessFile(f, "rw") }
+            // The folder is made only when a handle opens, not on every write (a hot path: one call per buffer).
+            val raf = writers.getOrPut(f) { f.parentFile?.mkdirs(); RandomAccessFile(f, "rw") }
             raf.seek(run.local)
             raf.write(buf, off + done, run.length)
             done += run.length

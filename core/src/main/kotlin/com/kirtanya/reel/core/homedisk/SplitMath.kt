@@ -51,7 +51,7 @@ object SplitMath {
     }
 
     /** Physical name of piece [index] (0-based): `movie.mkv.001` for the first. */
-    fun pieceName(name: String, index: Int) = "$name.%03d".format(index + 1)
+    fun pieceName(name: String, index: Int) = name + "." + (index + 1).toString().padStart(3, '0')
 
     /** The piece number in a physical name (`movie.mkv.002` → ("movie.mkv", 1)), or null when it isn't one. */
     fun parsePiece(physical: String): Pair<String, Int>? {

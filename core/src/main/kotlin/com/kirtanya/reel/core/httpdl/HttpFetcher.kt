@@ -122,7 +122,7 @@ class HttpFetcher(
         val input = body.byteStream()
         val buf = ByteArray(BUFFER)
         var n = try {
-            input.read(buf)
+            fill(input, buf)
         } catch (e: IOException) {
             return if (l.cancelled) Outcome.Cancelled else Outcome.Retry(FailKind.NETWORK, null, "Waiting for the connection", false)
         }
@@ -174,7 +174,7 @@ class HttpFetcher(
                 }
                 if (pos >= total) break
                 n = try {
-                    input.read(buf)
+                    fill(input, buf)
                 } catch (e: IOException) {
                     store.flush(d.path)
                     l.onFlushed(pos)
@@ -191,6 +191,18 @@ class HttpFetcher(
             return Outcome.Retry(FailKind.NETWORK, null, "The connection ended early", pos > step.from)
         }
         return finish(store, d, total, l)
+    }
+
+    /** Reads until [buf] is full or the body ends, so the disk sees few large writes instead of one per socket read. -1 only at the very end. */
+    private fun fill(input: java.io.InputStream, buf: ByteArray): Int {
+        var t = 0
+        while (t < buf.size) {
+            // A dropped connection after some bytes: hand those over first (they get written), the next read throws again.
+            val r = try { input.read(buf, t, buf.size - t) } catch (e: java.io.IOException) { if (t > 0) return t else throw e }
+            if (r < 0) return if (t == 0) -1 else t
+            t += r
+        }
+        return t
     }
 
     companion object {

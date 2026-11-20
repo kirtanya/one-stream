@@ -5,6 +5,19 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-20 · TV installs are release builds compiled ahead of time; the direct-download writer does few large writes**
+"The app feels slow… a bit jerky": on the TV (0.16.17 debug build) 94 % of frames were janky, median frame 97 ms, 363 slow UI-thread
+frames (`dumpsys gfxinfo`). Causes, measured: (1) the fast dev installs since 2026-11-16 were **debuggable, un-shrunk, uncompiled**
+debug builds; release builds run R8 and `tool/install_tv.sh` compiles everything (`cmd package compile -m speed`, see 2026-11-04:
+a card row 740 → 190 ms). (2) A running direct download spent ~60 % of its thread in `UsbStore.write` per socket read
+(`mkdirs` + `exists` + `String.format` piece names; simpleperf) and every write goes through MediaProvider's FUSE on this
+public FAT32 volume (no Android/data bind mount; MediaProvider at 54 % CPU). (3) The TV itself: 2 GB RAM, ~600 MB swapped, kswapd ~24 %.
+- Dev installs on the TV: `assembleRelease` + same-key `sign.sh` + `compile -m speed` (not the debug APK).
+- `HttpFetcher` fills its 128 KiB buffer before writing (a drop mid-buffer still writes what arrived, then fails as before);
+  `UsbStore.write` makes the folder only when it opens a handle; `SplitMath.pieceName` without `String.format`.
+
+---
+
 **2026-11-19 · Direct (debrid / HTTP) downloads use our own downloader, shown on the Downloads screen and saved like a torrent**
 "It says downloading, but Downloads is empty": a debrid link went to Android's `DownloadManager`, saved into `/sdcard/Download/Reel/`, was never
 listed by the in-app screen (engine torrents only), could not use the USB disk or split a 4 GiB file, one 28 GB REMUX failed with
