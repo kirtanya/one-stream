@@ -37,7 +37,14 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.KeyInputModifierNode
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.node.GlobalPositionAwareModifierNode
+import androidx.compose.ui.node.LayoutAwareModifierNode
+import androidx.compose.ui.node.TraversableNode
+import androidx.compose.ui.node.findNearestAncestor
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.platform.InspectorInfo
@@ -160,9 +167,41 @@ private class TvCardNode(
     var outset: Boolean,
     var hasLongClick: Boolean,
     var onFocus: (() -> Unit)?,
-) : Modifier.Node(), FocusEventModifierNode, DrawModifierNode, KeyInputModifierNode {
+) : Modifier.Node(), FocusEventModifierNode, DrawModifierNode, KeyInputModifierNode,
+    LayoutAwareModifierNode, GlobalPositionAwareModifierNode {
     private val guard = OkKeyGuard()
     private var focused = false
+    /** Where this card sits (the screen's [FocusRingHostNode] draws the ring from it). */
+    internal var coords: LayoutCoordinates? = null
+    /** The screen's shared ring, when there is one and this card's shape is a rounded rectangle; else the card draws its own. */
+    private val host: FocusRingHostNode?
+        get() = if (shape is CornerBasedShape) findNearestAncestor(FocusRingHostKey) as? FocusRingHostNode else null
+
+    override fun onPlaced(coordinates: LayoutCoordinates) { coords = coordinates }
+    override fun onGloballyPositioned(coordinates: LayoutCoordinates) {
+        coords = coordinates
+        if (focused) host?.cardMoved(this)
+    }
+    override fun onDetach() {
+        if (focused) host?.cardGone(this)
+        focused = false
+        alpha = 0f
+        coords = null
+    }
+
+    /** The ring's rectangle around this card in [into]'s space, and its corner radius (null: not a rounded rectangle). */
+    internal fun ringIn(into: LayoutCoordinates, density: androidx.compose.ui.unit.Density): Pair<Rect, Float>? {
+        val c = coords ?: return null
+        if (!c.isAttached || !into.isAttached) return null
+        val box = into.localBoundingBoxOf(c, clipBounds = false)
+        val corner = (shape as? CornerBasedShape)?.topStart ?: return null
+        with(density) {
+            val w = Tokens.Size.focusBorder.toPx()
+            val grow = if (outset) Tokens.Size.focusGap.toPx() + w / 2 else -w / 2
+            val r = corner.toPx(box.size, density)
+            return box.inflate(grow) to (r + grow).coerceAtLeast(0f)
+        }
+    }
     private var alpha = 0f
     private var job: Job? = null
     private var outline: Outline? = null
@@ -173,6 +212,7 @@ private class TvCardNode(
         if (now == focused) return
         focused = now
         if (now) onFocus?.invoke() else guard.reset()
+        host?.let { if (now) it.cardFocused(this) else it.cardBlurred(this) }
         job?.cancel()
         val from = alpha
         val to = if (now) 1f else 0f
@@ -193,7 +233,7 @@ private class TvCardNode(
         if (outset && a < 1f) {
             drawOutline(outlineFor(size, layoutDirection), Tokens.Colors.canvas, alpha = DIM * (1f - a))
         }
-        if (a <= 0.003f) return
+        if (a <= 0.003f || host != null) return
         val w = Tokens.Size.focusBorder.toPx()
         val color = Tokens.Colors.text.copy(alpha = a)
         // Stroke centre: half a stroke past the gap (outset) or half a stroke inside the edge.
@@ -218,6 +258,113 @@ private class TvCardNode(
             outlineSize = size
         }
     }
+}
+
+// ─── One sliding focus ring per TV screen ─────────────────────────────────────────────────────
+
+private object FocusRingHostKey
+
+/**
+ * TV: one focus ring for everything inside, drawn on top, that glides from the old card to the new one
+ * ([Tokens.Motion.focusGlideMs], shorter while a D-pad key is held) instead of fading out on one and in on the next.
+ * It follows its card while a row or grid scrolls. Cards that aren't rounded rectangles, and screens without a host
+ * (dialogs, the player), keep drawing their own ring. The content goes in its own layer, so a moving ring redraws only itself.
+ */
+fun Modifier.focusRingHost(): Modifier = this.then(FocusRingHostElement).graphicsLayer()
+
+private data object FocusRingHostElement : ModifierNodeElement<FocusRingHostNode>() {
+    override fun create() = FocusRingHostNode()
+    override fun update(node: FocusRingHostNode) = Unit
+    override fun InspectorInfo.inspectableProperties() { name = "focusRingHost" }
+}
+
+private class FocusRingHostNode : Modifier.Node(), TraversableNode, DrawModifierNode, LayoutAwareModifierNode {
+    override val traverseKey: Any get() = FocusRingHostKey
+    private var coords: LayoutCoordinates? = null
+    private var card: TvCardNode? = null
+    /** Where the glide started (null: no glide, the ring is on its card) and how far along it is (eased, 0..1). */
+    private var from: Rect? = null
+    private var fromRadius = 0f
+    private var t = 1f
+    private var alpha = 0f
+    /** The ring as last drawn: a glide starts here. */
+    private var shown: Rect? = null
+    private var shownRadius = 0f
+    private var glideJob: Job? = null
+    private var fadeJob: Job? = null
+
+    override fun onPlaced(coordinates: LayoutCoordinates) { coords = coordinates }
+
+    fun cardFocused(c: TvCardNode) {
+        val start = shown
+        // Glide only from a ring that is on screen right now (focus came from another card this frame or is still fading).
+        val glide = start != null && alpha > 0.05f
+        card = c
+        glideJob?.cancel()
+        if (glide) {
+            from = start
+            fromRadius = shownRadius
+            t = 0f
+            val ms = if (TvKeyRepeat.held) Tokens.Motion.heldScrollMs else Tokens.Motion.focusGlideMs
+            glideJob = coroutineScope.launch {
+                animate(0f, 1f, animationSpec = tween(ms, easing = Tokens.Motion.easing)) { v, _ -> t = v; invalidateDraw() }
+                from = null
+            }
+        } else {
+            from = null
+            t = 1f
+        }
+        fade(1f)
+    }
+
+    fun cardBlurred(c: TvCardNode) {
+        if (card !== c) return
+        card = null
+        fade(0f)
+    }
+
+    /** The focused card left the screen (a new page): no glide from it, the ring just goes. */
+    fun cardGone(c: TvCardNode) {
+        if (card !== c) return
+        card = null
+        fadeJob?.cancel(); glideJob?.cancel()
+        alpha = 0f; from = null; t = 1f; shown = null
+        invalidateDraw()
+    }
+
+    fun cardMoved(c: TvCardNode) { if (card === c) invalidateDraw() }
+
+    private fun fade(to: Float) {
+        fadeJob?.cancel()
+        val start = alpha
+        if (start == to) { invalidateDraw(); return }
+        fadeJob = coroutineScope.launch {
+            animate(start, to, animationSpec = tween(Tokens.Motion.focusFadeMs, easing = Tokens.Motion.easing)) { v, _ -> alpha = v; invalidateDraw() }
+        }
+    }
+
+    override fun ContentDrawScope.draw() {
+        drawContent()
+        val a = alpha
+        if (a <= 0.003f) return
+        val here = coords
+        val target = card?.let { c -> here?.let { c.ringIn(it, this) } }
+        var rect = target?.first ?: shown ?: return
+        var radius = target?.second ?: shownRadius
+        val f = from
+        if (f != null && target != null && t < 1f) {
+            rect = Rect(lerp(f.left, rect.left, t), lerp(f.top, rect.top, t), lerp(f.right, rect.right, t), lerp(f.bottom, rect.bottom, t))
+            radius = lerp(fromRadius, radius, t)
+        }
+        shown = rect
+        shownRadius = radius
+        drawRoundRect(
+            Tokens.Colors.text.copy(alpha = a), topLeft = rect.topLeft, size = rect.size,
+            cornerRadius = CornerRadius(radius), style = Stroke(Tokens.Size.focusBorder.toPx()),
+        )
+    }
+
+    private fun lerp(a: Float, b: Float, f: Float) = a + (b - a) * f
 }
 
 fun Modifier.roundedClip(radius: Dp) = clip(RoundedCornerShape(radius))

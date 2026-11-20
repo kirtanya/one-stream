@@ -1,5 +1,6 @@
 package com.kirtanya.reel.ui.tv
 
+import com.kirtanya.reel.ui.common.focusRingHost
 import com.kirtanya.reel.ui.common.rowStart
 import android.app.Activity
 import androidx.activity.compose.BackHandler
@@ -190,7 +191,7 @@ fun TvApp(
     // "When I add to My list → Ask which source": the Sources page in download mode.
     val myListAsks = com.kirtanya.reel.ReelApp.get(LocalContext.current).myListDownloader.asks
     LaunchedEffect(Unit) { myListAsks.collect { nav.open(it) } }
-    Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas).idleWatch(idle)) {
+    Box(Modifier.fillMaxSize().background(Tokens.Colors.canvas).idleWatch(idle).focusRingHost()) {
         // Screen to screen: the old one goes at once, the new one fades in over [TvMotion.pageEnterMs]. A plain `when`
         // keyed on the screen (not AnimatedContent): no second screen composed during the fade, no transition scope; each
         // screen still saves its state (SaveableStateProvider) when it leaves, and gets it back on Back.

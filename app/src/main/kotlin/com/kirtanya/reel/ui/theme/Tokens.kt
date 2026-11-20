@@ -210,6 +210,8 @@ object Tokens {
         val easing: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
         /** Focus ring fading in / out on a TV card. */
         const val focusFadeMs = 120
+        /** The TV focus ring gliding from one card to the next (grids, up/down between rows). */
+        const val focusGlideMs = 200
         /** A row sliding sideways under the fixed focus. */
         const val rowSlideMs = 260
         /** The focused row gliding to its line under the info block. */

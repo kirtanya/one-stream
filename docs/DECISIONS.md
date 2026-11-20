@@ -5,6 +5,14 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-20 · The TV focus ring is one shared ring that glides from card to card**
+"Make the transition smoother… the outline will slide to the next focused card". Each card used to fade its own ring
+out while the next faded in. Now `Modifier.focusRingHost()` on the TV root draws a single ring on top of the screen and
+moves it to the new card in `Tokens.Motion.focusGlideMs` (200 ms, the standard easing; `heldScrollMs` while a key is held),
+following the card while a row or grid scrolls. The content sits in its own layer so the moving ring redraws only itself.
+No scale, nothing moves while idle. Cards that aren't rounded rectangles, and windows without a host (dialogs, player),
+still draw their own ring. Focus arriving from a non-card fades in instead of gliding.
+
 **2026-11-20 · TV installs are release builds compiled ahead of time; the direct-download writer does few large writes**
 "The app feels slow… a bit jerky": on the TV (0.16.17 debug build) 94 % of frames were janky, median frame 97 ms, 363 slow UI-thread
 frames (`dumpsys gfxinfo`). Causes, measured: (1) the fast dev installs since 2026-11-16 were **debuggable, un-shrunk, uncompiled**
@@ -15,6 +23,7 @@ public FAT32 volume (no Android/data bind mount; MediaProvider at 54 % CPU). (3)
 - Dev installs on the TV: `assembleRelease` + same-key `sign.sh` + `compile -m speed` (not the debug APK).
 - `HttpFetcher` fills its 128 KiB buffer before writing (a drop mid-buffer still writes what arrived, then fails as before);
   `UsbStore.write` makes the folder only when it opens a handle; `SplitMath.pieceName` without `String.format`.
+
 **2026-11-20 · A title's download is shown on its own page: one state machine, fixed button slots, "Ready to play" before it finishes**
 "I start a download from the detail page, I get a toast, and then nothing on the page tells me what is happening." The page never read the download
 list, so Download stayed a plain button and the only feedback was a toast. Spec: `docs/DESIGN_STYLE.md` "Download status on the title page".
