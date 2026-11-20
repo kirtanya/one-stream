@@ -24,6 +24,7 @@ import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import com.kirtanya.reel.core.tmdb.Provider
+import com.kirtanya.reel.engine.TorrentPhase
 import com.kirtanya.reel.data.SourcesStore
 import com.kirtanya.reel.core.sync.LinkKind
 import com.kirtanya.reel.ui.DownloadsScreen
@@ -920,6 +921,82 @@ open class ScreenRenders(protected val variant: Variant) {
     @Test @Config(qualifiers = TV) fun tvTitleShowDownloaded() = render("title-show-downloaded", tv = true, history = true, data = RenderData(sourceSearch = { Fake.manySources }, downloaded = someDownloaded), content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvTitleShowWholeDownloaded() = render("title-show-whole-downloaded", tv = true, history = true, data = RenderData(sourceSearch = { Fake.manySources }, downloaded = wholeShowDownloaded), content = tvApp { open(Dest.Title(Fake.show)) })
     @Test @Config(qualifiers = TV) fun tvSourcesAddedToList() = render("sources-added-to-list", tv = true, data = RenderData(sourceSearch = { Fake.manySources }), content = tvApp { open(Dest.Sources(Fake.show, 2, 6, download = true, addedToList = true)) })
+
+    // ─── Download status on the title page (docs/DESIGN_STYLE.md "Download status on the title page") ───
+
+    private fun snap(
+        key: String, name: String, phase: TorrentPhase, progress: Float, size: Long = 4_200_000_000L, http: Boolean = false,
+        error: String? = null, notReady: Boolean = false, userPaused: Boolean = false, night: Boolean = false, notice: String? = null, speed: Int = 6_400_000,
+    ) = com.kirtanya.reel.engine.TorrentSnapshot(
+        infoHash = key, name = name, mode = com.kirtanya.reel.engine.TorrentMode.DOWNLOAD, phase = phase, progress = progress,
+        wantedBytes = size, doneBytes = (size * progress).toLong(), downBps = if (phase == TorrentPhase.DOWNLOADING && !night) speed else 0,
+        upBps = 0, peers = if (http) 0 else 14, seeds = 3, hasMetadata = phase != TorrentPhase.METADATA, savePath = "/storage/emulated/0/Download/Reel",
+        error = error, userPaused = userPaused, waitingForNight = night, notice = notice, http = http, notReady = notReady,
+    )
+
+    private fun filmOrigin(hash: String) = hash to com.kirtanya.reel.core.library.DownloadOrigin("movie", Fake.FILM_ID, label = "Dune: Part Two")
+
+    /** One download for the film, in each state the page can show. */
+    private fun filmData(t: com.kirtanya.reel.engine.TorrentSnapshot?, starts: Map<String, com.kirtanya.reel.ui.title.StartEntry>? = null) = RenderData(
+        sourceSearch = { Fake.manySources }, torrents = listOfNotNull(t), origins = t?.let { mapOf(filmOrigin(it.infoHash)) }.orEmpty(), starts = starts,
+    )
+
+    private val filmKey = "movie:${Fake.FILM_ID}"
+    private val dlStarting get() = filmData(null, mapOf(filmKey to com.kirtanya.reel.ui.title.StartEntry(pending = true)))
+    private val dlStartFailed get() = filmData(null, mapOf(filmKey to com.kirtanya.reel.ui.title.StartEntry(pending = false, error = "Not enough space on this device: 3.1 GB free, 9.8 GB needed")))
+    private val dlDownloading get() = filmData(snap("a1", "Dune.Part.Two.2024.1080p", TorrentPhase.DOWNLOADING, 0.034f, size = 600_000_000L, speed = 2_100_000))
+    private val dlReady get() = filmData(snap("a2", "Dune.Part.Two.2024.1080p", TorrentPhase.DOWNLOADING, 0.34f, speed = 2_100_000))
+    private val dlPaused get() = filmData(snap("a3", "Dune.Part.Two.2024.1080p", TorrentPhase.PAUSED, 0.67f, userPaused = true))
+    private val dlNight get() = filmData(snap("a4", "Dune.Part.Two.2024.1080p", TorrentPhase.DOWNLOADING, 0.12f, night = true, notice = "Waiting for night (01:00)"))
+    private val dlNotReady get() = filmData(snap("http:000000000005", "Dune.Part.Two.2024.1080p", TorrentPhase.ERROR, 0f, http = true, notReady = true, error = "Not ready on AllDebrid yet. Try again later or pick another source"))
+    private val dlFailed get() = filmData(snap("a6", "Dune.Part.Two.2024.1080p", TorrentPhase.ERROR, 0.12f, error = "Not enough space on this device: 3.1 GB free, 9.8 GB needed"))
+    private val dlDone get() = filmData(snap("a7", "Dune.Part.Two.2024.1080p", TorrentPhase.FINISHED, 1f))
+
+    @Test fun titleFilmDlStarting() = render("title-film-dl-starting", data = dlStarting, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlStartFailed() = render("title-film-dl-start-failed", data = dlStartFailed, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlDownloading() = render("title-film-dl-downloading", data = dlDownloading, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlReady() = render("title-film-dl-ready", data = dlReady, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlPaused() = render("title-film-dl-paused", data = dlPaused, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlNight() = render("title-film-dl-night", data = dlNight, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlNotReady() = render("title-film-dl-not-ready", data = dlNotReady, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlFailed() = render("title-film-dl-failed", data = dlFailed, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlDone() = render("title-film-dl-done", data = dlDone, content = phone { open(Dest.Title(Fake.film)) })
+    @Test fun titleFilmDlIdle() = render("title-film-dl-idle", data = filmData(null), content = phone { open(Dest.Title(Fake.film)) })
+
+    /** Season 1 with six episodes in six states: done, ready, running, paused, waiting for night, failed. */
+    private val showDownloads get() = listOf(
+        snap("b1", "Show.S01E01", TorrentPhase.FINISHED, 1f, size = 1_200_000_000L),
+        snap("b2", "Show.S01E02", TorrentPhase.DOWNLOADING, 0.4f, size = 1_200_000_000L),
+        snap("b3", "Show.S01E03", TorrentPhase.DOWNLOADING, 0.02f, size = 1_200_000_000L, speed = 900_000),
+        snap("b4", "Show.S01E04", TorrentPhase.PAUSED, 0.55f, size = 1_200_000_000L, userPaused = true),
+        snap("b5", "Show.S01E05", TorrentPhase.DOWNLOADING, 0.1f, size = 1_200_000_000L, night = true, notice = "Waiting for night (01:00)"),
+        snap("b6", "Show.S01E06", TorrentPhase.ERROR, 0.1f, size = 1_200_000_000L, error = "Not enough space on this device: 3.1 GB free, 9.8 GB needed"),
+    )
+    private val showData get() = RenderData(
+        sourceSearch = { Fake.manySources }, torrents = showDownloads,
+        origins = showDownloads.mapIndexed { i, t -> t.infoHash to com.kirtanya.reel.core.library.DownloadOrigin("tv", Fake.SHOW_ID, 1, i + 1, "Show · S1 E${i + 1}") }.toMap(),
+    )
+
+    @Test fun titleShowDlEpisodes() = render("title-show-dl-episodes", data = showData, scrollDp = 480, content = phone { open(Dest.Title(Fake.show, 1)) })
+
+    /** The Sources page of a film that is downloading: the card above the picker, no toast. */
+    @Test fun sourcesFilmDlReady() = render("sources-film-dl-ready", data = dlReady, content = phone { open(Dest.Sources(Fake.film, download = true)) })
+    @Test fun sourcesFilmDlStarting() = render("sources-film-dl-starting", data = dlStarting, content = phone { open(Dest.Sources(Fake.film, download = true)) })
+
+    @Test @Config(qualifiers = TV) fun tvTitleFilmDlReady() = render("title-film-dl-ready", tv = true, data = dlReady, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmDlDownloading() = render("title-film-dl-downloading", tv = true, data = dlDownloading, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmDlPaused() = render("title-film-dl-paused", tv = true, data = dlPaused, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmDlNotReady() = render("title-film-dl-not-ready", tv = true, data = dlNotReady, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleFilmDlDone() = render("title-film-dl-done", tv = true, data = dlDone, content = tvApp { open(Dest.Title(Fake.film)) })
+    @Test @Config(qualifiers = TV) fun tvTitleShowDlEpisodes() = render("title-show-dl-episodes", tv = true, data = showData, content = tvApp { open(Dest.Title(Fake.show, 1)) })
+    /** Hold OK on a ready episode: Play, Pause and Delete download sit in its menu. */
+    @Test @Config(qualifiers = TV) fun tvTitleShowDlMenu() = render("title-show-dl-menu", tv = true, windows = true, data = showData) {
+        androidx.compose.runtime.CompositionLocalProvider(com.kirtanya.reel.ui.common.LocalIsTv provides true) {
+            val d = Fake.details(Fake.show)
+            val downloads = com.kirtanya.reel.ui.title.rememberTitleDownloads(d)
+            com.kirtanya.reel.ui.title.EpisodeOptions(d, com.kirtanya.reel.core.tmdb.Episode(1, 2, "The Long Night", "", null, null, 52), null, onPlay = { _, _ -> }, onOpenDest = {}, onDismiss = {}, downloads = downloads)
+        }
+    }
 
     private val castFilm get() = com.kirtanya.reel.core.launcher.CastRequest(false, Fake.film, null, null, com.kirtanya.reel.core.launcher.CastHint())
     private val castShow get() = com.kirtanya.reel.core.launcher.CastRequest(false, Fake.show, 2, 6, com.kirtanya.reel.core.launcher.CastHint())

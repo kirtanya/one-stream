@@ -85,6 +85,7 @@ import com.kirtanya.reel.core.tmdb.TitleRef
 import com.kirtanya.reel.core.tmdb.TitleSummary
 import com.kirtanya.reel.core.tmdb.TmdbImages
 import com.kirtanya.reel.ui.common.ButtonKind
+import com.kirtanya.reel.ui.common.DownloadControl
 import com.kirtanya.reel.ui.common.EmptyState
 import com.kirtanya.reel.ui.common.EnterRowAtStart
 import com.kirtanya.reel.ui.common.Load
@@ -104,7 +105,10 @@ import com.kirtanya.reel.ui.common.rowStart
 import com.kirtanya.reel.ui.common.watchlistIcon
 import com.kirtanya.reel.ui.nav.Dest
 import com.kirtanya.reel.ui.theme.Tokens
+import com.kirtanya.reel.ui.title.EpisodeMark
 import com.kirtanya.reel.ui.title.EpisodeOptions
+import com.kirtanya.reel.ui.title.SeasonDownloadLine
+import com.kirtanya.reel.ui.title.TitleDownloads
 import com.kirtanya.reel.ui.title.PlayAction
 import com.kirtanya.reel.ui.title.heroBackdrops
 import com.kirtanya.reel.ui.title.rememberEpisodeProgress
@@ -143,7 +147,7 @@ fun TvTitle(ref: TitleRef, initialSeason: Int? = null, onPlay: (season: Int?, ep
 }
 
 /** The source panel's job: the episode it is open for, and whether OK downloads (from an episode's options) instead of playing. */
-private data class PanelFor(val episode: Episode, val download: Boolean)
+private data class PanelFor(val episode: Episode?, val download: Boolean)
 
 @Composable
 private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSummary) -> Unit, onOpenDest: (Dest) -> Unit) {
@@ -177,6 +181,9 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
         shownStill = focusedEpisode?.stillPath
     }
     var options by remember { mutableStateOf<Episode?>(null) }
+    // Download status of this title: live, lifecycle-aware; the film's card, the episode marks and the season line read it.
+    val downloads = com.kirtanya.reel.ui.title.rememberTitleDownloads(d)
+    downloads.DeleteHost()
     // The episode to put focus back on once the panel closes; the list's own requester sits on it.
     var restoreNumber by remember { mutableStateOf<Int?>(null) }
     val episodeFocus = remember { FocusRequester() }
@@ -209,12 +216,20 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
             }
         }
     }
+    // Download / Try again with nothing behind it opens the picker for that film or episode; Change source opens it as the replace picker.
+    downloads.onDownload = { s, n ->
+        val e = if (s != null && n != null) (episodes as? Load.Ready)?.value?.firstOrNull { it.season == s && it.number == n } else null
+        restoreNumber = e?.number
+        panel = PanelFor(e, download = true)
+    }
+    downloads.onChangeSource = { s, n, key -> onOpenDest(Dest.Sources(d.summary.ref, s, n, download = true, replacing = key)) }
     options?.let { e ->
         EpisodeOptions(
             d, e, progress[EpisodeNumber(e.season, e.number)],
             onPlay = { _, _ -> restoreNumber = e.number; panel = PanelFor(e, download = false) },
             onOpenDest = onOpenDest, onDismiss = { options = null },
             onDownload = { _, _ -> restoreNumber = e.number; panel = PanelFor(e, download = true) },
+            downloads = downloads,
         )
     }
 
@@ -275,7 +290,7 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                             Spacer(Modifier.height(Tokens.Space.s))
                             if (isShow) {
                                 Series(
-                                    d, season, { season = it }, episodes, { retryEpisodes() }, progress,
+                                    d, season, { season = it }, episodes, { retryEpisodes() }, progress, downloads,
                                     focusNumber = restoreNumber ?: nextUp?.takeIf { it.season == season }?.episode,
                                     autoFocus = autoFocus, onAutoFocused = { autoFocus = false }, episodeFocus = episodeFocus,
                                     onPick = { e -> restoreNumber = e.number; panel = PanelFor(e, download = false) },
@@ -285,6 +300,8 @@ private fun TvTitleBody(d: TitleDetails, initialSeason: Int?, onOpen: (TitleSumm
                                     modifier = Modifier.weight(1f).fillMaxWidth(),
                                 )
                             } else {
+                                // A film's own download card, once there is a download (or a failed start) to talk about.
+                                FilmDownload(downloads)
                                 val pick = rememberTvSourcePick(d, null, null, null, null)
                                 TvSourceRows(pick, Modifier.weight(1f).fillMaxWidth(), remember { FocusRequester() }, onPick = pick.play)
                             }
@@ -388,6 +405,7 @@ private fun Series(
     episodes: Load<List<Episode>>,
     retry: () -> Unit,
     progress: Map<EpisodeNumber, WatchEntry>,
+    downloads: TitleDownloads,
     focusNumber: Int?,
     autoFocus: Boolean,
     onAutoFocused: () -> Unit,
@@ -416,13 +434,14 @@ private fun Series(
             (episodes as? Load.Ready)?.value?.takeIf { it.isNotEmpty() }?.let { list ->
                 val seen = list.count { e -> progress[EpisodeNumber(e.season, e.number)]?.finished == true }
                 if (seen > 0) Text("$seen of ${list.size} watched", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
+                SeasonDownloadLine(downloads, season, list.size)
             }
         }
         when (episodes) {
             Load.Loading -> LoadingBox(Modifier.weight(1f))
             is Load.Failed -> ReelButton("Couldn't load episodes · Try again", { retry() }, kind = ButtonKind.Ghost, icon = Icons.Rounded.Refresh)
             is Load.Ready -> EpisodeRows(
-                episodes.value, progress, focusNumber, autoFocus, onAutoFocused, episodeFocus, onPick, onOptions, onFocusEpisode,
+                episodes.value, progress, downloads, focusNumber, autoFocus, onAutoFocused, episodeFocus, onPick, onOptions, onFocusEpisode,
                 multiSeason = d.seasons.size > 1, next = next, onStepSeason = onStepSeason, modifier = Modifier.weight(1f).fillMaxWidth(),
                 tvId = d.summary.ref.id,
             )
@@ -434,6 +453,7 @@ private fun Series(
 private fun EpisodeRows(
     episodes: List<Episode>,
     progress: Map<EpisodeNumber, WatchEntry>,
+    downloads: TitleDownloads,
     focusNumber: Int?,
     autoFocus: Boolean,
     onAutoFocused: () -> Unit,
@@ -476,7 +496,7 @@ private fun EpisodeRows(
                     e, progress[EpisodeNumber(e.season, e.number)],
                     (if (e.number == target) Modifier.focusRequester(focus) else Modifier).then(seasonKeys),
                     onClick = { onPick(e) }, onLongClick = { onOptions(e) }, onFocus = { onFocusEpisode(e) },
-                    downloaded = com.kirtanya.reel.ui.common.rememberEpisodeDownloaded(tvId, e.season, e.number),
+                    downloads = downloads, downloaded = com.kirtanya.reel.ui.common.rememberEpisodeDownloaded(tvId, e.season, e.number),
                 )
             }
             // The season's end: straight on to the next one.
@@ -492,7 +512,7 @@ private val ROW_SHAPE = RoundedCornerShape(Tokens.Radius.media)
  * its number and name, the runtime, and "Resume 42:10" when part-way. One small image per row (w185), no effects.
  */
 @Composable
-private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: () -> Unit, downloaded: Boolean = false) {
+private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: () -> Unit, downloads: TitleDownloads, downloaded: Boolean = false) {
     val finished = watched?.finished == true
     val inProgress = watched != null && !finished && ContinueWatching.resumePositionMs(watched) > 0
     val line = Tokens.Colors.hairlineStrong
@@ -531,8 +551,19 @@ private fun EpisodeRow(e: Episode, watched: WatchEntry?, modifier: Modifier, onC
             inProgress -> Text(TitleSources.resumeLabel(watched.positionMs), style = Tokens.Type.label, color = Tokens.Colors.accentBright, maxLines = 1)
             else -> e.runtimeMin?.takeIf { it > 0 }?.let { Text("${it}m", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1) }
         }
-        if (downloaded) com.kirtanya.reel.ui.common.DownloadedBadge()
+        EpisodeMark(downloads, e.season, e.number, downloaded)
     }
+}
+
+/** The film's download card. Hidden while there is no download: the film's sources are right below it. */
+@Composable
+private fun FilmDownload(downloads: TitleDownloads) {
+    val state by downloads.state()
+    if (state.kind == com.kirtanya.reel.core.library.DlKind.IDLE) return
+    DownloadControl(
+        state, downloads.nameOf(null, null), { downloads.perform(it, null, null) },
+        Modifier.padding(horizontal = INSET).padding(bottom = Tokens.Space.s), playHere = true,
+    )
 }
 
 /**
