@@ -57,17 +57,22 @@ object PlaceholderCheck {
         ),
         // MediaFusion / Comet-style folders of static status clips.
         "static-videos" to Regex("/static/(?:videos|exceptions)/[^/]+\\.(?:mp4|mkv|webm|mov)$"),
+        // Torrentio's failure clips ("/videos/failed_access_v2.mp4", "failed_infringement", "failed_rar"…).
+        "failed-clip" to Regex("/videos/(failed[a-z_-]{0,30}?)(?:[_-]?v\\d+)?\\.(?:mp4|mkv|webm|mov)$"),
     )
+
+    /** A link's path, lower-cased, without host, query or fragment ("" when there's none). */
+    internal fun pathOf(url: String): String = url.substringBefore('?').substringBefore('#').let { u ->
+        val rest = u.substringAfter("://", u)
+        rest.substring(rest.indexOf('/').let { if (it < 0) rest.length else it })
+    }.lowercase()
 
     /**
      * The pattern a (final, after redirects) link's path matches, or null. Only the path is read (lower-cased,
      * query dropped) and only the pattern name is returned, so nothing of the user's addon config is logged.
      */
     fun matchUrl(url: String): String? {
-        val path = url.substringBefore('?').substringBefore('#').let { u ->
-            val rest = u.substringAfter("://", u)
-            rest.substring(rest.indexOf('/').let { if (it < 0) rest.length else it })
-        }.lowercase()
+        val path = pathOf(url)
         if (path.isEmpty()) return null
         for ((name, regex) in PATTERNS) {
             val m = regex.find(path) ?: continue
@@ -127,20 +132,31 @@ object ReadyCheck {
     /** Where a link ended up: placeholder → not ready; an answer with the file → ready; an error → failed. */
     fun classify(finalUrl: String?, httpCode: Int): Readiness = when {
         finalUrl == null || httpCode !in 200..299 -> Readiness.FAILED
+        // A failure clip will never turn into the film: not worth waiting for.
+        StatusClip.kind(finalUrl).let { it == ClipKind.ACCOUNT || it == ClipKind.FAILED } -> Readiness.FAILED
         PlaceholderCheck.matchUrl(finalUrl) != null -> Readiness.NOT_READY
         else -> Readiness.READY
     }
 
+    /** Where a link ended: its readiness and the status clip's name ("failed_access"), if it played one. */
+    data class Answer(val readiness: Readiness, val clip: String?)
+
     /** Follows [url]'s redirects with a 1-byte request (blocking; call off the main thread). */
-    fun check(client: OkHttpClient, url: String, headers: Map<String, String> = emptyMap(), userAgent: String? = null): Readiness = try {
+    fun probe(client: OkHttpClient, url: String, headers: Map<String, String> = emptyMap(), userAgent: String? = null): Answer = try {
         val req = Request.Builder().url(url).header("Range", "bytes=0-0").apply {
             userAgent?.let { header("User-Agent", it) }
             headers.forEach { (k, v) -> header(k, v) }
         }.build()
-        client.newCall(req).execute().use { classify(it.request.url.toString(), it.code) }
+        client.newCall(req).execute().use {
+            val final = it.request.url.toString()
+            Answer(classify(final, it.code), StatusClip.name(final))
+        }
     } catch (e: Exception) {
-        Readiness.FAILED
+        Answer(Readiness.FAILED, null)
     }
+
+    fun check(client: OkHttpClient, url: String, headers: Map<String, String> = emptyMap(), userAgent: String? = null): Readiness =
+        probe(client, url, headers, userAgent).readiness
 
     /**
      * The best-ranked of [candidates] that's ready, checking [parallel] at a time within [budgetMs] (a later one
@@ -211,4 +227,85 @@ class NotReadySources(private val ttlMs: Long = TTL_MS) {
             return now + later
         }
     }
+}
+
+/** What an addon's status clip says: still downloading (worth waiting), the account was refused, or the file failed. */
+enum class ClipKind { DOWNLOADING, ACCOUNT, FAILED }
+
+/**
+ * Debrid addons answer with short status clips whose file names say why ("downloading_v2.mp4",
+ * "failed_access_v2.mp4", "failed_infringement_v2.mp4"…). Only the file name is read, never the rest of the link,
+ * which carries the user's debrid key.
+ */
+object StatusClip {
+    private val NAME = Regex("/(?:videos|static/videos|static/exceptions)/([a-z_-]{3,40}?)(?:[_-]?v\\d+)?\\.(?:mp4|mkv|webm|mov)$")
+    private val DOWNLOADING = Regex("downloading|download[_-]?started|caching|not[_-]?cached|uncached|not[_-]?ready|queued")
+    private val ACCOUNT = Regex("access|expired|premium|blocked|unauthori[sz]ed|forbidden|invalid|apikey|api[_-]key|subscription|limit")
+    private val FAILED = Regex("failed|error|unavailable|infringement|rar|too[_-]?big|unexpected|not[_-]?found|dead")
+
+    /** The status clip's name ("failed_access"), or null when the link isn't a known one. */
+    fun name(url: String): String? {
+        val path = PlaceholderCheck.pathOf(url)
+        // Only names that read as a status: a real file's name is never returned (it could be a download's).
+        NAME.find(path)?.groupValues?.get(1)?.takeIf { kindOf(it) != null }?.let { return it }
+        // Placeholder names outside those folders ("/downloading.mp4"): the pattern's keyword is enough.
+        return PlaceholderCheck.matchUrl(url)?.takeIf { DOWNLOADING.containsMatchIn(it) || FAILED.containsMatchIn(it) }
+    }
+
+    /** What the clip at [url] means, or null when it isn't a known status clip. */
+    fun kind(url: String): ClipKind? = name(url)?.let(::kindOf)
+
+    fun kindOf(name: String): ClipKind? = when {
+        DOWNLOADING.containsMatchIn(name) -> ClipKind.DOWNLOADING
+        ACCOUNT.containsMatchIn(name) -> ClipKind.ACCOUNT
+        FAILED.containsMatchIn(name) -> ClipKind.FAILED
+        else -> null
+    }
+}
+
+/**
+ * A debrid service still fetching the only sources there are: instead of giving up, the player checks the same
+ * link again every so often (opening it is what made the service start) and plays it as soon as it's there.
+ */
+object DebridWait {
+    const val MAX_WAIT_MS = 10 * 60_000L
+
+    /** Gaps between checks: quick at first (small files finish fast), then every 30 s. */
+    fun delayMs(attempt: Int): Long = when (attempt) {
+        0 -> 10_000L
+        1 -> 15_000L
+        2 -> 20_000L
+        else -> 30_000L
+    }
+
+    fun keepWaiting(elapsedMs: Long): Boolean = elapsedMs < MAX_WAIT_MS
+
+    private val SERVICES = mapOf(
+        "RD" to "Real-Debrid", "AD" to "AllDebrid", "PM" to "Premiumize", "TB" to "TorBox",
+        "DL" to "Debrid-Link", "ED" to "EasyDebrid", "OC" to "Offcloud",
+    )
+
+    /** The debrid service a provider's name points at ("Torrentio AD" → AllDebrid), or null. */
+    fun serviceName(provider: String): String? {
+        val words = provider.split(Regex("[^A-Za-z-]+"))
+        SERVICES.forEach { (code, name) -> if (code in words || words.any { it.equals(name, ignoreCase = true) }) return name }
+        return null
+    }
+
+    /** "1:05": minutes and seconds waited. */
+    fun clock(ms: Long): String {
+        val s = (ms / 1000).coerceAtLeast(0)
+        return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
+    }
+
+    fun waitingText(service: String, elapsedMs: Long) =
+        "$service is downloading this. It starts here by itself as soon as it's ready.\n\nWaiting ${clock(elapsedMs)}"
+
+    fun accountText(service: String) =
+        "$service turned this link down. Check that your $service subscription is active and that the key in the addon is right."
+
+    fun failedText(addon: String) = "$addon couldn't get this file. Pick another source."
+
+    fun gaveUpText(service: String) =
+        "$service still hasn't finished after ${MAX_WAIT_MS / 60_000} minutes. Pick another source, or try again later."
 }

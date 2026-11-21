@@ -1404,13 +1404,82 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         ))
         showNotReady(searching = true)
         lifecycleScope.launch {
+            // Which clip it was (the file name only: the rest of the link carries the debrid key).
+            val clip = pattern?.takeIf { com.kirtanya.reel.core.player.StatusClip.kindOf(it) != null }
+                ?: src.url?.let { url -> withContext(Dispatchers.IO) { com.kirtanya.reel.core.player.ReadyCheck.probe(checkClient(), url, src.headers, com.kirtanya.reel.core.sources.CHROME_UA) }.clip }
+            val kind = clip?.let { com.kirtanya.reel.core.player.StatusClip.kindOf(it) }
+            stat("placeholderClip", mapOf("clip" to clip, "kind" to kind?.name, "addon" to addonName()))
+            if (kind == com.kirtanya.reel.core.player.ClipKind.ACCOUNT) {
+                // Every link through this account will say the same: switching only plays more of these clips.
+                showNotReady(text = com.kirtanya.reel.core.player.DebridWait.accountText(debridService()))
+                return@launch
+            }
             val started = now()
             val alt = if (placeholderHops >= com.kirtanya.reel.core.player.PlaceholderCheck.MAX_SWITCHES) null else findAlternative()
             stat("placeholderFallback", mapOf("found" to (alt != null), "ms" to now() - started,
                 "to" to alt?.let { com.kirtanya.reel.core.player.PlaceholderCheck.label(it) },
                 "cache" to alt?.let { com.kirtanya.reel.core.sources.DebridCache.of(it).name }))
-            if (alt != null && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !isFinishing) switchTo(alt)
-            else showNotReady(searching = false)
+            when {
+                alt != null && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !isFinishing -> switchTo(alt)
+                kind == com.kirtanya.reel.core.player.ClipKind.FAILED ->
+                    showNotReady(text = com.kirtanya.reel.core.player.DebridWait.failedText(addonName()))
+                else -> waitForDebrid(src)
+            }
+        }
+    }
+
+    /** "AllDebrid", from the addon's name ("Torrentio AD"); a general name when it doesn't say. */
+    private fun debridService() =
+        com.kirtanya.reel.core.player.DebridWait.serviceName(playback.source.provider) ?: "Your debrid service"
+
+    /** Short timeouts: these checks only read where a link ends up. */
+    private fun checkClient() = app.http.newBuilder()
+        .connectTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
+    /**
+     * No other source is ready and the service is still fetching this one (opening the link started it): check
+     * the same link now and then (DebridWait) and play it the moment it's there, instead of leaving the user on
+     * a dead end. Stops after 10 minutes, on a failure clip, or when the player is left.
+     */
+    private fun waitForDebrid(src: Source) {
+        val url = src.url ?: return showNotReady(searching = false)
+        val service = debridService()
+        val started = now()
+        showNotReady(text = com.kirtanya.reel.core.player.DebridWait.waitingText(service, 0), retry = false)
+        lifecycleScope.launch {
+            val clock = launch {
+                while (true) {
+                    delay(1_000)
+                    overlays.notReadyText.text = com.kirtanya.reel.core.player.DebridWait.waitingText(service, now() - started)
+                }
+            }
+            val client = checkClient()
+            var attempt = 0
+            var outcome = "gaveUp"
+            while (com.kirtanya.reel.core.player.DebridWait.keepWaiting(now() - started)) {
+                delay(com.kirtanya.reel.core.player.DebridWait.delayMs(attempt++))
+                // Left the player (Home on TV): stop asking; Try again picks it up later.
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) { outcome = "left"; break }
+                val answer = withContext(Dispatchers.IO) {
+                    com.kirtanya.reel.core.player.ReadyCheck.probe(client, url, src.headers, com.kirtanya.reel.core.sources.CHROME_UA)
+                }
+                if (answer.readiness == com.kirtanya.reel.core.player.Readiness.READY) { outcome = "ready"; break }
+                val kind = answer.clip?.let { com.kirtanya.reel.core.player.StatusClip.kindOf(it) }
+                if (kind == com.kirtanya.reel.core.player.ClipKind.ACCOUNT || kind == com.kirtanya.reel.core.player.ClipKind.FAILED) {
+                    outcome = kind.name.lowercase(); break
+                }
+            }
+            clock.cancel()
+            stat("debridWait", mapOf("outcome" to outcome, "waitedS" to (now() - started) / 1000, "checks" to attempt, "addon" to addonName()))
+            when (outcome) {
+                "ready" -> retryPlaceholderSource()
+                "account" -> showNotReady(text = com.kirtanya.reel.core.player.DebridWait.accountText(service))
+                "failed" -> showNotReady(text = com.kirtanya.reel.core.player.DebridWait.failedText(addonName()))
+                "left" -> Unit
+                else -> showNotReady(text = com.kirtanya.reel.core.player.DebridWait.gaveUpText(service))
+            }
         }
     }
 
@@ -1432,10 +1501,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             .candidates(playback.source, ranked, notReady, skip = { avoidAv1 && it.quality.av1 })
             .take(com.kirtanya.reel.core.player.ReadyCheck.MAX_CHECKS)
         if (candidates.isEmpty()) return null
-        val client = app.http.newBuilder()
-            .connectTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+        val client = checkClient()
         val started = now()
         val (pick, answers) = com.kirtanya.reel.core.player.ReadyCheck.firstReady(candidates) { s ->
             withContext(Dispatchers.IO) {
@@ -1500,15 +1566,21 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     }
 
     /** The Not ready card; [searching] = still looking for another source (no buttons yet). */
-    private fun showNotReady(searching: Boolean) {
+    private fun showNotReady(searching: Boolean) = showNotReady(
+        com.kirtanya.reel.core.player.PlaceholderCheck.notReadyText(addonName()) + if (searching) "\n\nLooking for another source…" else "",
+        buttons = !searching,
+    )
+
+    /** The Not ready card with [text]; [retry] = show Try again (not while the player is already waiting). */
+    private fun showNotReady(text: String, buttons: Boolean = true, retry: Boolean = true) {
         status.visibility = View.GONE
         hideBuffer()
-        overlays.notReadyText.text = com.kirtanya.reel.core.player.PlaceholderCheck.notReadyText(addonName()) +
-            if (searching) "\n\nLooking for another source…" else ""
-        overlays.notReadyButtons.visibility = if (searching) View.GONE else View.VISIBLE
+        overlays.notReadyText.text = text
+        overlays.notReadyButtons.visibility = if (buttons) View.VISIBLE else View.GONE
+        overlays.notReadyRetry.visibility = if (retry) View.VISIBLE else View.GONE
         overlays.notReadySources.visibility = if (playback.tmdbId != null) View.VISIBLE else View.GONE
         overlays.notReady.visibility = View.VISIBLE
-        if (!searching) overlays.notReadyRetry.requestFocus()
+        if (buttons) (if (retry) overlays.notReadyRetry else if (playback.tmdbId != null) overlays.notReadySources else overlays.notReadyBack).requestFocus()
     }
 
     /** The chip a player that took over from a placeholder shows for its first seconds. */
