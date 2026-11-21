@@ -52,10 +52,12 @@ object PlayerSources {
     fun row(s: Source, current: Boolean, omitLanguage: String? = null): PlayerSourceRow {
         // Quality, size and the two tags that matter most (HDR / Dolby Vision / Atmos…).
         val title = (listOfNotNull(s.quality.label, s.sizeBytes?.let(ByteSize::format)) + SourceFacts.tags(s).filterNot { s.quality.label.contains(it) }.take(2)).joinToString(" · ")
+        val swarm = SourceFacts.swarm(s)
         val peers = when (s.kind) {
-            SourceKind.DIRECT -> if (DebridCache.of(s) == CacheState.UNCACHED) DebridCache.NOT_CACHED_TAG else "Direct"
-            // The real count when the addon gives it (easier to compare than Strong / OK), else the health word.
-            else -> s.seeders?.takeIf { it > 0 }?.let { if (it == 1) "1 seeder" else "$it seeders" } ?: SeedHealth.of(s)?.label
+            // Debrid links list the torrent's seeders too: few seeders = a slow fetch to the service when it isn't cached.
+            SourceKind.DIRECT -> listOfNotNull(if (DebridCache.of(s) == CacheState.UNCACHED) DebridCache.NOT_CACHED_TAG else "Direct", swarm).joinToString(" · ")
+            // The real counts when the addon gives them (easier to compare than Strong / OK), else the health word.
+            else -> swarm ?: SeedHealth.of(s)?.label
         }
         val languages = SourceFacts.languages(s).filter { it != omitLanguage }.take(3).joinToString(", ").ifEmpty { null }
         val detail = listOfNotNull(SourceFacts.providerLabel(s.provider), peers, languages).joinToString(" · ")

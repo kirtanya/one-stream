@@ -47,6 +47,10 @@ class PlayerSourcesTest {
         assertEquals("1080p · 4.2 GB", PlayerSources.row(torrent(2), false).title)
         assertEquals("Torrentio · 3 seeders", PlayerSources.row(torrent(3, seeders = 3), false).detail)
         assertEquals("Torrentio · 1 seeder", PlayerSources.row(torrent(6, seeders = 1), false).detail)
+        assertEquals("Torrentio · 40 seeders · 12 peers", PlayerSources.row(torrent(7, seeders = 40).copy(peers = 12), false).detail)
+        assertEquals("Torrentio · 1 peer", PlayerSources.row(torrent(8, seeders = 0).copy(peers = 1), false).detail)
+        val debrid = Source(SourceKind.DIRECT, "Film.2024.1080p", "Torrentio AD", Quality(resolution = 1080), url = "https://x.example/f.mkv", seeders = 3, peers = 9)
+        assertEquals("Torrentio AD · Direct · 3 seeders · 9 peers", PlayerSources.row(debrid, false).detail)
         assertEquals("Torrentio · No seeds", PlayerSources.row(torrent(4, seeders = 0), false).detail)
         assertEquals("Torrentio · Seeds unknown", PlayerSources.row(torrent(5, seeders = null), false).detail)
     }

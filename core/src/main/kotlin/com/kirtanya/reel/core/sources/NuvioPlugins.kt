@@ -85,6 +85,7 @@ object NuvioPlugins {
             val quality = QualityParser.parse(qualityText, title, name)
             val size = (r["size"] as? JsonPrimitive)?.let { it.longOrNull ?: QualityParser.parseSize(it.content) }
             val seeders = (r["seeders"] as? JsonPrimitive)?.intOrNull ?: QualityParser.parseSeeders(title)
+            val peers = (r["peers"] as? JsonPrimitive)?.intOrNull ?: (r["leechers"] as? JsonPrimitive)?.intOrNull ?: QualityParser.parsePeers(title)
             val providerName = r.str("provider")?.let { "$provider · $it" } ?: provider
             val headers = (r["headers"] as? JsonObject)?.entries?.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.content?.let { k to it } }?.toMap().orEmpty()
             val subtitles = (r["subtitles"] as? JsonArray).orEmpty().mapNotNull { s ->
@@ -97,10 +98,10 @@ object NuvioPlugins {
             val fileIdx = (r["fileIdx"] as? JsonPrimitive)?.intOrNull
             when {
                 url != null && url.startsWith("magnet:", ignoreCase = true) ->
-                    Source.fromMagnet(url, title, providerName, quality, fileIdx = fileIdx, filename = r.str("filename"), seeders = seeders, sizeBytes = size)
+                    Source.fromMagnet(url, title, providerName, quality, fileIdx = fileIdx, filename = r.str("filename"), seeders = seeders, sizeBytes = size)?.copy(peers = peers)
                 infoHash != null -> Source(
                     kind = SourceKind.TORRENT, title = title, provider = providerName, quality = quality,
-                    infoHash = infoHash, fileIdx = fileIdx, filename = r.str("filename"), seeders = seeders, sizeBytes = size,
+                    infoHash = infoHash, fileIdx = fileIdx, filename = r.str("filename"), seeders = seeders, peers = peers, sizeBytes = size,
                     subtitles = subtitles,
                 )
                 // A page to open in another app (no stream of ours). Only web links: a third-party plugin must not

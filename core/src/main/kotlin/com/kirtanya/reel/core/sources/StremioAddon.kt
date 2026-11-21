@@ -99,6 +99,7 @@ object StremioAddon {
             val quality = QualityParser.parse(name, description, filename)
             val size = (hints?.get("videoSize") as? JsonPrimitive)?.longOrNull ?: QualityParser.parseSize(description, name)
             val seeders = QualityParser.parseSeeders(description, name)
+            val peers = QualityParser.parsePeers(description, name)
             val subtitles = (s["subtitles"] as? JsonArray).orEmpty().mapNotNull { sub ->
                 val so = sub as? JsonObject ?: return@mapNotNull null
                 SubtitleTrack(so.str("url") ?: return@mapNotNull null, so.str("lang") ?: "und", so.str("id"))
@@ -106,7 +107,7 @@ object StremioAddon {
             val title = description.ifBlank { name }
             val base = Source(
                 kind = SourceKind.DIRECT, title = title, provider = provider, quality = quality,
-                sizeBytes = size, seeders = seeders, subtitles = subtitles, filename = filename,
+                sizeBytes = size, seeders = seeders, peers = peers, subtitles = subtitles, filename = filename,
                 bingeGroup = hints?.str("bingeGroup"),
                 cache = DebridCache.classify(name, description),
             )
@@ -119,7 +120,7 @@ object StremioAddon {
                     trackers = s.strings("sources").filter { it.startsWith("tracker:") }.map { it.removePrefix("tracker:") },
                 )
                 s.str("url")?.startsWith("magnet:") == true ->
-                    Source.fromMagnet(s.str("url")!!, title, provider, quality, filename = filename, seeders = seeders, sizeBytes = size)
+                    Source.fromMagnet(s.str("url")!!, title, provider, quality, filename = filename, seeders = seeders, sizeBytes = size)?.copy(peers = peers)
                 s.str("url") != null -> base.copy(
                     url = s.str("url"),
                     headers = (hints?.get("proxyHeaders") as? JsonObject)?.let { (it["request"] as? JsonObject)?.toStringMap() }.orEmpty(),

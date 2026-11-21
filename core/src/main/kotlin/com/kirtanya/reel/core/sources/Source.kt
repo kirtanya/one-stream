@@ -56,6 +56,8 @@ data class Source(
     val tvAppUrl: String? = null,
     val sizeBytes: Long? = null,
     val seeders: Int? = null,
+    /** Peers (leechers) the addon lists, when it does; null = not given. */
+    val peers: Int? = null,
     val subtitles: List<SubtitleTrack> = emptyList(),
     val bingeGroup: String? = null,
     /** Set when this is a trailer, teaser, sample or other extra, not the film / episode itself ("Trailer"). */

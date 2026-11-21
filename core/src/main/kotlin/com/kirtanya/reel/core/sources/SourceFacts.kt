@@ -58,6 +58,12 @@ enum class SourceType(val label: String) {
  * "MediaFusion 🇮🇳 (Hindi, Tamil)" lists what it covers, not what this file contains.
  */
 object SourceFacts {
+    /** "142 seeders · 30 peers": the counts the addon listed (either alone when that's all it gave), else null. */
+    fun swarm(s: Source): String? = listOfNotNull(
+        s.seeders?.takeIf { it > 0 }?.let { if (it == 1) "1 seeder" else "$it seeders" },
+        s.peers?.takeIf { it > 0 }?.let { if (it == 1) "1 peer" else "$it peers" },
+    ).joinToString(" · ").ifEmpty { null }
+
     private data class Tag(val label: String, val regex: Regex)
 
     private fun tag(label: String, pattern: String) = Tag(label, Regex("(?i)(?<![a-z0-9])(?:$pattern)(?![a-z0-9])"))

@@ -70,6 +70,12 @@ object QualityParser {
         return (value * mult).toLong()
     }
 
+    /** "👥 30", "Peers: 30", "Leechers 30", "L: 30" → 30. Addons that list only seeders give null. */
+    fun parsePeers(vararg texts: String?): Int? =
+        peers.find(texts.filterNotNull().joinToString(" "))?.groupValues?.get(1)?.toIntOrNull()
+
+    private val peers = Regex("""(?:👥|peers?:?|leech(?:ers?)?:?|\bL:|\bP:)\s*(\d+)""", RegexOption.IGNORE_CASE)
+
     fun parseSeeders(vararg texts: String?): Int? =
         seeders.find(texts.filterNotNull().joinToString(" "))?.groupValues?.get(1)?.toIntOrNull()
 }

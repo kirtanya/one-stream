@@ -53,6 +53,10 @@ class QualityTest {
         assertEquals(700L shl 20, QualityParser.parseSize("700 MB"))
         assertEquals(120, QualityParser.parseSeeders("👤 120 💾 2.35 GB"))
         assertEquals(42, QualityParser.parseSeeders("Seeders: 42"))
+        assertEquals(30, QualityParser.parsePeers("👤 120 👥 30 💾 2.35 GB"))
+        assertEquals(7, QualityParser.parsePeers("S: 50 L: 7"))
+        assertEquals(12, QualityParser.parsePeers("Seeders: 50 Peers: 12"))
+        kotlin.test.assertNull(QualityParser.parsePeers("👤 120 💾 2.35 GB 1080P: HDR"))
     }
 }
 

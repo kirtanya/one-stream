@@ -316,6 +316,7 @@ object Fake {
             filename = when (i % 5) { 1 -> "release.[Hindi + English].mkv"; 2 -> "release.MULTi.mkv"; 3 -> "release.ITA.ENG.mkv"; else -> null },
             sizeBytes = if (i % 5 == 4) null else (1L + i % 9) * 1_700_000_000L,
             seeders = if (kind != SourceKind.TORRENT) null else listOf(412, 0, 9, 1203, 37)[i % 5],
+            peers = if (kind != SourceKind.TORRENT) null else listOf(58, 0, null, 240, 6)[i % 5],
             subtitles = if (i % 3 == 0) List(i % 4 + 1) { SubtitleTrack("https://example.org/s/$it.srt", "en") } else emptyList(),
         )
     }

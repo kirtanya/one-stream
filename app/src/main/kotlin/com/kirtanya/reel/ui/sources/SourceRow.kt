@@ -224,7 +224,7 @@ fun RecommendedCard(
     }
 }
 
-/** "9.8 GB  ▮▮▯ 412 seeds" — size, then seed health for torrents. Wraps rather than cutting words off. */
+/** "9.8 GB  ▮▮▯ 412 seeds · 30 peers" — size, then seed health for torrents (peers when the addon lists them). Wraps rather than cutting words off. */
 @Composable
 private fun Facts(v: SourceView, large: Boolean = false) {
     val style = if (large) Tokens.Type.heading else Tokens.Type.label
@@ -238,7 +238,12 @@ private fun Facts(v: SourceView, large: Boolean = false) {
                 Text(seedText(v, large), style = small, color = Tokens.Colors.textSecondary)
             }
         } else if (v.type == SourceType.DIRECT) {
-            Text(if (large) "Direct link · no peers needed" else "Direct link", style = small, color = Tokens.Colors.textSecondary)
+            // A debrid link's torrent still matters when the service has to fetch it: show its counts when listed.
+            val swarm = com.kirtanya.reel.core.sources.SourceFacts.swarm(v.source)
+            Text(
+                listOfNotNull(if (large && swarm == null) "Direct link · no peers needed" else "Direct link", swarm).joinToString(" · "),
+                style = small, color = Tokens.Colors.textSecondary,
+            )
         }
     }
 }
@@ -246,7 +251,9 @@ private fun Facts(v: SourceView, large: Boolean = false) {
 private fun seedText(v: SourceView, large: Boolean): String = when (v.health) {
     SeedHealth.NONE -> if (large) "No one is sharing this" else "No seeds"
     SeedHealth.UNKNOWN -> "Seeds unknown"
-    else -> com.kirtanya.reel.ui.plural(v.source.seeders ?: 0, "seed") + if (large) " · " + v.health!!.label else ""
+    else -> com.kirtanya.reel.ui.plural(v.source.seeders ?: 0, "seed") +
+        (v.source.peers?.takeIf { it > 0 }?.let { " · " + com.kirtanya.reel.ui.plural(it, "peer") } ?: "") +
+        if (large) " · " + v.health!!.label else ""
 }
 
 /**
