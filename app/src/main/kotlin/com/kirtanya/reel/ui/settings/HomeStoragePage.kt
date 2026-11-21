@@ -301,7 +301,7 @@ private fun CacheCard() {
     val app = ReelApp.get(LocalContext.current)
     val r = rememberHomeView().settings.retention
     fun set(change: (RetentionSettings) -> RetentionSettings) = app.home.update { it.copy(retention = change(it.retention)) }
-    Section("Stream cache on the disk", note = "Your library (what you download) is never removed. Only the stream cache is trimmed.") {
+    Section("Titles you haven't kept, on the disk", note = "What you keep is never removed. Only titles you haven't kept are cleared.") {
         ToggleRow("Keep what the TV plays", "Kept on the disk, so it starts instantly next time.", r.keepTvViewing) { set { it.copy(keepTvViewing = !it.keepTvViewing) } }
         if (r.keepTvViewing) {
             Text("Keep cached titles for", style = Tokens.Type.label, color = Tokens.Colors.text)

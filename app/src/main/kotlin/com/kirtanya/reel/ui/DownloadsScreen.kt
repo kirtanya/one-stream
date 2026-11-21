@@ -75,12 +75,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private enum class DownloadFilter(val label: String) { All("All"), Active("Downloading"), Done("Done"), Streams("Stream cache"), Home("Home disk") }
+private typealias DownloadFilter = com.kirtanya.reel.core.library.LibraryFilter
+
+private fun TorrentSnapshot.facts() = com.kirtanya.reel.core.library.LibraryFacts(
+    kept = mode == TorrentMode.DOWNLOAD, finished = phase == TorrentPhase.FINISHED || phase == TorrentPhase.SEEDING, streaming = streaming,
+)
 
 /**
- * Downloads and the stream cache: storage at a glance, then downloads, then the stream cache as its
- * own section. Each card plays; downloads can change source or become stream cache, cached streams
- * can be saved as downloads (docs/STREAMING_V2.md §7.3a).
+ * Everything played or downloaded, in one list (core/library/LibraryList): storage at a glance, then the titles,
+ * downloading first. Kept titles stay; the rest is what you played and clears itself when space is needed.
+ * Every row plays; Keep / Don't keep move a title between the two (docs/STREAMING_V2.md §7.3a).
  */
 @Composable
 fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.reel.ui.nav.Dest) -> Unit = {}) {
@@ -91,7 +95,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
     // Direct (debrid / HTTP) downloads sit in the same list as torrents, as rows with the same look (docs/HOME_DISK.md §25.6).
     val liveDirect by ReelApp.get(context).httpDownloads.snapshots.collectAsState()
     val torrents = fixed?.torrents ?: (live + liveDirect)
-    var filter by remember { mutableStateOf(DownloadFilter.All) }
+    var filter by remember { mutableStateOf(DownloadFilter.ALL) }
     var confirmDelete by remember { mutableStateOf<TorrentSnapshot?>(null) }
     var more by remember { mutableStateOf<TorrentSnapshot?>(null) }
     var confirmCache by remember { mutableStateOf<TorrentSnapshot?>(null) }
@@ -123,13 +127,11 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
             delay(3000)
         }
     }
-    val shown = torrents.filter { it.matches(filter) }
-    val shownJobs = if (filter == DownloadFilter.All || filter == DownloadFilter.Home) home.jobs.sortedByDescending { it.createdAt } else emptyList()
+    val shown = com.kirtanya.reel.core.library.LibraryList.order(torrents.filter { it.matches(filter) }) { it.facts() }
+    val shownJobs = if (filter == DownloadFilter.ALL || filter == DownloadFilter.HOME) home.jobs.sortedByDescending { it.createdAt } else emptyList()
     val heldShown = torrents.filter { it.infoHash.lowercase() in home.held }
-    val shownDownloads = shown.filter { it.mode == TorrentMode.DOWNLOAD }
     // "USB disk" / "This TV" lines show only once the disk is in play, so a TV without one looks as before.
     val anyUsb = isTv && (usbFree != null || torrents.any { it.onUsb })
-    val shownCache = shown.filter { it.mode == TorrentMode.STREAM }
     // Disk checks once, not on every recomposition (and some devices can't answer at all).
     val saveDir = remember { runCatching { engine.downloadsDir().path.substringAfter("/0/") }.getOrNull() }
     val needsFileAccess = remember { !isTv && Build.VERSION.SDK_INT >= 30 && runCatching { !Environment.isExternalStorageManager() }.getOrDefault(false) }
@@ -170,14 +172,14 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                 if (isTv) {
                     // The same text tabs as the top bar (the tab's own inset is taken back so the text lines up with the title).
                     Row(Modifier.offset(x = -Tokens.Space.m), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
-                        DownloadFilter.entries.filter { it != DownloadFilter.Home || showHome }.forEach { f ->
-                            val count = if (f == DownloadFilter.Home) home.jobs.size else torrents.count { it.matches(f) }
+                        DownloadFilter.entries.filter { it != DownloadFilter.HOME || showHome }.forEach { f ->
+                            val count = if (f == DownloadFilter.HOME) home.jobs.size else torrents.count { it.matches(f) }
                             com.kirtanya.reel.ui.tv.TvTab("${f.label} · $count", null, selected = filter == f) { filter = f }
                         }
                     }
                 } else LazyRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-                    items(DownloadFilter.entries.filter { it != DownloadFilter.Home || showHome }) { f ->
-                        val count = if (f == DownloadFilter.Home) home.jobs.size else torrents.count { it.matches(f) }
+                    items(DownloadFilter.entries.filter { it != DownloadFilter.HOME || showHome }) { f ->
+                        val count = if (f == DownloadFilter.HOME) home.jobs.size else torrents.count { it.matches(f) }
                         ReelButton("${f.label} · $count", { filter = f }, kind = if (filter == f) ButtonKind.Primary else ButtonKind.Ghost)
                     }
                 }
@@ -190,35 +192,26 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                 item(key = "empty") {
                     EmptyState(
                         Icons.Rounded.Download,
-                        if (filter == DownloadFilter.Streams) "Nothing cached" else "Nothing here yet",
-                        if (isTv) "Download from a title's sources, or send a link from your phone."
+                        if (filter == DownloadFilter.KEPT) "Nothing kept yet" else "Nothing here yet",
+                        if (isTv) "What you play shows up here. Download from a title's sources to keep it."
                         else "Tap + to add a magnet link or a .torrent file, or download from a title's sources.",
                         action = if (!isTv) ({ ReelButton("Add a link", onAdd, kind = ButtonKind.Primary, icon = Icons.Rounded.Add) }) else null,
                     )
                 }
             }
-            // TV: two sections side by side in one list get a heading each (the phone shows the cache's heading only).
-            if (isTv && shownDownloads.isNotEmpty() && shownCache.isNotEmpty()) item(key = "downloads-header", contentType = "header") {
-                Text("Downloads · ${shownDownloads.size}", style = Tokens.Type.heading, color = Tokens.Colors.text)
-            }
-            items(shownDownloads, key = { it.infoHash }, contentType = { "download" }) { t ->
-                val origin = origins[t.infoHash.lowercase()]
-                DownloadCard(
-                    t, onDelete = { confirmDelete = t }, onMore = { more = t }, home = home.takeIf { !isTv }, tv = isTv, anyUsb = anyUsb,
-                    onChangeSource = origin?.let { o -> { onOpenDest(sourcesDest(o, t.infoHash)) } },
+            if (shown.any { it.mode == TorrentMode.STREAM }) item(key = "explainer", contentType = "explainer") {
+                Text(
+                    com.kirtanya.reel.core.library.LibraryList.EXPLAINER, Modifier.widthIn(max = 980.dp),
+                    style = Tokens.Type.caption, color = Tokens.Colors.textSecondary,
                 )
             }
-            if (shownCache.isNotEmpty()) {
-                item(key = "cache-header", contentType = "header") {
-                    Column(Modifier.widthIn(max = 980.dp).padding(top = if (shownDownloads.isEmpty()) 0.dp else Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
-                        Text("Stream cache · ${shownCache.size}", style = Tokens.Type.heading, color = Tokens.Colors.text)
-                        Text(
-                            "What you played recently, so it starts again without waiting. Deleted automatically when space is needed; save one to keep it.",
-                            style = Tokens.Type.caption, color = Tokens.Colors.textSecondary,
-                        )
-                    }
-                }
-                items(shownCache, key = { it.infoHash }, contentType = { "cache" }) { t -> DownloadCard(t, onDelete = { confirmDelete = t }, onMore = null, tv = isTv) }
+            items(shown, key = { it.infoHash }, contentType = { "title" }) { t ->
+                val origin = origins[t.infoHash.lowercase()]
+                DownloadCard(
+                    t, onDelete = { confirmDelete = t }, onMore = { more = t }, home = home.takeIf { !isTv && t.mode == TorrentMode.DOWNLOAD }, tv = isTv, anyUsb = anyUsb,
+                    onChangeSource = origin?.let { o -> { onOpenDest(sourcesDest(o, t.infoHash)) } },
+                    modifier = Modifier.animateItem(),
+                )
             }
         }
         }
@@ -250,10 +243,10 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
         AlertDialog(
             onDismissRequest = { confirmCache = null },
             containerColor = Tokens.Colors.surface1,
-            title = { Text("Keep as stream cache?", style = Tokens.Type.heading, color = Tokens.Colors.text) },
-            text = { Text(com.kirtanya.reel.core.stream.ModeChange.cacheConfirm(finished), style = Tokens.Type.body, color = Tokens.Colors.textSecondary) },
-            confirmButton = { ReelButton("Keep as cache", { engine.keepAsCache(t.infoHash); confirmCache = null }, kind = ButtonKind.Primary, icon = Icons.Rounded.Theaters) },
-            dismissButton = { ReelButton("Keep download", { confirmCache = null }, kind = ButtonKind.Ghost) },
+            title = { Text("Don't keep it?", style = Tokens.Type.heading, color = Tokens.Colors.text) },
+            text = { Text(com.kirtanya.reel.core.library.LibraryList.unkeepConfirm(finished), style = Tokens.Type.body, color = Tokens.Colors.textSecondary) },
+            confirmButton = { ReelButton("Don't keep", { engine.keepAsCache(t.infoHash); confirmCache = null }, kind = ButtonKind.Primary, icon = Icons.Rounded.Theaters) },
+            dismissButton = { ReelButton("Keep it", { confirmCache = null }, kind = ButtonKind.Ghost) },
         )
     }
 
@@ -311,10 +304,10 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
                         Text("free on this device", style = Tokens.Type.label, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(bottom = 1.dp))
                     }
                     GradientProgress(used.toFloat() / total, height = 4.dp)
-                    Text("${formatBytes(downloaded)} downloads  ·  ${formatBytes(cacheBytes)} stream cache", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
-                    if (usbFree != null) Text("USB disk: ${formatBytes(usbFree)} free  ·  ${formatBytes(onUsbBytes)} downloads", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
+                    Text("${formatBytes(downloaded)} kept  ·  ${formatBytes(cacheBytes)} not kept", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
+                    if (usbFree != null) Text("USB disk: ${formatBytes(usbFree)} free  ·  ${formatBytes(onUsbBytes)} kept", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
                 }
-                if (cacheBytes > 0) ReelButton("Clear stream cache", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
+                if (cacheBytes > 0) ReelButton("Clear what isn't kept", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
             }
         }
         return
@@ -326,23 +319,23 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
         }
         GradientProgress(used.toFloat() / total, height = 6.dp)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
-            Pill("${formatBytes(downloaded)} downloads")
-            Pill("${formatBytes(cacheBytes)} stream cache")
+            Pill("${formatBytes(downloaded)} kept")
+            Pill("${formatBytes(cacheBytes)} not kept")
         }
-        if (cacheBytes > 0) ReelButton("Clear stream cache", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
+        if (cacheBytes > 0) ReelButton("Clear what isn't kept", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
     }
 }
 
 @Composable
-private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null, tv: Boolean = false, anyUsb: Boolean = false, onChangeSource: (() -> Unit)? = null) {
+private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null, tv: Boolean = false, anyUsb: Boolean = false, onChangeSource: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val done = t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING
     if (tv) {
-        DownloadRowTv(t, done, onDelete, onMore, anyUsb, onChangeSource)
+        DownloadRowTv(t, done, onDelete, onMore.takeIf { t.mode == TorrentMode.DOWNLOAD }, anyUsb, onChangeSource, modifier)
         return
     }
-    ReelCard(Modifier.widthIn(max = 980.dp)) {
+    ReelCard(modifier.widthIn(max = 980.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
             // Tile: initial on the accent gradient (torrents have no artwork).
             Box(
@@ -359,7 +352,7 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -
                 Text(statusLine(t), style = Tokens.Type.caption, color = if (t.error != null && !t.notReady) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (!done && !t.notReady) GradientProgress(t.progress)
+        if (!done && !t.notReady && t.mode == TorrentMode.DOWNLOAD) GradientProgress(t.progress)
         val held = home?.let { h -> h.waiting.takeIf { t.infoHash.lowercase() in h.held } }
         home?.let { h ->
             com.kirtanya.reel.core.homedisk.HomeBadges.badge(com.kirtanya.reel.core.homedisk.TitleWhere(phoneDone = done && held == null, held = held), h.setUp)
@@ -375,15 +368,15 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -
         // Space.m between the 40 dp icons: Compose grows each touch area to 48 dp only while the neighbours leave room.
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
             // A direct download can only be played once it is whole; before that the row has Pause / Resume instead.
-            if (!t.http || done) PlayButton(t, done)
+            if (!t.http || done || httpReady(t)) PlayButton(t, done)
             Spacer(Modifier.weight(1f))
             // Icons, not labels, so Play + up to three actions fit a 360 dp phone; the rest are under More.
             if (t.mode == TorrentMode.STREAM) {
                 // Keeps the pieces already fetched and downloads the rest (Keep, §7.3).
-                GlassIconButton(Icons.Rounded.SaveAlt, "Save as download", {
+                ReelButton("Keep", {
                     engine.keep(t.infoHash)
-                    android.widget.Toast.makeText(context, "Saving as a download", android.widget.Toast.LENGTH_SHORT).show()
-                })
+                    android.widget.Toast.makeText(context, com.kirtanya.reel.core.library.LibraryList.KEEP_TOAST, android.widget.Toast.LENGTH_SHORT).show()
+                }, kind = ButtonKind.Ghost, icon = Icons.Rounded.SaveAlt)
             } else if (!done && held != null) {
                 // Held by the network rule: its own buttons above say how to start it.
             } else if (!done && !t.notReady) {
@@ -391,7 +384,7 @@ private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -
                 else GlassIconButton(Icons.Rounded.Pause, "Pause", { pauseDownload(context, t) })
             }
             GlassIconButton(Icons.Rounded.Delete, "Delete", onDelete)
-            if (onMore != null) GlassIconButton(Icons.Rounded.MoreVert, "More", onMore)
+            if (onMore != null && t.mode == TorrentMode.DOWNLOAD) GlassIconButton(Icons.Rounded.MoreVert, "More", onMore)
         }
     }
 }
@@ -415,16 +408,22 @@ private fun resumeDownload(context: android.content.Context, t: TorrentSnapshot)
 @Composable
 private fun PlayButton(t: TorrentSnapshot, done: Boolean) {
     val context = LocalContext.current
-    ReelButton(if (done) "Play" else "Play now", {
+    ReelButton(if (done || t.mode == TorrentMode.STREAM) "Play" else "Play now", {
         if (t.http) {
             val app = ReelApp.get(context)
             val d = app.httpDownloads.get(t.infoHash)
-            if (d != null) context.startActivity(PlayerActivity.forHttpDownload(context, d))
+            // Still downloading: play the source itself while the download carries on (no play from a growing file yet).
+            if (d != null) context.startActivity(if (done) PlayerActivity.forHttpDownload(context, d) else PlayerActivity.forUrl(context, d.url, d.name, d.headers))
         } else {
             com.kirtanya.reel.ui.homedisk.gatedPlay(context, null, t.name) { context.startActivity(PlayerActivity.forTorrent(context, t.infoHash, t.name)) }
         }
     }, kind = ButtonKind.Secondary, icon = Icons.Rounded.PlayArrow)
 }
+
+/** A direct download far enough along to play (the same rule as the title page, core/library/TitleDownload). */
+private fun httpReady(t: TorrentSnapshot): Boolean =
+    t.http && t.phase == TorrentPhase.DOWNLOADING && !t.notReady &&
+        t.doneBytes >= minOf(com.kirtanya.reel.core.library.TitleDownload.HTTP_READY_BYTES, (t.wantedBytes / 2).takeIf { it > 0 } ?: Long.MAX_VALUE)
 
 /**
  * The debrid service had not cached the file yet: nothing was kept (docs/HOME_DISK.md §25.4). Retry asks again; Change source opens the
@@ -450,12 +449,12 @@ private fun NotReadyNotice(t: TorrentSnapshot, onChangeSource: (() -> Unit)?) {
  * a stall, an error) hangs under the row only when there is one.
  */
 @Composable
-private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Unit, onMore: (() -> Unit)?, anyUsb: Boolean = false, onChangeSource: (() -> Unit)? = null) {
+private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Unit, onMore: (() -> Unit)?, anyUsb: Boolean = false, onChangeSource: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val shape = RoundedCornerShape(Tokens.Radius.l)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(Tokens.Colors.surface1).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
+        modifier.fillMaxWidth().clip(shape).background(Tokens.Colors.surface1).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
             .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),
         verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
     ) {
@@ -474,14 +473,14 @@ private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Uni
                     if (t.notReady) statusLine(t) else t.error ?: statusLine(t, if (!anyUsb || t.mode != TorrentMode.DOWNLOAD) null else if (t.onUsb) "USB disk" else "This TV"), style = Tokens.Type.caption,
                     color = if (t.error != null && !t.notReady) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                if (!done && !t.notReady) GradientProgress(t.progress, Modifier.padding(top = Tokens.Space.xs), height = 3.dp)
+                if (!done && !t.notReady && t.mode == TorrentMode.DOWNLOAD) GradientProgress(t.progress, Modifier.padding(top = Tokens.Space.xs), height = 3.dp)
             }
-            if (!t.http || done) PlayButton(t, done)
+            if (!t.http || done || httpReady(t)) PlayButton(t, done)
             if (t.mode == TorrentMode.STREAM) {
-                GlassIconButton(Icons.Rounded.SaveAlt, "Save as download", {
+                ReelButton("Keep", {
                     engine.keep(t.infoHash)
-                    android.widget.Toast.makeText(context, "Saving as a download", android.widget.Toast.LENGTH_SHORT).show()
-                })
+                    android.widget.Toast.makeText(context, com.kirtanya.reel.core.library.LibraryList.KEEP_TOAST, android.widget.Toast.LENGTH_SHORT).show()
+                }, kind = ButtonKind.Ghost, icon = Icons.Rounded.SaveAlt)
             } else if (!done && !t.notReady) {
                 if (t.phase == TorrentPhase.PAUSED || (t.http && t.phase == TorrentPhase.ERROR)) GlassIconButton(Icons.Rounded.Download, "Resume", { resumeDownload(context, t) })
                 else GlassIconButton(Icons.Rounded.Pause, "Pause", { pauseDownload(context, t) })
@@ -496,14 +495,7 @@ private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Uni
 }
 
 /** One rule for both the filter's list and its count (errors show under Downloading). */
-private fun TorrentSnapshot.matches(f: DownloadFilter): Boolean = when (f) {
-    DownloadFilter.All -> true
-    DownloadFilter.Active -> mode == TorrentMode.DOWNLOAD && phase !in setOf(TorrentPhase.FINISHED, TorrentPhase.SEEDING)
-    DownloadFilter.Done -> mode == TorrentMode.DOWNLOAD && phase in setOf(TorrentPhase.FINISHED, TorrentPhase.SEEDING)
-    DownloadFilter.Streams -> mode == TorrentMode.STREAM
-    // Titles on the home disk come with the disk (Phase 3); until then this chip shows the at-home requests only.
-    DownloadFilter.Home -> false
-}
+private fun TorrentSnapshot.matches(f: DownloadFilter): Boolean = com.kirtanya.reel.core.library.LibraryList.matches(facts(), f)
 
 private fun statusLine(t: TorrentSnapshot, place: String? = null): String = buildString {
     if (t.http) {
@@ -523,6 +515,10 @@ private fun statusLine(t: TorrentSnapshot, place: String? = null): String = buil
             append(" · ↓ ").append(formatBytes(t.downBps.toLong())).append("/s")
             t.etaSec?.let { append(" · ").append(formatEta(it)) }
         }
+        return@buildString
+    }
+    if (t.mode == TorrentMode.STREAM && !t.streaming) {
+        append(com.kirtanya.reel.core.library.LibraryList.notKeptLine(if (t.hasMetadata) formatBytes(t.doneBytes) else null))
         return@buildString
     }
     append(
@@ -566,7 +562,7 @@ internal fun MoreDialog(
                 } else {
                     Text("Change source works for downloads started from a title's sources.", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary)
                 }
-                if (!t.http) ReelButton("Keep as stream cache", onKeepAsCache, Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, icon = Icons.Rounded.Theaters)
+                if (!t.http && t.mode == TorrentMode.DOWNLOAD) ReelButton("Don't keep", onKeepAsCache, Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, icon = Icons.Rounded.Theaters)
                 onGoToTitle?.let { ReelButton("Go to title", it, Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, icon = Icons.Rounded.Info) }
             }
         },

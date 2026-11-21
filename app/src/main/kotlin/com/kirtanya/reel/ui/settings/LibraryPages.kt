@@ -211,7 +211,7 @@ internal fun LazyListScope.autoDownloadItems(isTv: Boolean) {
                     ReelButton(label, { app.autoDownloader.update { it.copy(deleteWatchedAfterDays = d) } }, kind = if (s.deleteWatchedAfterDays == d) ButtonKind.Primary else ButtonKind.Ghost)
                 }
             }
-            Text("Stream cache limit", style = Tokens.Type.label, color = Tokens.Colors.text)
+            Text("Space for titles you haven't kept", style = Tokens.Type.label, color = Tokens.Colors.text)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s), verticalArrangement = Arrangement.spacedBy(Tokens.Space.s)) {
                 com.kirtanya.reel.core.library.AutoDownloadSettings.CACHE_CHOICES.forEach { g ->
                     ReelButton(if (g == null) "Automatic" else "$g GB", { app.autoDownloader.update { it.copy(cacheLimitGb = g) } }, kind = if (s.cacheLimitGb == g) ButtonKind.Primary else ButtonKind.Ghost)

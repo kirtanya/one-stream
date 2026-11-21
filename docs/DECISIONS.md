@@ -5,6 +5,16 @@ Newest first. Each entry: date, decision, why, evidence. Add one whenever someth
 
 ---
 
+**2026-11-21 · Downloads and the stream cache are one list: Kept or not kept**
+"Why do we have two options like streaming cache or downloading?… everything should be in stream cache so that it's
+easy to play." The engine keeps its two modes (a download keeps every piece; a played stream is trimmed by the cache
+policy), but the screen no longer shows two places. Downloads is one list (`core/library/LibraryList`, `LibraryListTest`):
+downloading first, then playing, then the rest; tabs All · Downloading · Kept. A played title says "Played recently ·
+size · not kept" and has a labelled **Keep** (the existing `engine.keep`: pieces reused, the rest downloads); a kept one
+has **Don't keep** under More (the existing `keepAsCache`). Every row plays, and a running direct download plays its
+source once ~16 MB are in (the title page's rule). Settings and the storage card say "not kept" instead of
+"stream cache". Play from a growing direct-download file is still to come.
+
 **2026-11-20 · The TV focus ring is one shared ring that glides from card to card**
 "Make the transition smoother… the outline will slide to the next focused card". Each card used to fade its own ring
 out while the next faded in. Now `Modifier.focusRingHost()` on the TV root draws a single ring on top of the screen and

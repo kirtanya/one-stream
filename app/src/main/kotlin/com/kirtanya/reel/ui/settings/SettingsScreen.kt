@@ -249,7 +249,7 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
         SettingsPage.Store -> "Find addons and add them in one tap"
         SettingsPage.Plugins -> "${sources.plugins.count { it.enabled }} of ${sources.plugins.size} plugins on"
         SettingsPage.PhoneTv -> devices
-        SettingsPage.Storage -> if (cacheBytes < 0) "Stream cache" else "Stream cache · ${formatBytes(cacheBytes)}"
+        SettingsPage.Storage -> if (cacheBytes < 0) "Not kept" else "Not kept · ${formatBytes(cacheBytes)}"
         SettingsPage.HomeStorage -> homeStorageSummary(home, isTv)
         SettingsPage.HomeLayout -> homeLayoutSummary(isTv)
         SettingsPage.History -> historySummary(app)
@@ -440,7 +440,7 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
         SettingsPage.Plugins -> "Plugin repositories (Nuvio format) run small scripts on this device to find sources."
         SettingsPage.PhoneTv -> if (isTv) "Get addons and plugins from your phone, so you never type on the TV." else "Set sources up once on the phone; your TV gets them too."
         SettingsPage.Storage -> "Streams are cached on this device and trimmed automatically."
-        SettingsPage.HomeStorage -> "Where your library and stream cache live: a USB disk in the TV, or a folder on your router."
+        SettingsPage.HomeStorage -> "Where your titles live: a USB disk in the TV, or a folder on your router."
         else -> null
     }
 
@@ -576,14 +576,14 @@ private fun SettingsDetail(page: SettingsPage, isTv: Boolean, onOpen: (SettingsP
                     Section {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m)) {
                             Column(Modifier.weight(1f)) {
-                                Text("Stream cache", style = Tokens.Type.label, color = Tokens.Colors.text)
+                                Text("Titles you haven't kept", style = Tokens.Type.label, color = Tokens.Colors.text)
                                 Text(formatBytes(cacheBytes), style = Tokens.Type.caption, color = Tokens.Colors.textTertiary)
                             }
                             ReelButton("Clear", {
                                 scope.launch {
                                     withContext(Dispatchers.IO) { app.engine.trimCache(0) }
                                     cacheBytes = withContext(Dispatchers.IO) { app.engine.cacheBytes() }
-                                    message = "Stream cache cleared"
+                                    message = "Cleared what wasn't kept"
                                 }
                             }, kind = ButtonKind.Ghost, icon = Icons.Rounded.Delete)
                         }
