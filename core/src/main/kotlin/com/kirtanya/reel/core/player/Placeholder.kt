@@ -301,8 +301,12 @@ object DebridWait {
     fun waitingText(service: String, elapsedMs: Long) =
         "$service is downloading this. It starts here by itself as soon as it's ready.\n\nWaiting ${clock(elapsedMs)}"
 
+    fun accountTitle(service: String) = "Check your $service account"
+
     fun accountText(service: String) =
-        "$service turned this link down. Check that your $service subscription is active and that the key in the addon is right."
+        "$service turned this link down. Make sure your subscription is active and the key in the addon is right."
+
+    const val FAILED_TITLE = "This source didn't work"
 
     fun failedText(addon: String) = "$addon couldn't get this file. Pick another source."
 

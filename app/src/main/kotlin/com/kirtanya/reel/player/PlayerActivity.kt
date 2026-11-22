@@ -1411,7 +1411,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             stat("placeholderClip", mapOf("clip" to clip, "kind" to kind?.name, "addon" to addonName()))
             if (kind == com.kirtanya.reel.core.player.ClipKind.ACCOUNT) {
                 // Every link through this account will say the same: switching only plays more of these clips.
-                showNotReady(text = com.kirtanya.reel.core.player.DebridWait.accountText(debridService()))
+                showAccountRefused(debridService())
                 return@launch
             }
             val started = now()
@@ -1422,7 +1422,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             when {
                 alt != null && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !isFinishing -> switchTo(alt)
                 kind == com.kirtanya.reel.core.player.ClipKind.FAILED ->
-                    showNotReady(text = com.kirtanya.reel.core.player.DebridWait.failedText(addonName()))
+                    showSourceFailed()
                 else -> waitForDebrid(src)
             }
         }
@@ -1475,8 +1475,8 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
             stat("debridWait", mapOf("outcome" to outcome, "waitedS" to (now() - started) / 1000, "checks" to attempt, "addon" to addonName()))
             when (outcome) {
                 "ready" -> retryPlaceholderSource()
-                "account" -> showNotReady(text = com.kirtanya.reel.core.player.DebridWait.accountText(service))
-                "failed" -> showNotReady(text = com.kirtanya.reel.core.player.DebridWait.failedText(addonName()))
+                "account" -> showAccountRefused(service)
+                "failed" -> showSourceFailed()
                 "left" -> Unit
                 else -> showNotReady(text = com.kirtanya.reel.core.player.DebridWait.gaveUpText(service))
             }
@@ -1571,17 +1571,38 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
         buttons = !searching,
     )
 
-    /** The Not ready card with [text]; [retry] = show Try again (not while the player is already waiting). */
-    private fun showNotReady(text: String, buttons: Boolean = true, retry: Boolean = true) {
+    /**
+     * The Not ready card with [title] and [text]. [retry] = show Try again (not while the player is already waiting, nor
+     * when trying again can't help); [dead] = this source won't work, so the next button becomes the main action.
+     */
+    private fun showNotReady(
+        text: String, buttons: Boolean = true, retry: Boolean = true,
+        title: String = "Not ready yet", dead: Boolean = false,
+    ) {
         status.visibility = View.GONE
         hideBuffer()
+        overlays.notReadyTitle.text = title
         overlays.notReadyText.text = text
         overlays.notReadyButtons.visibility = if (buttons) View.VISIBLE else View.GONE
-        overlays.notReadyRetry.visibility = if (retry) View.VISIBLE else View.GONE
-        overlays.notReadySources.visibility = if (playback.tmdbId != null) View.VISIBLE else View.GONE
+        val retryShown = retry && !dead
+        val sources = playback.tmdbId != null
+        overlays.notReadyRetry.visibility = if (retryShown) View.VISIBLE else View.GONE
+        overlays.notReadySources.visibility = if (sources) View.VISIBLE else View.GONE
+        overlays.setPrimary(overlays.notReadySources, dead && sources)
+        overlays.setPrimary(overlays.notReadyBack, dead && !sources)
         overlays.notReady.visibility = View.VISIBLE
-        if (buttons) (if (retry) overlays.notReadyRetry else if (playback.tmdbId != null) overlays.notReadySources else overlays.notReadyBack).requestFocus()
+        if (buttons) (if (retryShown) overlays.notReadyRetry else if (sources) overlays.notReadySources else overlays.notReadyBack).requestFocus()
     }
+
+    private fun showAccountRefused(service: String) = showNotReady(
+        text = com.kirtanya.reel.core.player.DebridWait.accountText(service),
+        title = com.kirtanya.reel.core.player.DebridWait.accountTitle(service), dead = true,
+    )
+
+    private fun showSourceFailed() = showNotReady(
+        text = com.kirtanya.reel.core.player.DebridWait.failedText(addonName()),
+        title = com.kirtanya.reel.core.player.DebridWait.FAILED_TITLE, dead = true,
+    )
 
     /** The chip a player that took over from a placeholder shows for its first seconds. */
     private fun showNotice(text: String) {

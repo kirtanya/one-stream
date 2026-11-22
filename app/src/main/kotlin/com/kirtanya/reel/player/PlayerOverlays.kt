@@ -391,23 +391,28 @@ internal class PlayerOverlays(private val context: Context, private val font: (B
         text = label
         isAllCaps = false
         typeface = font(true)
-        setTextColor(if (primary) Tokens.Night.onAccent.toArgb() else PlayerColors.FOREGROUND)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         minHeight = dp(40)
         minimumHeight = dp(40)
         setPadding(dp(20), dp(8), dp(20), dp(8))
         stateListAnimator = null
+        setPrimary(this, primary)
+        setOnClickListener { onClick() }
+    }
+
+    /** Fill [b] with the accent ([primary]) or the glass look; the Not ready card moves its main action between buttons. */
+    fun setPrimary(b: Button, primary: Boolean) {
+        b.setTextColor(if (primary) Tokens.Night.onAccent.toArgb() else PlayerColors.FOREGROUND)
         fun shape(focused: Boolean) = GradientDrawable().apply {
             cornerRadius = dp(999).toFloat()
             setColor(if (primary) accent else glassColor)
             setStroke(dp(if (focused) 2 else 1), if (focused) PlayerColors.FOREGROUND else if (primary) Color.TRANSPARENT else hairline)
         }
-        background = android.graphics.drawable.StateListDrawable().apply {
+        b.background = android.graphics.drawable.StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), shape(true))
             addState(intArrayOf(android.R.attr.state_pressed), shape(true))
             addState(intArrayOf(), shape(false))
         }
-        setOnClickListener { onClick() }
     }
 
     fun text(sizeSp: Float, color: Int, medium: Boolean = false) = TextView(context).apply {

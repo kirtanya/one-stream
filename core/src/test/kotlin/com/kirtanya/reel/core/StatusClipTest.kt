@@ -70,7 +70,11 @@ class StatusClipTest {
         assertEquals("1:05", DebridWait.clock(65_000))
         assertTrue(DebridWait.waitingText("AllDebrid", 65_000).endsWith("Waiting 1:05"))
         assertTrue(DebridWait.accountText("AllDebrid").contains("subscription"))
-        listOf(DebridWait.waitingText("A", 0), DebridWait.accountText("A"), DebridWait.failedText("A"), DebridWait.gaveUpText("A"))
+        assertEquals("Check your AllDebrid account", DebridWait.accountTitle("AllDebrid"))
+        listOf(
+            DebridWait.waitingText("A", 0), DebridWait.accountText("A"), DebridWait.failedText("A"), DebridWait.gaveUpText("A"),
+            DebridWait.accountTitle("A"), DebridWait.FAILED_TITLE,
+        )
             .forEach { assertFalse(it.contains('—') || it.contains('!'), it) }
     }
 }
