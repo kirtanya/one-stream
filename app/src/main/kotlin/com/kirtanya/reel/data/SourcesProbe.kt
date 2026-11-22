@@ -25,6 +25,8 @@ import kotlinx.coroutines.withTimeout
  * `--ez placeholderTest true [--ei runtimeMin 90] [--ez fallback true]` plays a 10 s legal clip as if a debrid addon
  *   sent its "downloading" placeholder for Big Buck Bunny (tmdb 10378): the Not ready card, or with `fallback` the
  *   switch to the full film (archive.org). Afterwards: `--es removeTitle movie:10378` (fallback plays and saves it).
+ *   `--es clipUrl <url> --es provider "Torrentio AD (test)"`: a local test server's link instead (status clips by name,
+ *   the debrid wait), no debrid involved.
  * `--es removeTitle <titleKey>` removes a film/show from watch history.
  * `--ez report true [--es note <text>]` saves a manual problem report (screenshot of the screen on top, if ours).
  * `--es reportTest crash|freeze` tests the automatic reports: crash the app / block its main thread for 8 s.
@@ -303,8 +305,9 @@ class SourcesProbe : BroadcastReceiver() {
         val fallback = intent.getBooleanExtra("fallback", false)
         val q = { t: String -> com.kirtanya.reel.core.sources.QualityParser.parse(t) }
         val clip = com.kirtanya.reel.core.sources.Source(
-            com.kirtanya.reel.core.sources.SourceKind.DIRECT, "Big Buck Bunny 1080p (placeholder test)", "Debridio (test)", q("1080p"),
-            url = PLACEHOLDER_CLIP,
+            com.kirtanya.reel.core.sources.SourceKind.DIRECT, "Big Buck Bunny 1080p (placeholder test)",
+            intent.getStringExtra("provider") ?: "Debridio (test)", q("1080p"),
+            url = intent.getStringExtra("clipUrl") ?: PLACEHOLDER_CLIP,
         )
         val full = com.kirtanya.reel.core.sources.Source(
             com.kirtanya.reel.core.sources.SourceKind.DIRECT, "Big Buck Bunny 720p surround", "Internet Archive (test)", q("720p"),
