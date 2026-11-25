@@ -86,6 +86,16 @@ object HttpDownloads {
         "ED" to "EasyDebrid", "OC" to "Offcloud", "PK" to "put.io", "DB" to "DebriD", "EN" to "Debrider", "PP" to "PikPak",
     )
 
+    /** The line for a link the debrid service turned down for good (its status clip), never "try again later". */
+    fun refusedLine(provider: String, kind: com.kirtanya.reel.core.player.ClipKind): String {
+        val service = debridName(provider)
+        return if (kind == com.kirtanya.reel.core.player.ClipKind.ACCOUNT) {
+            "${service ?: "Your debrid service"} turned this link down. Check your subscription and the key in the addon"
+        } else {
+            "${service ?: "The service"} couldn't get this file. Pick another source"
+        }
+    }
+
     /** "Not ready on AllDebrid yet. Try again later or pick another source" */
     fun notReadyLine(provider: String): String =
         "Not ready on ${debridName(provider) ?: "your debrid service"} yet. Try again later or pick another source"

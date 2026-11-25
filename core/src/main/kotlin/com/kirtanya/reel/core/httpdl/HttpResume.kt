@@ -57,6 +57,9 @@ object HttpResume {
                 if (range.first != from) return ResumeStep.Refetch("the server started at ${range.first}, not $from")
                 if (changed) return ResumeStep.Refetch("the file changed on the server")
                 val total = range.total ?: r.contentLength?.let { from + it } ?: return ResumeStep.Fail(NO_LENGTH)
+                // Debrid links often carry no validator, so a new file behind the same address shows only as a new
+                // size. Seen on the TV: 5738 MiB became 4761 MiB and the rest was appended to the old file's bytes.
+                if (savedTotal > 0 && total != savedTotal) return ResumeStep.Refetch("the file changed size on the server")
                 ResumeStep.Begin(from, total, r.validator ?: savedValidator, restarted = false)
             }
             200 -> {

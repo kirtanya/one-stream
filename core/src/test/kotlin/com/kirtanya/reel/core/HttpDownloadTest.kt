@@ -15,6 +15,7 @@ import com.kirtanya.reel.core.httpdl.HttpState
 import com.kirtanya.reel.core.httpdl.ResponseFacts
 import com.kirtanya.reel.core.httpdl.ResumeStep
 import com.kirtanya.reel.core.httpdl.RetryPolicy
+import com.kirtanya.reel.core.player.ClipKind
 import com.kirtanya.reel.core.stream.GiB
 import com.kirtanya.reel.core.stream.MiB
 import kotlin.test.Test
@@ -89,6 +90,13 @@ class HttpDownloadTest {
     @Test fun rangeStartingElsewhereIsAskedAgainFromTheStart() {
         assertIs<ResumeStep.Refetch>(HttpResume.plan(100, 1000, null, facts(206, 800, "bytes 200-999/1000")))
         assertIs<ResumeStep.Refetch>(HttpResume.plan(100, 1000, null, facts(206, 900, null)))
+    }
+
+    @Test fun aResumeWhoseSizeChangedStartsOver() {
+        // Seen on the TV: a debrid link with no validator went from 5738 to 4761 MiB and was appended to the old bytes.
+        assertIs<ResumeStep.Refetch>(HttpResume.plan(519 * MiB, 5738 * MiB, null, facts(206, 4242 * MiB, "bytes ${519 * MiB}-${4761 * MiB - 1}/${4761 * MiB}")))
+        assertIs<ResumeStep.Refetch>(HttpResume.plan(100, 1000, null, facts(206, 1100, "bytes 100-1199/*")))
+        assertEquals(ResumeStep.Begin(100, 1000, null, false), HttpResume.plan(100, 1000, null, facts(206, 900, "bytes 100-999/1000")))
     }
 
     @Test fun aChangedValidatorMeansTheFileChanged() {
@@ -167,6 +175,17 @@ class HttpDownloadTest {
     @Test fun aRedirectToAStatusClipIsNotReady() {
         assertEquals(GuardVerdict.NotReady("pattern"), guard(url = "https://static.debrid.test/videos/downloading.mp4", total = 900 * MiB))
         assertEquals(GuardVerdict.NotReady("pattern"), guard(url = "https://x.test/static/videos/wait.mp4"))
+    }
+
+    @Test fun anAccountOrFailedClipIsRefusedNotNotReady() {
+        assertEquals(GuardVerdict.Refused(ClipKind.ACCOUNT), guard(url = "https://torrentio.test/videos/failed_access_v2.mp4", total = HttpPlaceholderGuard.KNOWN_STUB))
+        assertEquals(GuardVerdict.Refused(ClipKind.FAILED), guard(url = "https://torrentio.test/videos/failed_infringement_v2.mp4"))
+        assertEquals(GuardVerdict.NotReady("pattern"), guard(url = "https://torrentio.test/videos/downloading_v2.mp4"))
+    }
+
+    @Test fun refusedLinesNameTheServiceAndNeverSayTryLater() {
+        assertEquals("AllDebrid turned this link down. Check your subscription and the key in the addon", HttpDownloads.refusedLine("Torrentio AD", ClipKind.ACCOUNT))
+        assertEquals("The service couldn't get this file. Pick another source", HttpDownloads.refusedLine("Some site", ClipKind.FAILED))
     }
 
     @Test fun aFilmUnderTwentyMegabytesIsNotOneButAnExtraMayBe() {

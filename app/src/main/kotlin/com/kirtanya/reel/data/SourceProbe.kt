@@ -102,6 +102,8 @@ object SourceProbe {
                 type = response.header("Content-Type")
                 val html = type?.contains("html", ignoreCase = true) == true
                 if (response.code >= 400 || html) return@use StartProbe(failed = true)
+                // A debrid status clip ("failed_access", "downloading") streams fine but is not the film: no speed from it.
+                if (com.kirtanya.reel.core.player.StatusClip.kind(response.request.url.toString()) != null) return@use StartProbe(failed = true)
                 val body = response.body ?: return@use StartProbe(failed = true)
                 val buffer = ByteArray(16 * 1024)
                 val input = body.byteStream()

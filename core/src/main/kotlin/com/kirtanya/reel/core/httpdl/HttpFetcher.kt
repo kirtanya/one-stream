@@ -133,6 +133,8 @@ class HttpFetcher(
         )
         when (verdict) {
             is GuardVerdict.NotReady -> return Outcome.NotReady(verdict.stat)
+            // Nothing is written or deleted: once the account is sorted out, Resume carries on from the same bytes.
+            is GuardVerdict.Refused -> return Outcome.Failed(HttpDownloads.refusedLine(d.provider, verdict.kind))
             GuardVerdict.NotVideo -> return Outcome.NotVideo
             GuardVerdict.Ok -> Unit
         }
