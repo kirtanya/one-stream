@@ -1,6 +1,8 @@
 package com.kirtanya.reel.core.httpdl
 
+import com.kirtanya.reel.core.player.ClipKind
 import com.kirtanya.reel.core.player.PlaceholderCheck
+import com.kirtanya.reel.core.player.StatusClip
 import com.kirtanya.reel.core.stream.MiB
 
 /** Is what a direct link answers the film, or the debrid service's "downloading" clip (docs/HOME_DISK.md §25.4)? */
@@ -9,6 +11,12 @@ sealed interface GuardVerdict {
 
     /** The service has not cached it yet. [stat] is the reason for ReelStats ("pattern", "stub", "tiny", "size"). */
     data class NotReady(val stat: String) : GuardVerdict
+
+    /**
+     * The service's clip says it will never come: the account was turned down ([ClipKind.ACCOUNT], e.g. Torrentio's
+     * "failed_access") or the file can't be fetched ([ClipKind.FAILED]). "Try again later" would be a lie for these.
+     */
+    data class Refused(val kind: ClipKind) : GuardVerdict
 
     /** Not a video at all (an error page). */
     data object NotVideo : GuardVerdict
@@ -34,6 +42,10 @@ object HttpPlaceholderGuard {
         isTitle: Boolean,
         firstBytes: ByteArray? = null,
     ): GuardVerdict {
+        when (val kind = StatusClip.kind(finalUrl)) {
+            ClipKind.ACCOUNT, ClipKind.FAILED -> return GuardVerdict.Refused(kind)
+            else -> Unit
+        }
         if (PlaceholderCheck.matchUrl(finalUrl) != null) return GuardVerdict.NotReady("pattern")
         val type = contentType?.lowercase()?.substringBefore(';')?.trim()
         if (type != null && (type.startsWith("text/") || type == "application/json" || type == "application/xml")) return GuardVerdict.NotVideo
