@@ -41,6 +41,7 @@ fun requestFor(d: TitleDetails, season: Int?, episode: Int?) = SourceRequest(
     season = season,
     episode = episode,
     originalTitle = d.originalTitle,
+    originalLanguage = d.originalLanguage,
 )
 
 /** Last results per title/episode, so going back and forth doesn't search again. */

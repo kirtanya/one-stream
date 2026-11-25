@@ -80,7 +80,8 @@ class SourceAggregator(private val timeoutMs: Long = 30_000, private val maxPara
         val failed = LinkedHashMap<String, String>()
 
         suspend fun publish() {
-            val all = byKey.values.toList()
+            // English, Hindi and the original language only (SourceLanguages).
+            val all = byKey.values.filter { SourceLanguages.keep(it, req.originalLanguage) }
             // Read each release's tags here, off the main thread: the rows ask for them while composing.
             all.forEach { it.releaseTags }
             send(SourceSearch(SourceRanker.rank(all, prefs), pending.toList(), failed.toMap(), active.size))

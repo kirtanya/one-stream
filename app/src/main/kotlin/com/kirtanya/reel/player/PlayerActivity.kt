@@ -2285,7 +2285,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
     private fun sourceRequest(episode: EpisodeNumber?): SourceRequest? {
         val id = playback.tmdbId ?: return null
         val type = if (playback.tmdbType == "tv") MediaType.TV else MediaType.MOVIE
-        return SourceRequest(id, playback.imdbId, type, playback.title, playback.year, episode?.season, episode?.episode)
+        return SourceRequest(id, playback.imdbId, type, playback.title, playback.year, episode?.season, episode?.episode, originalLanguage = playback.originalLanguage)
     }
 
     // ---------------------------------------------------------------- Afterglow overlays (docs/DESIGN_STYLE.md)
