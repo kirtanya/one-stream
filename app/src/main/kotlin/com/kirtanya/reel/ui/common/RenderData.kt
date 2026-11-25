@@ -26,6 +26,8 @@ class RenderData(
     val linkPreviews: List<Load<SourcesStore.LinkPreview>>? = null,
     /** Which title / episode each download is for (info-hash → origin). */
     val origins: Map<String, com.kirtanya.reel.core.library.DownloadOrigin>? = null,
+    /** TV Downloads: the picture for a download's title / episode (renders have no TMDB). */
+    val downloadArt: ((com.kirtanya.reel.core.library.DownloadOrigin) -> String?)? = null,
     /** Sources page: chips already picked; [confirmReplace] opens the "Replace this download?" dialog for the pick. */
     val sourceFilters: com.kirtanya.reel.core.sources.SourceFilters? = null,
     val confirmReplace: Boolean = false,

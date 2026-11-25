@@ -2329,7 +2329,7 @@ class PlayerActivity : ComponentActivity(), com.kirtanya.reel.report.ReportCente
                 showError("Waiting for peers that have this part of the video. Try again in a moment, or pick another source.")
             }
             localFile && error.errorCode in 2000..2999 ->
-                showError("This download can't be read. If it is on a USB disk, check that the disk is plugged in.", allowExternal = false)
+                showError(com.kirtanya.reel.core.httpdl.LocalPlayError.message(error.errorCode), allowExternal = false)
             playback.source.kind == SourceKind.DIRECT && error.errorCode in 2000..2999 -> {
                 if (httpCode == 403 || httpCode == 410) {
                     showError("This link has expired. Try another source.")

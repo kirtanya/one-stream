@@ -85,3 +85,20 @@ class HomeFileReader(private val store: HomeStore, private val path: String, pri
         const val BLOCK = 1 shl 20
     }
 }
+
+/**
+ * What the player says when a finished download won't play. Only a missing file means the disk; a read past the end
+ * means the file is damaged (seen on the TV: its start came from an older, bigger copy, so the header points past the
+ * end), and "check the disk" sent the user looking at a disk that was fine. Codes are media3's PlaybackException ones.
+ */
+object LocalPlayError {
+    const val FILE_NOT_FOUND = 2005
+    const val NO_PERMISSION = 2006
+    const val POSITION_OUT_OF_RANGE = 2008
+
+    const val DISK = "This download can't be read. If it is on a USB disk, check that the disk is plugged in."
+    const val DAMAGED = "This download is damaged. Delete it and download it again."
+
+    /** Only a read past the end is "damaged": any other read error (2000 included) can be a disk pulled out mid-film. */
+    fun message(errorCode: Int): String = if (errorCode == POSITION_OUT_OF_RANGE) DAMAGED else DISK
+}

@@ -87,6 +87,9 @@ private fun TvSyncContent() {
             }
             Pill(state.deviceName)
         }
+        // Always something to focus here: with no phone paired yet the code is only text, and a page with nothing
+        // focusable lets Android move the remote out of the panel to the rail.
+        ReelButton("New code", { app.tvSync.openPairing() }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
     } else {
         ReelButton("Show a pairing code", { app.tvSync.openPairing() }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Refresh)
     }

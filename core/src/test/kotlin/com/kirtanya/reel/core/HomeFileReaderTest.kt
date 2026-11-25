@@ -3,6 +3,7 @@ package com.kirtanya.reel.core
 import com.kirtanya.reel.core.homedisk.UsbStore
 import com.kirtanya.reel.core.httpdl.HomeFileReader
 import com.kirtanya.reel.core.httpdl.HomeFileRef
+import com.kirtanya.reel.core.httpdl.LocalPlayError
 import java.io.File
 import java.nio.file.Files
 import kotlin.random.Random
@@ -75,5 +76,13 @@ class HomeFileReaderTest {
         assertEquals("My Film (2020) [1080p].mkv", HomeFileRef.nameOf(uri))
         assertNull(HomeFileRef.idOf("https://example.com/x.mkv"))
         assertNull(HomeFileRef.idOf("reel-file://nothex/x.mkv"))
+    }
+
+    /** A read past the end (a damaged file, the Ramayana case) says "damaged", not "check the disk": the disk was fine. */
+    @Test fun aReadPastTheEndSaysDamagedNotDisk() {
+        assertEquals(LocalPlayError.DAMAGED, LocalPlayError.message(LocalPlayError.POSITION_OUT_OF_RANGE))
+        assertEquals(LocalPlayError.DISK, LocalPlayError.message(LocalPlayError.FILE_NOT_FOUND))
+        assertEquals(LocalPlayError.DISK, LocalPlayError.message(LocalPlayError.NO_PERMISSION))
+        assertEquals(LocalPlayError.DISK, LocalPlayError.message(2000))
     }
 }

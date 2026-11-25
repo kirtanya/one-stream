@@ -263,7 +263,10 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
     // In the side panel the remote starts on the first row.
     if (isTv && focusOn == null && LocalSettingsPanel.current) PanelFocus(requesters.getValue(GROUPS.first().second.first()))
 
-    PageList(isTv) {
+    // The list opens scrolled to the row's group: a lazy list only composes what's on screen, so a row further down
+    // (Phone & TV) had no node yet, every focus request missed, and Android put the remote on the rail behind the panel.
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = homeListIndex(focusOn, isTv))
+    PageList(isTv, state = listState) {
         item { PageTitle("Settings", null, isTv, onBack = null) }
         // The TV is always black & white, so it has no Appearance page.
         GROUPS.map { (group, pages) -> group to pages.filter { !isTv || it != SettingsPage.Appearance } }.forEach { (group, pages) ->
@@ -280,6 +283,13 @@ private fun SettingsHome(isTv: Boolean, focusOn: SettingsPage?, onOpen: (Setting
             }
         }
     }
+}
+
+/** The root list's item holding [page]'s group (item 0 is the title); 0 when there's no row to come back to. */
+internal fun homeListIndex(page: SettingsPage?, isTv: Boolean): Int {
+    if (page == null) return 0
+    val group = GROUPS.map { (_, pages) -> pages.filter { !isTv || it != SettingsPage.Appearance } }.indexOfFirst { page in it }
+    return if (group < 0) 0 else 1 + group
 }
 
 /** Installed addons, repos and plugins (fixed data in screen renders). */
@@ -335,12 +345,18 @@ private fun IconTile(icon: ImageVector) {
 
 /** The scrolling column every settings page uses (phone clears the bottom bar; TV keeps safe margins). */
 @Composable
-internal fun PageList(isTv: Boolean, modifier: Modifier = Modifier, content: LazyListScope.() -> Unit) {
+internal fun PageList(
+    isTv: Boolean,
+    modifier: Modifier = Modifier,
+    state: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+    content: LazyListScope.() -> Unit,
+) {
     val panel = LocalSettingsPanel.current
     val side = if (panel) Tokens.Space.xl else if (isTv) Tokens.Space.tvSafeH else Tokens.Space.phoneGutter
     val list: @Composable () -> Unit = {
         LazyColumn(
             modifier.fillMaxSize(),
+            state = state,
             contentPadding = PaddingValues(
                 start = side, end = side,
                 top = if (isTv) (if (panel) Tokens.Space.tvSafeV else Tokens.Space.l) else 0.dp,

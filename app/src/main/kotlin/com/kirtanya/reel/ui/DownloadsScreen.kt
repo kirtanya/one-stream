@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -144,9 +147,11 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = side, end = side, top = if (isTv) Tokens.Space.l else 0.dp, bottom = if (isTv) Tokens.Space.tvSafeV else Tokens.Space.bottomBarClearance + Tokens.Space.xl),
-            verticalArrangement = Arrangement.spacedBy(if (isTv) Tokens.Space.m else Tokens.Space.l),
+            verticalArrangement = Arrangement.spacedBy(if (isTv) Tokens.Space.xs else Tokens.Space.l),
         ) {
-            item(key = "title", contentType = "title") {
+            if (isTv) item(key = "title", contentType = "title") {
+                TvHeader(torrents, cacheBytes, freeBytes, usbFree) { engine.trimCache(0) }
+            } else item(key = "title", contentType = "title") {
                 Row(Modifier.then(if (isTv) Modifier else Modifier.statusBarsPadding()).padding(top = Tokens.Space.l), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Downloads", style = if (isTv) Tokens.Type.hero else Tokens.Type.display, color = Tokens.Colors.text)
@@ -155,7 +160,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                     if (!isTv) GlassIconButton(Icons.Rounded.Add, "Add a link", onAdd)
                 }
             }
-            item(key = "storage", contentType = "storage") { StorageCard(torrents, cacheBytes, freeBytes, usbFree, isTv) { engine.trimCache(0) } }
+            if (!isTv) item(key = "storage", contentType = "storage") { StorageCard(torrents, cacheBytes, freeBytes, usbFree, false) { engine.trimCache(0) } }
             if (needsFileAccess) {
                 item(key = "access") {
                     ReelCard {
@@ -209,7 +214,7 @@ fun DownloadsScreen(isTv: Boolean, onAdd: () -> Unit, onOpenDest: (com.kirtanya.
                 val origin = origins[t.infoHash.lowercase()]
                 DownloadCard(
                     t, onDelete = { confirmDelete = t }, onMore = { more = t }, home = home.takeIf { !isTv && t.mode == TorrentMode.DOWNLOAD }, tv = isTv, anyUsb = anyUsb,
-                    onChangeSource = origin?.let { o -> { onOpenDest(sourcesDest(o, t.infoHash)) } },
+                    onChangeSource = origin?.let { o -> { onOpenDest(sourcesDest(o, t.infoHash)) } }, origin = origin,
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -327,12 +332,12 @@ private fun StorageCard(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeB
 }
 
 @Composable
-private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null, tv: Boolean = false, anyUsb: Boolean = false, onChangeSource: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+private fun DownloadCard(t: TorrentSnapshot, onDelete: () -> Unit, onMore: (() -> Unit)?, home: com.kirtanya.reel.ui.homedisk.HomeView? = null, tv: Boolean = false, anyUsb: Boolean = false, onChangeSource: (() -> Unit)? = null, origin: com.kirtanya.reel.core.library.DownloadOrigin? = null, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val engine = ReelApp.get(context).engine
     val done = t.phase == TorrentPhase.FINISHED || t.phase == TorrentPhase.SEEDING
     if (tv) {
-        DownloadRowTv(t, done, onDelete, onMore.takeIf { t.mode == TorrentMode.DOWNLOAD }, anyUsb, onChangeSource, modifier)
+        DownloadRowTv(t, done, onDelete, onMore.takeIf { t.mode == TorrentMode.DOWNLOAD }, anyUsb, onChangeSource, origin, modifier)
         return
     }
     ReelCard(modifier.widthIn(max = 980.dp)) {
@@ -443,54 +448,136 @@ private fun NotReadyNotice(t: TorrentSnapshot, onChangeSource: (() -> Unit)?) {
     }
 }
 
+/** TV: the width of every row's button area (the widest set: Retry + Change source + Delete), so the text column is equally wide on every row. */
+private val TV_ACTIONS_WIDTH = 312.dp
+private val TV_THUMB_WIDTH = 112.dp
+
 /**
- * TV: one slim row per download instead of the phone's stacked card: tile, name + status + a thin progress line, then the
- * actions in a line at the right (each a focus stop with the usual ring). A notice ("Start now" after the night window,
- * a stall, an error) hangs under the row only when there is one.
+ * TV header: the title on the left, storage on the right (free space, a thin bar, what fills it, and its one action), so the
+ * list starts high on a 540 dp screen instead of under a big storage card.
  */
 @Composable
-private fun DownloadRowTv(t: TorrentSnapshot, done: Boolean, onDelete: () -> Unit, onMore: (() -> Unit)?, anyUsb: Boolean = false, onChangeSource: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+private fun TvHeader(torrents: List<TorrentSnapshot>, cacheBytes: Long, freeBytes: Long, usbFree: Long?, onClearCache: () -> Unit) {
+    val downloaded = torrents.filter { it.mode == TorrentMode.DOWNLOAD && !it.onUsb }.sumOf { it.doneBytes }
+    val onUsbBytes = torrents.filter { it.mode == TorrentMode.DOWNLOAD && it.onUsb }.sumOf { it.doneBytes }
+    val used = downloaded + cacheBytes
+    val total = (used + freeBytes).coerceAtLeast(1)
+    Row(Modifier.fillMaxWidth().padding(top = Tokens.Space.l), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xl)) {
+        Text("Downloads", Modifier.weight(1f), style = Tokens.Type.display, color = Tokens.Colors.text)
+        Column(Modifier.width(260.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Tokens.Space.xs)) {
+                Text(formatBytes(freeBytes), style = Tokens.Type.heading, color = Tokens.Colors.text)
+                Text("free on this TV", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, modifier = Modifier.padding(bottom = 3.dp))
+            }
+            GradientProgress(used.toFloat() / total, height = 3.dp)
+            Text("${formatBytes(downloaded)} kept  ·  ${formatBytes(cacheBytes)} not kept", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
+            if (usbFree != null) Text("USB disk: ${formatBytes(usbFree)} free  ·  ${formatBytes(onUsbBytes)} kept", style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1)
+        }
+        if (cacheBytes > 0) ReelButton("Clear what isn't kept", onClearCache, kind = ButtonKind.Secondary, icon = Icons.Rounded.Delete)
+    }
+}
+
+/**
+ * TV: one flat row per download, like a TV list rather than a stack of phone cards: the title's picture, then name, status and a
+ * thin progress line, then every action in one fixed-width group at the right. Notices (not ready, waiting for night, nobody
+ * sharing, an error) are a line of text in the middle and their buttons join the group, so nothing focusable hangs under a row
+ * and up / down always goes from row to row. The row lights up while any of its buttons has focus.
+ */
+@Composable
+private fun DownloadRowTv(
+    t: TorrentSnapshot, done: Boolean, onDelete: () -> Unit, onMore: (() -> Unit)?, anyUsb: Boolean = false,
+    onChangeSource: (() -> Unit)? = null, origin: com.kirtanya.reel.core.library.DownloadOrigin? = null, modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
-    val engine = ReelApp.get(context).engine
+    val app = ReelApp.get(context)
     val shape = RoundedCornerShape(Tokens.Radius.l)
-    Column(
-        modifier.fillMaxWidth().clip(shape).background(Tokens.Colors.surface1).border(Tokens.Size.hairline, Tokens.Colors.hairline, shape)
-            .padding(horizontal = Tokens.Space.m, vertical = Tokens.Space.m),
-        verticalArrangement = Arrangement.spacedBy(Tokens.Space.s),
+    var focused by remember { mutableStateOf(false) }
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (focused) Tokens.Colors.surface1 else Tokens.Colors.canvas,
+        androidx.compose.animation.core.tween(Tokens.Motion.focusFadeMs, easing = Tokens.Motion.easing), label = "row",
+    )
+    val notice: Pair<String, androidx.compose.ui.graphics.Color>? = when {
+        t.notReady -> (t.error ?: "Not ready yet. Try again later or pick another source") to Tokens.Colors.warn
+        t.error != null -> t.error to Tokens.Colors.danger
+        t.notice != null -> t.notice to Tokens.Colors.textSecondary
+        t.stalledForSec >= 120 -> "No one is sharing this right now. It'll continue when someone does." to Tokens.Colors.warn
+        else -> null
+    }
+    Row(
+        modifier.fillMaxWidth().onFocusChanged { focused = it.hasFocus }.clip(shape).background(bg).padding(Tokens.Space.m),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Space.l), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.m), verticalAlignment = Alignment.CenterVertically) {
-            // Tile: the initial (torrents have no artwork), a screen for a cached stream.
-            Box(
-                Modifier.size(52.dp).clip(RoundedCornerShape(Tokens.Radius.m)).background(Tokens.Colors.surface3),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (t.mode == TorrentMode.STREAM) androidx.compose.material3.Icon(Icons.Rounded.Theaters, null, tint = Tokens.Colors.text)
-                else Text(t.name.trim().take(1).uppercase(), style = Tokens.Type.title, color = Tokens.Colors.text)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
-                Text(com.kirtanya.reel.ui.sources.releaseName(t.name), style = Tokens.Type.label, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    if (t.notReady) statusLine(t) else t.error ?: statusLine(t, if (!anyUsb || t.mode != TorrentMode.DOWNLOAD) null else if (t.onUsb) "USB disk" else "This TV"), style = Tokens.Type.caption,
-                    color = if (t.error != null && !t.notReady) Tokens.Colors.danger else Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                if (!done && !t.notReady && t.mode == TorrentMode.DOWNLOAD) GradientProgress(t.progress, Modifier.padding(top = Tokens.Space.xs), height = 3.dp)
-            }
-            if (!t.http || done || httpReady(t)) PlayButton(t, done)
-            if (t.mode == TorrentMode.STREAM) {
-                ReelButton("Keep", {
-                    engine.keep(t.infoHash)
-                    android.widget.Toast.makeText(context, com.kirtanya.reel.core.library.LibraryList.KEEP_TOAST, android.widget.Toast.LENGTH_SHORT).show()
-                }, kind = ButtonKind.Ghost, icon = Icons.Rounded.SaveAlt)
-            } else if (!done && !t.notReady) {
-                if (t.phase == TorrentPhase.PAUSED || (t.http && t.phase == TorrentPhase.ERROR)) GlassIconButton(Icons.Rounded.Download, "Resume", { resumeDownload(context, t) })
-                else GlassIconButton(Icons.Rounded.Pause, "Pause", { pauseDownload(context, t) })
+        DownloadThumb(t, origin)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Space.xxs)) {
+            val release = com.kirtanya.reel.ui.sources.releaseName(t.name)
+            Text(origin?.label ?: release, style = Tokens.Type.heading, color = Tokens.Colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (origin != null) Text(release, style = Tokens.Type.caption, color = Tokens.Colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!t.notReady && t.error == null) Text(
+                statusLine(t, if (!anyUsb || t.mode != TorrentMode.DOWNLOAD) null else if (t.onUsb) "USB disk" else "This TV"),
+                style = Tokens.Type.caption, color = Tokens.Colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            notice?.let { (text, color) -> Text(text, style = Tokens.Type.caption, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            if (!done && !t.notReady && t.mode == TorrentMode.DOWNLOAD) GradientProgress(t.progress, Modifier.padding(top = Tokens.Space.xs), height = 3.dp)
+        }
+        // Fixed width, packed to the right: every row's text column is the same width and every row's buttons end at the far right.
+        Row(Modifier.width(TV_ACTIONS_WIDTH), horizontalArrangement = Arrangement.spacedBy(Tokens.Space.s, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+            when {
+                t.notReady -> {
+                    ReelButton("Retry", { resumeDownload(context, t) }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Download)
+                    if (onChangeSource != null) ReelButton("Change source", onChangeSource, kind = ButtonKind.Ghost, icon = Icons.Rounded.SwapHoriz)
+                }
+                // Waiting for the night window: starting it is the point of the row (Play now would start it anyway).
+                t.waitingForNight -> ReelButton("Start now", { app.engine.startNow(t.infoHash) }, kind = ButtonKind.Secondary, icon = Icons.Rounded.Download)
+                else -> {
+                    if (!t.http || done || httpReady(t)) PlayButton(t, done)
+                    if (t.mode == TorrentMode.STREAM) {
+                        ReelButton("Keep", {
+                            app.engine.keep(t.infoHash)
+                            android.widget.Toast.makeText(context, com.kirtanya.reel.core.library.LibraryList.KEEP_TOAST, android.widget.Toast.LENGTH_SHORT).show()
+                        }, kind = ButtonKind.Ghost, icon = Icons.Rounded.SaveAlt)
+                    } else if (!done) {
+                        if (t.phase == TorrentPhase.PAUSED || (t.http && t.phase == TorrentPhase.ERROR)) GlassIconButton(Icons.Rounded.Download, "Resume", { resumeDownload(context, t) })
+                        else GlassIconButton(Icons.Rounded.Pause, "Pause", { pauseDownload(context, t) })
+                    }
+                }
             }
             GlassIconButton(Icons.Rounded.Delete, "Delete", onDelete)
-            if (onMore != null) GlassIconButton(Icons.Rounded.MoreVert, "More", onMore)
+            if (onMore != null && !t.notReady) GlassIconButton(Icons.Rounded.MoreVert, "More", onMore)
         }
-        if (t.notReady) NotReadyNotice(t, onChangeSource)
-        DownloadNotice(t)
-        if (t.error == null && t.stalledForSec >= 120) Text("No one is sharing this right now. It'll continue when someone does.", style = Tokens.Type.caption, color = Tokens.Colors.warn)
+    }
+}
+
+/**
+ * The title's picture (16:9): the episode's still for an episode, else the film / show backdrop, from TMDB (cached in memory by
+ * the repository, on disk by the image loader). Without a known title (a pasted link) it is the initial on a tile.
+ */
+@Composable
+private fun DownloadThumb(t: TorrentSnapshot, origin: com.kirtanya.reel.core.library.DownloadOrigin?) {
+    val fixed = com.kirtanya.reel.ui.common.LocalRenderData.current
+    val context = LocalContext.current
+    val url by androidx.compose.runtime.produceState<String?>(fixed?.downloadArt?.let { f -> origin?.let(f) }, origin) {
+        if (fixed != null || origin == null) return@produceState
+        val tmdb = ReelApp.get(context).tmdb
+        val isShow = origin.type == com.kirtanya.reel.core.tmdb.MediaType.TV.path
+        value = runCatching {
+            val season = origin.season
+            val still = if (isShow && season != null && origin.episode != null)
+                tmdb.season(origin.tmdbId, season).firstOrNull { it.number == origin.episode }?.stillPath else null
+            still?.let { com.kirtanya.reel.core.tmdb.TmdbImages.still(it, "w300") } ?: run {
+                val type = if (isShow) com.kirtanya.reel.core.tmdb.MediaType.TV else com.kirtanya.reel.core.tmdb.MediaType.MOVIE
+                com.kirtanya.reel.core.tmdb.TmdbImages.backdrop(tmdb.details(com.kirtanya.reel.core.tmdb.TitleRef(type, origin.tmdbId)).summary.backdropPath, "w300")
+            }
+        }.getOrNull()
+    }
+    val shape = RoundedCornerShape(Tokens.Radius.m)
+    Box(
+        Modifier.width(TV_THUMB_WIDTH).aspectRatio(16f / 9f).clip(shape).background(Tokens.Colors.surface3)
+            .border(Tokens.Size.hairline, Tokens.Colors.hairline, shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (url != null) com.kirtanya.reel.ui.common.RemoteImage(url, Modifier.matchParentSize())
+        else if (t.mode == TorrentMode.STREAM) androidx.compose.material3.Icon(Icons.Rounded.Theaters, null, tint = Tokens.Colors.textSecondary)
+        else Text(t.name.trim().take(1).uppercase(), style = Tokens.Type.title, color = Tokens.Colors.textSecondary)
     }
 }
 

@@ -2,3 +2,11 @@
 # Violations that existed when the rule arrived (2026-10-20), all in ui/** (owned by other work).
 # Format: where | what | measured (measured is not matched). Only shrink this file: fix, then
 # run tool/check_design.sh --prune. Never add a line to silence a new violation without the user's OK.
+# 2026-11-25 (user OK): end-of-scroll renders cut buttons at the screen edge; Home rating chip unchanged by 0.16.24
+phone/downloads-end-dark-100 | Clickable "Play now Play now" | touch area 113 × 46 dp (drawn 113 × 40 dp)
+phone/downloads-end-dark-100 | Clickable "Pause" | touch area 48 × 46 dp (drawn 40 × 40 dp)
+phone/downloads-end-dark-100 | Clickable "Delete" | touch area 48 × 46 dp (drawn 40 × 40 dp)
+phone/downloads-end-dark-100 | Clickable "More" | touch area 48 × 46 dp (drawn 40 × 40 dp)
+phone/title-film-dl-failed-dark-100 | Clickable "Try again Try again" | touch area 114.3 × 47.3 dp (drawn 114.3 × 40 dp)
+phone/title-film-dl-failed-dark-100 | Clickable "Change source Change source" | touch area 154 × 47.3 dp (drawn 154 × 40 dp)
+phone/title-film-dl-start-failed-dark-100 | Clickable "Try again Try again" | touch area 114.3 × 47.3 dp (drawn 114.3 × 40 dp)

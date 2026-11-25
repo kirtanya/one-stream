@@ -28,3 +28,6 @@ player/tv-bright | text "10" | 1.23:1, needs 4.5:1 (#FFFFFF on #EBE8DD, 8 sp)
 player/tv-bright | text "10" | 1.23:1, needs 4.5:1 (#FFFFFF on #EBE8DD, 8 sp)
 player/tv-bright | text "45:12" | 1.21:1, needs 4.5:1 (#FFFFFF on #EFE9DA, 14 sp)
 player/tv-bright | text "−1:11:48" | 1.21:1, needs 4.5:1 (#FFFFFF on #EFE9DB, 14 sp)
+# 2026-11-25 (user OK): end-of-scroll renders cut buttons at the screen edge; Home rating chip unchanged by 0.16.24
+phone/home-end-dark-100 | text "6.7" | 3.26:1, needs 4.5:1 (#000000 on #735C0B, 11 sp)
+phone/home-end-dark-100 | text "7.4" | 3.26:1, needs 4.5:1 (#000000 on #735C0B, 11 sp)

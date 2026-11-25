@@ -380,6 +380,11 @@ object Fake {
         directDownloads[2].infoHash to com.kirtanya.reel.core.library.DownloadOrigin("tv", SHOW_ID, 1, 3, "The Night Manager · S1 E3"),
     )
 
+    /** TV Downloads pictures: the episode still for an episode, the backdrop for a film (drawn by FakeArt). */
+    val downloadArt: (com.kirtanya.reel.core.library.DownloadOrigin) -> String? = { o ->
+        if (o.episode != null) "https://image.tmdb.org/t/p/w300/still_${o.tmdbId}_${o.episode}.jpg" else "https://image.tmdb.org/t/p/w300/backdrop_${o.tmdbId}.jpg"
+    }
+
     // ─── Settings ────────────────────────────────────────────────────────────────────────────
 
     private fun manifest(id: String, name: String, description: String, streams: Boolean = true, subtitles: Boolean = false) =
